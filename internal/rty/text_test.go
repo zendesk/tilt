@@ -19,6 +19,7 @@ func TestTextString(t *testing.T) {
 	i.Run("horizontally overflowed long text string", 20, 2, TextString(strings.Repeat("hello", 20)))
 	i.Run("vertically overflowed via newlines text string", 10, 10, TextString(strings.Repeat("hi\n", 20)))
 	i.Run("vertically overflowed via wrap text string", 5, 5, TextString(strings.Repeat("xxxxxxxxxx\n", 200)))
+	i.Run("emoji take up two chars", 10, 1, TextString(strings.Repeat("🔥", 5)))
 }
 
 func TestStyledText(t *testing.T) {

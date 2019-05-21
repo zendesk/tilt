@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/mattn/go-runewidth"
+
 	"github.com/gdamore/tcell"
 	"github.com/pkg/errors"
 )
@@ -128,11 +130,13 @@ func (l *StringLayout) render(w Writer, width int, height int) (int, int, error)
 			}
 
 			for _, r := range token {
+				rw := runewidth.RuneWidth(r)
+
 				if nextX >= width {
 					nextX, nextY = 0, nextY+1
 				}
-				if nextX+1 > maxWidth {
-					maxWidth = nextX + 1
+				if nextX+rw > maxWidth {
+					maxWidth = nextX + rw
 				}
 				if nextY >= height {
 					return maxWidth, height, nil
@@ -150,7 +154,7 @@ func (l *StringLayout) render(w Writer, width int, height int) (int, int, error)
 				if w != nil {
 					w.SetContent(nextX, nextY, r, nil)
 				}
-				nextX = nextX + 1
+				nextX = nextX + rw
 			}
 		}
 	}
