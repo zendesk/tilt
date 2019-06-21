@@ -3,6 +3,7 @@ import { ResourceView } from "./types"
 import "./TopBar.scss"
 import SailInfo from "./SailInfo"
 import TabNav from "./TabNav"
+import GithubIssuesButton from "./GithubIssues"
 
 type TopBarProps = {
   previewUrl: string
@@ -26,6 +27,7 @@ class TopBar extends PureComponent<TopBarProps> {
           numberOfAlerts={this.props.numberOfAlerts}
         />
         <span className="TopBar-spacer">&nbsp;</span>
+        <GithubIssuesButton />
         <SailInfo
           sailEnabled={this.props.sailEnabled}
           sailUrl={this.props.sailUrl}
