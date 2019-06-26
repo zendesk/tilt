@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/model"
@@ -22,6 +23,11 @@ func TestEventWatchManager_dispatchesEvent(t *testing.T) {
 	defer f.TearDown()
 
 	f.addManifest("someK8sManifest")
+	obj := unstructured.Unstructured{}
+	obj.SetLabels(map[string]string{k8s.TiltRunIDLabel: k8s.TiltRunID, k8s.ManifestNameLabel: "someK8sManifest"})
+	f.kClient.GetResources = map[k8s.GetKey]*unstructured.Unstructured{
+		k8s.GetKey{"", "", "", "", "", ""}: &obj,
+	}
 
 	evt := &v1.Event{
 		Reason:  "because test",
@@ -30,7 +36,7 @@ func TestEventWatchManager_dispatchesEvent(t *testing.T) {
 
 	f.ewm.OnChange(f.ctx, f.store)
 	f.kClient.EmitEvent(f.ctx, evt)
-	expected := store.K8sEventAction{Event: evt}
+	expected := store.K8sEventAction{Event: evt, ManifestName: "someK8sManifest"}
 	f.assertActions(expected)
 }
 

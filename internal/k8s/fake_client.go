@@ -5,20 +5,18 @@ import (
 	"context"
 	"io"
 	"sync"
+	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
 	"k8s.io/apimachinery/pkg/labels"
-
-	"github.com/windmilleng/tilt/internal/model"
-
+	"k8s.io/apimachinery/pkg/watch"
+	v1 "k8s.io/api/core/v1"
 	"github.com/docker/distribution/reference"
 	"github.com/pkg/errors"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/watch"
 
 	"github.com/windmilleng/tilt/internal/container"
+	"github.com/windmilleng/tilt/internal/model"
 )
 
 // A magic constant. If the docker client returns this constant, we always match
@@ -63,6 +61,17 @@ type FakeK8sClient struct {
 	UpsertError error
 	Runtime     container.Runtime
 	Registry    container.Registry
+
+	GetResources map[GetKey]*unstructured.Unstructured
+}
+
+type GetKey struct {
+	Group string
+	Version string
+	Kind string
+	Namespace string
+	Name string
+	ResourceVersion string
 }
 
 type fakeServiceWatch struct {
@@ -249,7 +258,13 @@ func (c *FakeK8sClient) Delete(ctx context.Context, entities []K8sEntity) error 
 }
 
 func (c *FakeK8sClient) Get(group, version, kind, namespace, name, resourceVersion string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	key := GetKey{group, version, kind, namespace, name, resourceVersion}
+	resp, ok := c.GetResources[key]
+	if !ok {
+		return nil, fmt.Errorf("No response found for %v", key)
+	}
+
+	return resp, nil
 }
 
 func (c *FakeK8sClient) WatchPod(ctx context.Context, pod *v1.Pod) (watch.Interface, error) {
