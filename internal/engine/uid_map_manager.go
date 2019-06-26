@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/watch"
 
 	"github.com/windmilleng/tilt/internal/k8s"
@@ -43,14 +42,7 @@ func (m *UIDMapManager) OnChange(ctx context.Context, st store.RStore) {
 	}
 	m.watching = true
 
-	ch, err := m.kCli.WatchEverything(ctx, []model.LabelPair{k8s.TiltRunLabel()})
-	if err != nil {
-		err = errors.Wrap(err, "Error watching for uids\n")
-		st.Dispatch(NewErrorAction(err))
-		return
-	}
-
-	go m.dispatchUIDsLoop(ctx, ch, st)
+	go m.dispatchUIDsLoop(ctx, nil, st)
 }
 
 func (m *UIDMapManager) dispatchUIDsLoop(ctx context.Context, ch <-chan watch.Event, st store.RStore) {

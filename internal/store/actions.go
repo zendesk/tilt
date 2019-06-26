@@ -74,13 +74,14 @@ func NewGlobalLogEvent(b []byte) LogEvent {
 }
 
 type K8sEventAction struct {
-	Event *v1.Event
+	Event        *v1.Event
+	ManifestName model.ManifestName
 }
 
 func (K8sEventAction) Action() {}
 
-func NewK8sEventAction(event *v1.Event) K8sEventAction {
-	return K8sEventAction{event}
+func NewK8sEventAction(event *v1.Event, manifestName model.ManifestName) K8sEventAction {
+	return K8sEventAction{event, manifestName}
 }
 
 func (kEvt K8sEventAction) ToLogAction(mn model.ManifestName) LogAction {

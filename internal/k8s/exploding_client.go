@@ -5,6 +5,8 @@ import (
 	"io"
 	"time"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
 	"github.com/docker/distribution/reference"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
@@ -27,6 +29,10 @@ func (ec *explodingClient) Upsert(ctx context.Context, entities []K8sEntity) err
 
 func (ec *explodingClient) Delete(ctx context.Context, entities []K8sEntity) error {
 	return errors.Wrap(ec.err, "could not set up k8s client")
+}
+
+func (ec *explodingClient) Get(group, version, kind, namespace, name, resourceVersion string) (*unstructured.Unstructured, error) {
+	return nil, errors.Wrap(ec.err, "could not set up k8s client")
 }
 
 func (ec *explodingClient) PodsWithImage(ctx context.Context, image reference.NamedTagged, n Namespace, lp []model.LabelPair) ([]v1.Pod, error) {

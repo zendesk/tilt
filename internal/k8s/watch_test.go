@@ -2,9 +2,12 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
+
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -151,14 +154,32 @@ func TestK8sClient_WatchServicesBlockedByNamespaceRestriction(t *testing.T) {
 	}
 }
 
-func TestK8sClient_WatchEverything(t *testing.T) {
-	tf := newWatchTestFixture(t)
-	defer tf.TearDown()
+func TestDeploymentInformer(t *testing.T) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
 
-	// NOTE(dmiller): because we don't add any resources in to the
-	// fake clientset that we set up in `newWatchTestFixture` `ServerGroupsAndResources()`
-	// returns an empty list, which triggers the following error
-	tf.watchEverythingExpectError("Unable to watch any resources: do you have sufficient permissions to watch resources?")
+	overrides := &clientcmd.ConfigOverrides{}
+	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		rules,
+		overrides)
+
+	restConfig, err := ProvideRESTConfig(clientConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientset, err := ProvideClientSet(restConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dl, err := clientset.ExtensionsV1beta1().Deployments("").List(metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range dl.Items {
+		fmt.Printf("%q / %q / %q / %q\n", item.APIVersion, item.Namespace, item.Kind, item.Name)
+	}
 }
 
 func TestK8sClient_WatchEvents(t *testing.T) {
@@ -343,11 +364,6 @@ func (tf *watchTestFixture) runEvents(input []runtime.Object, expectedOutput []r
 	// TODO(matt) - using ElementsMatch instead of Equal because, for some reason, events do not always come out in the
 	// same order we feed them in. I'm punting on figuring out why for now.
 	assert.ElementsMatch(tf.t, expectedOutput, observedEvents)
-}
-
-func (tf *watchTestFixture) watchEverythingExpectError(expectedErr string) {
-	_, err := tf.kCli.WatchEverything(tf.ctx, []model.LabelPair{})
-	assert.EqualError(tf.t, err, expectedErr)
 }
 
 func (tf *watchTestFixture) testPodLabels(input labels.Set, expectedLabels labels.Set) {

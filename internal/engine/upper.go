@@ -869,19 +869,20 @@ func handleServiceEvent(ctx context.Context, state *store.EngineState, action Se
 
 func handleK8sEvent(ctx context.Context, state *store.EngineState, action store.K8sEventAction) {
 	evt := action.Event
-	v, ok := state.ObjectsByK8sUIDs[k8s.UID(evt.InvolvedObject.UID)]
-	if !ok {
-		return
-	}
 
 	if evt.Type != "Normal" {
-		handleLogAction(state, action.ToLogAction(v.Manifest))
+		handleLogAction(state, action.ToLogAction(action.ManifestName))
 
-		ms, ok := state.ManifestState(v.Manifest)
+		ms, ok := state.ManifestState(action.ManifestName)
 		if !ok {
 			return
 		}
-		ms.K8sWarnEvents = append(ms.K8sWarnEvents, k8s.NewEventWithEntity(evt, v.Entity))
+		gvk := evt.InvolvedObject.GroupVersionKind()
+		e := k8s.K8sEntity{
+			Obj:  &evt.InvolvedObject,
+			Kind: &gvk,
+		}
+		ms.K8sWarnEvents = append(ms.K8sWarnEvents, k8s.NewEventWithEntity(evt, e))
 	}
 }
 

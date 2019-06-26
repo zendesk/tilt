@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/windmilleng/tilt/internal/model"
@@ -244,6 +246,10 @@ func (c *FakeK8sClient) Delete(ctx context.Context, entities []K8sEntity) error 
 	}
 	c.DeletedYaml = yaml
 	return nil
+}
+
+func (c *FakeK8sClient) Get(group, version, kind, namespace, name, resourceVersion string) (*unstructured.Unstructured, error) {
+	return nil, nil
 }
 
 func (c *FakeK8sClient) WatchPod(ctx context.Context, pod *v1.Pod) (watch.Interface, error) {
