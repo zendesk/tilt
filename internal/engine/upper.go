@@ -878,8 +878,9 @@ func handleK8sEvent(ctx context.Context, state *store.EngineState, action store.
 			return
 		}
 		gvk := evt.InvolvedObject.GroupVersionKind()
+		involvedObject := evt.InvolvedObject
 		e := k8s.K8sEntity{
-			Obj:  &evt.InvolvedObject,
+			Obj:  &involvedObject,
 			Kind: &gvk,
 		}
 		ms.K8sWarnEvents = append(ms.K8sWarnEvents, k8s.NewEventWithEntity(evt, e))
