@@ -59,6 +59,12 @@ func TestEventWatchManager_needsWatchNoK8s(t *testing.T) {
 	f := newEWMFixture(t)
 	defer f.TearDown()
 
+	obj := unstructured.Unstructured{}
+	obj.SetLabels(map[string]string{k8s.TiltRunIDLabel: k8s.TiltRunID, k8s.ManifestNameLabel: "someK8sManifest"})
+	f.kClient.GetResources = map[k8s.GetKey]*unstructured.Unstructured{
+		k8s.GetKey{"", "", "", "", "", ""}: &obj,
+	}
+
 	evt := &v1.Event{
 		Reason:  "because test",
 		Message: "hello world",
