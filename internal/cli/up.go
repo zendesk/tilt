@@ -22,6 +22,7 @@ import (
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/output"
 	"github.com/windmilleng/tilt/internal/store"
+	"github.com/windmilleng/tilt/internal/tiltden"
 	"github.com/windmilleng/tilt/internal/tiltfile"
 	"github.com/windmilleng/tilt/internal/tracer"
 )
@@ -86,6 +87,8 @@ func (c *upCmd) run(ctx context.Context, args []string) error {
 	a.IncrIfUnopted("analytics.up.optdefault")
 	defer a.Flush(time.Second)
 
+	tdToken, tdErr := tiltden.GetOrGenerateAndSetToken()
+
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Up")
 	defer span.Finish()
 
@@ -142,7 +145,7 @@ func (c *upCmd) run(ctx context.Context, args []string) error {
 
 	g.Go(func() error {
 		defer cancel()
-		return upper.Start(ctx, args, threads.tiltBuild, c.watch, c.fileName, c.hud, threads.sailMode, a.Opt())
+		return upper.Start(ctx, args, threads.tiltBuild, c.watch, c.fileName, c.hud, threads.sailMode, a.Opt(), tdToken, tdErr)
 	})
 
 	err = g.Wait()

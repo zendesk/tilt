@@ -142,6 +142,13 @@ type View struct {
 
 	RunningTiltBuild model.TiltBuild
 	LatestTiltBuild  model.TiltBuild
+
+	TiltDen TiltDenStatus
+}
+
+type TiltDenStatus struct {
+	Msg string
+	Err string
 }
 
 func (v View) Resource(n model.ManifestName) (Resource, bool) {

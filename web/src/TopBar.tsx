@@ -1,5 +1,5 @@
 import React, { PureComponent } from "react"
-import { ResourceView } from "./types"
+import { ResourceView, TiltDenStatus } from "./types"
 import "./TopBar.scss"
 import SailInfo from "./SailInfo"
 import TabNav from "./TabNav"
@@ -11,6 +11,7 @@ type TopBarProps = {
   resourceView: ResourceView
   sailEnabled: boolean
   sailUrl: string
+  tiltDen: TiltDenStatus | null
   numberOfAlerts: number
 }
 
@@ -29,6 +30,7 @@ class TopBar extends PureComponent<TopBarProps> {
         <SailInfo
           sailEnabled={this.props.sailEnabled}
           sailUrl={this.props.sailUrl}
+          tiltDen={this.props.tiltDen}
         />
       </div>
     )

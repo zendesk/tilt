@@ -14,7 +14,7 @@ import { History, UnregisterCallback } from "history"
 import { incr, pathToTag } from "./analytics"
 import TopBar from "./TopBar"
 import "./HUD.scss"
-import { TiltBuild, ResourceView, Resource } from "./types"
+import { TiltBuild, ResourceView, Resource, TiltDenStatus } from "./types"
 import AlertPane, { AlertResource } from "./AlertPane"
 import PreviewList from "./PreviewList"
 import AnalyticsNudge from "./AnalyticsNudge"
@@ -34,6 +34,7 @@ type HudState = {
     NeedsAnalyticsNudge: boolean
     RunningTiltBuild: TiltBuild
     LatestTiltBuild: TiltBuild
+    TiltDen: TiltDenStatus | null
   } | null
   IsSidebarClosed: boolean
 }
@@ -79,6 +80,9 @@ class HUD extends Component<HudProps, HudState> {
           Version: "",
           Date: "",
           Dev: false,
+        },
+        TiltDen: {
+          Msg: "hello world",
         },
       },
       IsSidebarClosed: false,
@@ -132,6 +136,7 @@ class HUD extends Component<HudProps, HudState> {
     let view = this.state.View
     let sailEnabled = view && view.SailEnabled ? view.SailEnabled : false
     let sailUrl = view && view.SailURL ? view.SailURL : ""
+    let tiltDen: TiltDenStatus | null = view ? view.TiltDen: {}
     let needsNudge = view ? view.NeedsAnalyticsNudge : false
     let message = this.state.Message
     let resources = (view && view.Resources) || []
@@ -184,6 +189,7 @@ class HUD extends Component<HudProps, HudState> {
           resourceView={t}
           sailEnabled={sailEnabled}
           sailUrl={sailUrl}
+          tiltDen={tiltDen}
           numberOfAlerts={numAlerts}
         />
       )

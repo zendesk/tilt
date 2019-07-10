@@ -26,7 +26,9 @@ func ProvideSubscribers(
 	sail client.SailClient,
 	tvc *TiltVersionChecker,
 	ta *TiltAnalyticsSubscriber,
-	ewm *EventWatchManager) []store.Subscriber {
+	ewm *EventWatchManager,
+	tdw *TiltDenWatcher,
+) []store.Subscriber {
 	return []store.Subscriber{
 		hud,
 		pw,
@@ -47,5 +49,6 @@ func ProvideSubscribers(
 		tvc,
 		ta,
 		ewm,
+		tdw,
 	}
 }

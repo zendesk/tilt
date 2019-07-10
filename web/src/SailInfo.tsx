@@ -1,9 +1,12 @@
 import React, { PureComponent } from "react"
+import { TiltDenStatus } from "./types"
 import "./SailInfo.scss"
 
 type SailProps = {
   sailEnabled: boolean
   sailUrl: string
+
+  tiltDen: TiltDenStatus | null
 }
 
 class SailInfo extends PureComponent<SailProps> {
@@ -37,7 +40,11 @@ class SailInfo extends PureComponent<SailProps> {
       )
     }
 
-    return <span className="sail-url">&nbsp;</span>
+    if (this.props.tiltDen) {
+      return <span className="sail-url">Hi! {this.props.tiltDen.Msg} {this.props.tiltDen.Err}</span>
+    }
+
+    return <span className="sail-url">no tilt den</span>
   }
 }
 

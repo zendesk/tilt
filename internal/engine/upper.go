@@ -29,6 +29,7 @@ import (
 	"github.com/windmilleng/tilt/internal/sliceutils"
 	"github.com/windmilleng/tilt/internal/store"
 	"github.com/windmilleng/tilt/internal/synclet/sidecar"
+	"github.com/windmilleng/tilt/internal/tiltden"
 	"github.com/windmilleng/tilt/internal/watch"
 )
 
@@ -96,7 +97,10 @@ func (u Upper) Start(
 	fileName string,
 	useActionWriter bool,
 	sailMode model.SailMode,
-	analyticsOpt analytics.Opt) error {
+	analyticsOpt analytics.Opt,
+	tdToken tiltden.Token,
+	tdErr error,
+) error {
 
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Start")
 	defer span.Finish()
@@ -128,6 +132,8 @@ func (u Upper) Start(
 		ExecuteTiltfile: false,
 		EnableSail:      sailMode.IsEnabled(),
 		AnalyticsOpt:    analyticsOpt,
+		TiltDenToken:    tdToken,
+		TiltDenErr:      tdErr,
 	})
 }
 
@@ -176,6 +182,10 @@ var UpperReducer = store.Reducer(func(ctx context.Context, state *store.EngineSt
 		handleDockerComposeEvent(ctx, state, action)
 	case DockerComposeLogAction:
 		handleDockerComposeLogAction(state, action)
+	case TiltDenServerRequestAction:
+		handleTiltDenServerRequestAction(state, action)
+	case TiltDenServerResponseAction:
+		handleTiltDenServerResponseAction(state, action)
 	case server.AppendToTriggerQueueAction:
 		appendToTriggerQueue(state, action.Name)
 	case hud.StartProfilingAction:
@@ -899,6 +909,8 @@ func handleInitAction(ctx context.Context, engineState *store.EngineState, actio
 	engineState.SailEnabled = action.EnableSail
 
 	engineState.AnalyticsOpt = action.AnalyticsOpt
+	engineState.TiltDen.Token = action.TiltDenToken
+	engineState.TiltDen.TokenErr = action.TiltDenErr
 
 	if action.ExecuteTiltfile {
 		status := model.BuildRecord{
@@ -983,6 +995,16 @@ func handleDockerComposeLogAction(state *store.EngineState, action DockerCompose
 
 	dcState, _ := ms.ResourceState.(dockercompose.State)
 	ms.ResourceState = dcState.WithCurrentLog(model.AppendLog(dcState.CurrentLog, action, state.LogTimestamps, nil))
+}
+
+func handleTiltDenServerRequestAction(state *store.EngineState, action TiltDenServerRequestAction) {
+	state.TiltDen.ReqTime = action.Time
+}
+
+func handleTiltDenServerResponseAction(state *store.EngineState, action TiltDenServerResponseAction) {
+	state.TiltDen.Resp = action.Resp
+	state.TiltDen.RespErr = action.Err
+	state.TiltDen.RespTime = action.Time
 }
 
 func handleTiltfileLogAction(ctx context.Context, state *store.EngineState, action TiltfileLogAction) {

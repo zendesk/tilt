@@ -72,3 +72,8 @@ export type Resource = {
   TriggerMode: TriggerMode
   HasPendingChanges: boolean
 }
+
+export type TiltDenStatus = {
+  Msg?: string
+  Err?: string
+}

@@ -27,6 +27,7 @@ import (
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/sail/client"
 	"github.com/windmilleng/tilt/internal/store"
+	"github.com/windmilleng/tilt/internal/tiltden"
 	"github.com/windmilleng/tilt/internal/tiltfile"
 )
 
@@ -57,6 +58,9 @@ var BaseWireSet = wire.NewSet(
 
 	tiltfile.ProvideTiltfileLoader,
 
+	wire.Bind(new(tiltden.Client), new(tiltden.HTTPClient)),
+	tiltden.NewHTTPClient,
+
 	clockwork.NewRealClock,
 	engine.DeployerWireSet,
 	engine.NewPodLogManager,
@@ -72,6 +76,7 @@ var BaseWireSet = wire.NewSet(
 	engine.NewProfilerManager,
 	engine.NewGithubClientFactory,
 	engine.NewTiltVersionChecker,
+	engine.NewTiltDenWatcher,
 
 	provideClock,
 	hud.NewRenderer,

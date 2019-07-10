@@ -12,6 +12,7 @@ import (
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/store"
+	"github.com/windmilleng/tilt/internal/tiltden"
 )
 
 func NewErrorAction(err error) store.ErrorAction {
@@ -109,6 +110,8 @@ type InitAction struct {
 	EnableSail bool
 
 	AnalyticsOpt analytics.Opt
+	TiltDenToken tiltden.Token
+	TiltDenErr   error
 }
 
 func (InitAction) Action() {}
@@ -193,3 +196,17 @@ type UIDUpdateAction struct {
 }
 
 func (UIDUpdateAction) Action() {}
+
+type TiltDenServerRequestAction struct {
+	Time time.Time
+}
+
+func (TiltDenServerRequestAction) Action() {}
+
+type TiltDenServerResponseAction struct {
+	Resp tiltden.Response
+	Err  error
+	Time time.Time
+}
+
+func (TiltDenServerResponseAction) Action() {}
