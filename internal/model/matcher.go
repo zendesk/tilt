@@ -128,7 +128,7 @@ type globMatcher struct {
 	globs []glob.Glob
 }
 
-func (gm globMatcher) Matches(f string, isDir bool) (bool, error) {
+func (gm globMatcher) Matches(f string, isDir bool) (bool, error) { //Todo maria: use this function
 	for _, g := range gm.globs {
 		if g.Match(f) {
 			return true, nil

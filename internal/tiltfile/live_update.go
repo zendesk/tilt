@@ -175,7 +175,6 @@ func (s *tiltfileState) liveUpdateRun(thread *starlark.Thread, fn *starlark.Buil
 			return nil, fmt.Errorf("run cmd '%s' triggers contained value '%s' of type '%s'. it may only contain strings", command, t.String(), t.Type())
 		}
 	}
-
 	ret := liveUpdateRunStep{
 		command:  command,
 		triggers: triggerStrings,
@@ -256,6 +255,5 @@ func (s *tiltfileState) checkForUnconsumedLiveUpdateSteps() error {
 		return fmt.Errorf("found %d live_update steps that were created but not used in a live_update: %s",
 			len(s.unconsumedLiveUpdateSteps), strings.Join(errorStrings, "\n\t"))
 	}
-
 	return nil
 }

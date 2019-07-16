@@ -68,3 +68,8 @@ func TestNewLiveUpdateFallBackOnFiles(t *testing.T) {
 	expectedFallBackFiles := NewPathSet([]string{"a", "b", "c", "d"}, BaseDir)
 	assert.Equal(t, expectedFallBackFiles, lu.FallBackOnFiles())
 }
+
+//TODO Maria: tests for liveupdate glob support
+func TestLiveUpdateGlobSupport(t *testing.T) {
+
+}
