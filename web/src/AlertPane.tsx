@@ -51,6 +51,7 @@ function buildFailedErrAlert (resource: AlertResource): Alert {
   return {alertType: BuildFailedErrorType,titleMsg: resource.name, msg: msg, timestamp: resource.resourceInfo.podCreationTime}
 }
 
+
 class AlertResource {
   public name: string
   public buildHistory: Array<Build>
@@ -59,7 +60,6 @@ class AlertResource {
   public alertsArray: Array<Alert> 
 
   constructor(resource: Resource) {
-    this.alertsArray = this.createAlerts()
     this.name = resource.Name
     this.buildHistory = resource.BuildHistory
     this.crashLog = resource.CrashLog
@@ -79,13 +79,14 @@ class AlertResource {
         podRestarts: 0,
       }
     }
+    this.alertsArray = this.createAlerts()
   }
 
   public hasAlert() {
     return alertElements([this]).length > 0
   }
 
-  public crashRebuild() {
+public crashRebuild() {
     return this.buildHistory.length > 0 && this.buildHistory[0].IsCrashRebuild
   }
 
@@ -119,11 +120,14 @@ class AlertResource {
   public createAlerts(): Array<Alert> {
     let alertArray: Array<Alert> = []
     
-    if (this.podStatusIsError()){
+    if (this.resourceInfo.podStatus != undefined){
+      if (this.podStatusIsError()){
         alertArray.push(podStatusErrAlert(this))
-    } else if (this.podRestarted()){
+      } if (this.podRestarted()){
         alertArray.push(podRestartErrAlert(this))
-    } else if (this.crashRebuild()){
+      }
+    } 
+    if (this.crashRebuild()){
         alertArray.push(crashRebuildErrAlert(this))
     }
     return alertArray
