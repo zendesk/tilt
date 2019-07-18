@@ -8,12 +8,22 @@ import { Build, Resource } from "./types"
 import { timeAgoFormatter } from "./timeFormatters"
 import { podStatusIsCrash, podStatusIsError } from "./constants"
 
-export type Alerts = {
+export type Alert = {
   alertType: string
   msg: string;
   timestamp: string;
   titleMsg: string;
 }
+
+//constants for Alert error types
+export const PodRestartErrorType = "PodRestartError"
+export const PodStatusErrorType = "PodStatusError"
+export const ResourceCrashRebuildErrorType = "ResourceCrashRebuild"
+export const BuildFailedErrorType = "BuildError"
+export const WarningErrorType = "Warning"
+
+
+
 class AlertResource {
   public name: string
   public buildHistory: Array<Build>
