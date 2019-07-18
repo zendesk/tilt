@@ -167,83 +167,24 @@ function alertElements(resources: Array<AlertResource>) {
   let formatter = timeAgoFormatter
   let alertElements: Array<JSX.Element> = []
   resources.forEach(r => {
-    if (r.podStatusIsError()) {
-      let podStatus = r.resourceInfo.podStatus
-      let podStatusMessage = r.resourceInfo.podStatusMessage
-      let msg = ""
-      if (podStatusIsCrash(podStatus)) {
-        msg = r.crashLog
-      }
-
-      msg = msg || podStatusMessage || `Pod has status ${podStatus}`
-
+    r.alertsArray.forEach(alert => {
       alertElements.push(
-        <li key={"resourceInfoError" + r.name} className="AlertPane-item">
+        <li key={alert.alertType + r.name} className="AlertPane-item">
           <header>
             <p>{r.name}</p>
+              {alert.titleMsg != "" && <p>{alert.titleMsg}</p>}
             <p>
               <TimeAgo
-                date={r.resourceInfo.podCreationTime}
+                date={alert.timestamp}
                 formatter={formatter}
               />
             </p>
-          </header>
-          <section>{logToLines(msg)}</section>
-        </li>
-      )
-    } else if (r.podRestarted()) {
-      alertElements.push(
-        <li key={"resourceInfoPodCrash" + r.name} className="AlertPane-item">
-          <header>
-            <p>{r.name}</p>
-            <p>{`Restarts: ${r.resourceInfo.podRestarts}`}</p>
-          </header>
-          <section>{logToLines(r.crashLog || "")}</section>
-        </li>
-      )
-    } else if (r.crashRebuild()) {
-      alertElements.push(
-        <li
-          key={"resourceInfoCrashRebuild" + r.name}
-          className="AlertPane-item"
-        >
-          <header>
-            <p>{r.name}</p>
-            <p>Pod crashed!</p>
-          </header>
-          <section>{logToLines(r.crashLog || "")}</section>
-        </li>
-      )
-    }
-    let lastBuild = r.buildHistory[0]
-    if (r.buildFailed()) {
-      alertElements.push(
-        <li key={"buildError" + r.name} className="AlertPane-item">
-          <header>
-            <p>{r.name}</p>
-            <p>
-              <TimeAgo date={lastBuild.FinishTime} formatter={formatter} />
-            </p>
-          </header>
-          <section>{logToLines(lastBuild.Log || "")}</section>
-        </li>
-      )
-    }
-    r.warnings().forEach((w, i) => {
-      alertElements.push(
-        <li key={"warning" + r.name + i} className="AlertPane-item">
-          <header>
-            <p>{r.name}</p>
-            <p>
-              <TimeAgo date={lastBuild.FinishTime} formatter={formatter} />
-            </p>
-          </header>
-          <section>{logToLines(w)}</section>
-        </li>
+            </header>
+            <section>{logToLines(alert.msg)}</section>
+          </li>
       )
     })
   })
-
   return alertElements
 }
 
