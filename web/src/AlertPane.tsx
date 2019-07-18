@@ -22,15 +22,44 @@ export const ResourceCrashRebuildErrorType = "ResourceCrashRebuild"
 export const BuildFailedErrorType = "BuildError"
 export const WarningErrorType = "Warning"
 
+//functions to create different kinds of alerts
+function podStatusErrAlert(resource: AlertResource): Alert{
+  let podStatus = resource.resourceInfo.podStatus
+  let podStatusMessage = resource.resourceInfo.podStatusMessage
+  let msg = ""
+  if (podStatusIsCrash(podStatus)) {
+      msg = resource.crashLog
+  }
+  msg = msg || podStatusMessage || `Pod has status ${podStatus}`
 
+  return {alertType: PodStatusErrorType, titleMsg: resource.name, msg: msg, timestamp: resource.resourceInfo.podCreationTime}
+}
+
+function podRestartErrAlert(resource: AlertResource): Alert {
+  let msg = resource.crashLog || ""
+  let titleMsg = "Restarts:" + (resource.resourceInfo.podRestarts.toString())
+  return {alertType: PodRestartErrorType, titleMsg: titleMsg ,msg: msg, timestamp: resource.resourceInfo.podCreationTime}
+}
+
+function crashRebuildErrAlert(resource: AlertResource): Alert {
+  let msg = resource.crashLog || ""
+  return {alertType: ResourceCrashRebuildErrorType, titleMsg: "Pod crashed", msg: msg, timestamp: resource.resourceInfo.podCreationTime}
+}
+
+function buildFailedErrAlert (resource: AlertResource): Alert {
+  let msg = resource.buildHistory[0].Log || ""
+  return {alertType: BuildFailedErrorType,titleMsg: resource.name, msg: msg, timestamp: resource.resourceInfo.podCreationTime}
+}
 
 class AlertResource {
   public name: string
   public buildHistory: Array<Build>
   public resourceInfo: ResourceInfo
   public crashLog: string
+  public alertsArray: Array<Alert> 
 
   constructor(resource: Resource) {
+    this.alertsArray = this.createAlerts()
     this.name = resource.Name
     this.buildHistory = resource.BuildHistory
     this.crashLog = resource.CrashLog
@@ -85,9 +114,25 @@ class AlertResource {
 
     return []
   }
+
+  //function to create different kinds of alerts per AlertResource
+  public createAlerts(): Array<Alert> {
+    let alertArray: Array<Alert> = []
+    
+    if (this.podStatusIsError()){
+        alertArray.push(podStatusErrAlert(this))
+    } else if (this.podRestarted()){
+        alertArray.push(podRestartErrAlert(this))
+    } else if (this.crashRebuild()){
+        alertArray.push(crashRebuildErrAlert(this))
+    }
+    return alertArray
+  }
+
+  public getAlerts(): Array<Alert> {
+    return this.alertsArray
+  }
 }
-
-
 
 type ResourceInfo = {
   podCreationTime: string
@@ -103,6 +148,7 @@ type AlertsProps = {
 function logToLines(s: string) {
   return s.split("\n").map((l, i) => <AnsiLine key={"logLine" + i} line={l} />)
 }
+
 
 function alertElements(resources: Array<AlertResource>) {
   let formatter = timeAgoFormatter
