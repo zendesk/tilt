@@ -4,17 +4,23 @@ import AnsiLine from "./AnsiLine"
 import TimeAgo from "react-timeago"
 import "./AlertPane.scss"
 import { zeroTime } from "./time"
-import { Build } from "./types"
+import { Build, Resource } from "./types"
 import { timeAgoFormatter } from "./timeFormatters"
 import { podStatusIsCrash, podStatusIsError } from "./constants"
 
+export type Alerts = {
+  alertType: string
+  msg: string;
+  timestamp: string;
+  titleMsg: string;
+}
 class AlertResource {
   public name: string
   public buildHistory: Array<Build>
   public resourceInfo: ResourceInfo
   public crashLog: string
 
-  constructor(resource: any) {
+  constructor(resource: Resource) {
     this.name = resource.Name
     this.buildHistory = resource.BuildHistory
     this.crashLog = resource.CrashLog
@@ -27,7 +33,7 @@ class AlertResource {
         podRestarts: info.PodRestarts,
       }
     } else {
-      this.resourceInfo = {
+      this.resourceInfo = { // used for testing
         podCreationTime: zeroTime,
         podStatus: "",
         podStatusMessage: "",
@@ -70,6 +76,8 @@ class AlertResource {
     return []
   }
 }
+
+
 
 type ResourceInfo = {
   podCreationTime: string
