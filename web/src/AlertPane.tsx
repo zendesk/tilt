@@ -50,7 +50,16 @@ function buildFailedErrAlert (resource: AlertResource): Alert {
   let msg = resource.buildHistory[0].Log || ""
   return {alertType: BuildFailedErrorType,titleMsg: resource.name, msg: msg, timestamp: resource.resourceInfo.podCreationTime}
 }
-
+function warningsErrAlerts (resource: AlertResource) : Array<Alert>{
+  let warnings = resource.warnings()
+  let alertArray : Array<Alert> = []
+  if (warnings.length > 0) {
+      warnings.forEach(w => {
+          alertArray.push({alertType: WarningErrorType, titleMsg: resource.name,  msg: w, timestamp: resource.buildHistory[0].FinishTime})
+      })
+  }
+  return alertArray
+}
 
 class AlertResource {
   public name: string
@@ -112,14 +121,12 @@ public crashRebuild() {
     if (this.buildHistory.length > 0) {
       return this.buildHistory[0].Warnings || []
     }
-
     return []
   }
 
-  //function to create different kinds of alerts per AlertResource
+  //function to create different kinds of alerts for AlertResource
   public createAlerts(): Array<Alert> {
     let alertArray: Array<Alert> = []
-    
     if (this.resourceInfo.podStatus != undefined){
       if (this.podStatusIsError()){
         alertArray.push(podStatusErrAlert(this))
@@ -130,13 +137,15 @@ public crashRebuild() {
     if (this.crashRebuild()){
         alertArray.push(crashRebuildErrAlert(this))
     }
+    if (this.warnings().length > 0){
+      alertArray.concat(warningsErrAlerts(this))
+    }
     return alertArray
   }
-
   public getAlerts(): Array<Alert> {
     return this.alertsArray
   }
-}
+} // class AlertResource
 
 type ResourceInfo = {
   podCreationTime: string
@@ -153,7 +162,7 @@ function logToLines(s: string) {
   return s.split("\n").map((l, i) => <AnsiLine key={"logLine" + i} line={l} />)
 }
 
-
+//function changed since logic is now in AlertResource.createAlerts() 
 function alertElements(resources: Array<AlertResource>) {
   let formatter = timeAgoFormatter
   let alertElements: Array<JSX.Element> = []
