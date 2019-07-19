@@ -28,6 +28,7 @@ type HudState = {
   Message: string
   View: {
     Resources: Array<Resource>
+    AlertResources: Array<AlertResource>
     Log: string
     LogTimestamps: boolean
     SailEnabled: boolean
@@ -66,6 +67,7 @@ class HUD extends Component<HudProps, HudState> {
       Message: "",
       View: {
         Resources: [],
+        AlertResources: [],
         Log: "",
         LogTimestamps: false,
         SailEnabled: false,
@@ -131,6 +133,14 @@ class HUD extends Component<HudProps, HudState> {
     return this.pathBuilder.path(relPath)
   }
 
+  getResourcesWithAlerts(state: HudState){
+    if (!state.View) {
+      return []
+    }
+    let alertResources = state.View.Resources.map(r => new AlertResource(r))
+    let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
+    return resourcesWithAlerts
+  }
   render() {
     let view = this.state.View
     let sailEnabled = view && view.SailEnabled ? view.SailEnabled : false
@@ -168,6 +178,7 @@ class HUD extends Component<HudProps, HudState> {
           ? props.match.params.name
           : ""
       let numAlerts = 0
+      let resourcesWithAlerts = this.getResourcesWithAlerts(this.state)
       if (name !== "") {
         let selectedResource = resources.find(r => r.Name === name)
         if (selectedResource === undefined) {
@@ -279,13 +290,15 @@ class HUD extends Component<HudProps, HudState> {
       }
       return <AlertPane resources={[]} />
     }
-    let alertResources = resources.map(r => new AlertResource(r))
-    let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
+    // let alertResources = resources.map(r => new AlertResource(r))
+    // let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
     
     let runningVersion = view && view.RunningTiltBuild
     let latestVersion = view && view.LatestTiltBuild
 
-    console.log("current resource with alert " + alertResources[1].alertsArray[1].timestamp)
+    let alertResources = this.getResourcesWithAlerts(this.state)
+
+   console.log("current resource with alert " + alertResources[0].alertsArray[1].msg)
     return (
       <div className="HUD">
         <AnalyticsNudge needsNudge={needsNudge} />
@@ -358,7 +371,7 @@ class HUD extends Component<HudProps, HudState> {
           <Route
             exact
             path={this.path("/alerts")}
-            render={() => <AlertPane resources={alertResources} />}
+            render={() => <AlertPane resources={this.getResourcesWithAlerts(this.state)} />}
           />
           <Route exact path={this.path("/preview")} render={previewRoute} />
           <Route exact path={this.path("/r/:name")} render={logsRoute} />
