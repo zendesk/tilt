@@ -15,10 +15,11 @@ import { incr, pathToTag } from "./analytics"
 import TopBar from "./TopBar"
 import "./HUD.scss"
 import { TiltBuild, ResourceView, Resource } from "./types"
-import AlertPane, { AlertResource } from "./AlertPane"
+import AlertPane, {Alert, AlertResource} from "./AlertPane"
 import PreviewList from "./PreviewList"
 import AnalyticsNudge from "./AnalyticsNudge"
 import NotFound from "./NotFound"
+import update from 'immutability-helper'
 
 type HudProps = {
   history: History
@@ -28,7 +29,6 @@ type HudState = {
   Message: string
   View: {
     Resources: Array<Resource>
-    AlertResources: Array<AlertResource>
     Log: string
     LogTimestamps: boolean
     SailEnabled: boolean
@@ -67,7 +67,6 @@ class HUD extends Component<HudProps, HudState> {
       Message: "",
       View: {
         Resources: [],
-        AlertResources: [],
         Log: "",
         LogTimestamps: false,
         SailEnabled: false,
@@ -108,7 +107,18 @@ class HUD extends Component<HudProps, HudState> {
     this.unlisten()
   }
 
- 
+
+
+  componentDidUpdate(prevProps: Readonly<HudProps>, prevState: Readonly<HudState>, snapshot?: any): void {
+    let alertResources = this.getResourcesWithAlerts(this.state) // adds duplicates
+    let alerts: Array<Alert> = []
+    alertResources.forEach(r =>
+         r.alertsArray.forEach(alert =>
+          alerts.push(alert)
+         )
+    )
+  }
+
   setAppState(state: HudState) {
     this.setState(state)
   }
@@ -139,6 +149,7 @@ class HUD extends Component<HudProps, HudState> {
     }
     let alertResources = state.View.Resources.map(r => new AlertResource(r))
     let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
+    console.log("resourceWithAlerts length:" + resourcesWithAlerts.length.toString())
     return resourcesWithAlerts
   }
   render() {
@@ -290,15 +301,13 @@ class HUD extends Component<HudProps, HudState> {
       }
       return <AlertPane resources={[]} />
     }
-    // let alertResources = resources.map(r => new AlertResource(r))
-    // let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
-    
+
     let runningVersion = view && view.RunningTiltBuild
     let latestVersion = view && view.LatestTiltBuild
 
     let alertResources = this.getResourcesWithAlerts(this.state)
 
-   console.log("current resource with alert " + alertResources[0].alertsArray[1].msg)
+
     return (
       <div className="HUD">
         <AnalyticsNudge needsNudge={needsNudge} />
@@ -371,7 +380,7 @@ class HUD extends Component<HudProps, HudState> {
           <Route
             exact
             path={this.path("/alerts")}
-            render={() => <AlertPane resources={this.getResourcesWithAlerts(this.state)} />}
+            render={() => <AlertPane resources={alertResources} />}
           />
           <Route exact path={this.path("/preview")} render={previewRoute} />
           <Route exact path={this.path("/r/:name")} render={logsRoute} />
