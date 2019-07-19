@@ -9,6 +9,7 @@ import { timeAgoFormatter } from "./timeFormatters"
 import { podStatusIsCrash, podStatusIsError } from "./constants"
 
 export type Alert = {
+  //team variable will be established when alert is given to a service to populate in the server 
   alertType: string
   msg: string;
   timestamp: string;
@@ -114,7 +115,8 @@ public crashRebuild() {
   }
 
   public numberOfAlerts(): number {
-    return alertElements([this]).length
+    return this.alertsArray.length
+    //return alertElements([this]).length
   }
 
   public warnings(): Array<string> {

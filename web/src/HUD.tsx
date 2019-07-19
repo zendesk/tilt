@@ -50,7 +50,7 @@ class HUD extends Component<HudProps, HudState> {
 
   constructor(props: HudProps) {
     super(props)
-
+    
     this.pathBuilder = new PathBuilder(
       window.location.host,
       window.location.pathname
@@ -86,6 +86,7 @@ class HUD extends Component<HudProps, HudState> {
     }
 
     this.toggleSidebar = this.toggleSidebar.bind(this)
+    
   }
 
   componentWillMount() {
@@ -105,6 +106,7 @@ class HUD extends Component<HudProps, HudState> {
     this.unlisten()
   }
 
+ 
   setAppState(state: HudState) {
     this.setState(state)
   }
@@ -143,7 +145,9 @@ class HUD extends Component<HudProps, HudState> {
     let toggleSidebar = this.toggleSidebar
     let statusItems = resources.map(res => new StatusItem(res))
     let sidebarItems = resources.map(res => new SidebarItem(res))
-
+    
+    
+    
     let sidebarRoute = (t: ResourceView, props: RouteComponentProps<any>) => {
       let name = props.match.params.name
       return (
@@ -277,10 +281,11 @@ class HUD extends Component<HudProps, HudState> {
     }
     let alertResources = resources.map(r => new AlertResource(r))
     let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
-
+    
     let runningVersion = view && view.RunningTiltBuild
     let latestVersion = view && view.LatestTiltBuild
 
+    console.log("current resource with alert " + alertResources[1].alertsArray[1].timestamp)
     return (
       <div className="HUD">
         <AnalyticsNudge needsNudge={needsNudge} />
@@ -375,6 +380,7 @@ class HUD extends Component<HudProps, HudState> {
           <Route component={NoMatch} />
         </Switch>
       </div>
+     
     )
   }
 }
