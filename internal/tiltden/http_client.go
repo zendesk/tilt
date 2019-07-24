@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -33,7 +34,16 @@ func (c *HTTPClient) Ping(ctx context.Context, token Token, team string) (Respon
 	vals := url.Values{
 		"data": []string{string(bs)},
 	}
-	resp, err := cl.PostForm("https://dbentley.ngrok.io/ping", vals)
+	urlString := os.Getenv("TILTDEN_URL")
+	if urlString == "" {
+		urlString = "http://localhost:2112"
+	}
+	u, err := url.Parse(urlString)
+	if err != nil {
+		return empty, err
+	}
+	u.Path = "/ping"
+	resp, err := cl.PostForm(u.String(), vals)
 	if err != nil {
 		return empty, err
 	}

@@ -147,8 +147,9 @@ type View struct {
 }
 
 type TiltDenStatus struct {
-	Msg string
-	Err string
+	Msg   string
+	Err   string
+	Token string
 }
 
 func (v View) Resource(n model.ManifestName) (Resource, bool) {

@@ -76,4 +76,5 @@ export type Resource = {
 export type TiltDenStatus = {
   Msg?: string
   Err?: string
+  Token?: string
 }

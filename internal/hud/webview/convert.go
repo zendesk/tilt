@@ -102,7 +102,8 @@ func StateToWebView(s store.EngineState) View {
 	ret.LatestTiltBuild = s.LatestTiltBuild
 
 	tds := TiltDenStatus{
-		Msg: s.TiltDen.Resp.Message,
+		Msg:   s.TiltDen.Resp.Message,
+		Token: s.TiltDen.Token.UUID.String(),
 	}
 	if s.TiltDen.RespErr != nil {
 		tds.Err = s.TiltDen.RespErr.Error()

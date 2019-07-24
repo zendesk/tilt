@@ -41,7 +41,7 @@ class SailInfo extends PureComponent<SailProps> {
     }
 
     if (this.props.tiltDen) {
-      return <span className="sail-url">Hi! {this.props.tiltDen.Msg} {this.props.tiltDen.Err}</span>
+      return <span className="sail-url">Hi! {this.props.tiltDen.Msg} {this.props.tiltDen.Err} <a target="_blank" href={"https://dbentley.ngrok.io/register_token?token=" + this.props.tiltDen.Token}>register </a></span>
     }
 
     return <span className="sail-url">no tilt den</span>
