@@ -769,7 +769,7 @@ func TestLiveUpdateWithRunFailureReturnsContainerIDs(t *testing.T) {
 	defer f.TearDown()
 
 	// LiveUpdate will failure with a RunStepFailure
-	f.docker.SetExecError(userFailureErr)
+	f.docker.SetExecError(userFailureErrDocker)
 
 	manifest := NewSanchoLiveUpdateManifest(f)
 	targets := buildTargets(manifest)
