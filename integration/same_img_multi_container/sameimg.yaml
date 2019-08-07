@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sameimg
-  namespace: tilt-integration
+  # namespace: tilt-integration
   labels:
     app: sameimg
 spec:
