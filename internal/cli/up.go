@@ -11,11 +11,11 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-	"k8s.io/klog"
+
+	"github.com/windmilleng/tilt/internal/engine"
 
 	"github.com/windmilleng/tilt/internal/analytics"
 	"github.com/windmilleng/tilt/internal/build"
-	"github.com/windmilleng/tilt/internal/engine"
 	"github.com/windmilleng/tilt/internal/hud"
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/logger"
@@ -33,6 +33,7 @@ var updateModeFlag string = string(engine.UpdateModeAuto)
 var webModeFlag model.WebMode = model.DefaultWebMode
 var webPort = 0
 var webDevPort = 0
+var noBrowser bool = false
 var logActionsFlag bool = false
 var sailEnabled bool = false
 var sailModeFlag model.SailMode = model.SailModeProd
@@ -65,6 +66,8 @@ func (c *upCmd) register() *cobra.Command {
 	cmd.Flags().Var(&sailModeFlag, "share-mode", "Sets the server that we're sharing to. Values: none, default, local, prod, staging")
 	cmd.Flags().Lookup("logactions").Hidden = true
 	cmd.Flags().StringVar(&c.fileName, "file", tiltfile.FileName, "Path to Tiltfile")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "If true, web UI will not open on startup.")
+
 	err := cmd.Flags().MarkHidden("image-tag-prefix")
 	if err != nil {
 		panic(err)
@@ -156,7 +159,6 @@ func (c *upCmd) run(ctx context.Context, args []string) error {
 func redirectLogs(ctx context.Context, l logger.Logger) context.Context {
 	ctx = logger.WithLogger(ctx, l)
 	log.SetOutput(l.Writer(logger.InfoLvl))
-	klog.SetOutput(l.Writer(logger.InfoLvl))
 	return ctx
 }
 
@@ -211,6 +213,9 @@ func provideWebPort() model.WebPort {
 	return model.WebPort(webPort)
 }
 
+func provideNoBrowserFlag() model.NoBrowser {
+	return model.NoBrowser(noBrowser)
+}
 func provideWebDevPort() model.WebDevPort {
 	return model.WebDevPort(webDevPort)
 }

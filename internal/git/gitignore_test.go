@@ -68,11 +68,7 @@ func (tf *testFixture) UseSingleRepoTester() {
 }
 
 func (tf *testFixture) UseSingleRepoTesterWithPath(path string) {
-	tester, err := git.NewRepoIgnoreTester(tf.ctx, path)
-	if err != nil {
-		tf.t.Fatal(err)
-	}
-	tf.tester = tester
+	tf.tester = git.NewRepoIgnoreTester(tf.ctx, path)
 }
 
 func (tf *testFixture) JoinPath(repoNum int, path ...string) string {
@@ -81,7 +77,7 @@ func (tf *testFixture) JoinPath(repoNum int, path ...string) string {
 
 func (tf *testFixture) AssertResult(description, path string, expectedMatches bool, expectError bool) {
 	tf.t.Run(description, func(t *testing.T) {
-		isIgnored, err := tf.tester.Matches(path, false)
+		isIgnored, err := tf.tester.Matches(path)
 		if expectError {
 			assert.Error(t, err)
 		} else {

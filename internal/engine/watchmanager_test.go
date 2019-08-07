@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/windmilleng/tilt/internal/testutils"
+
 	"github.com/windmilleng/tilt/internal/model"
-	"github.com/windmilleng/tilt/internal/ospath"
 	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/testutils/output"
 	"github.com/windmilleng/tilt/internal/testutils/tempdir"
 	"github.com/windmilleng/tilt/internal/watch"
 )
@@ -30,8 +30,7 @@ func TestWatchManager_IgnoredLocalDirectories(t *testing.T) {
 	f.ChangeFile(t, "bar/baz")
 
 	actions := f.Stop(t)
-
-	assert.NotContains(t, targetFilesChangedActionsToPaths(actions), "bar/baz")
+	f.AssertActionsNotContain(actions, "bar/baz")
 }
 
 func TestWatchManager_Dockerignore(t *testing.T) {
@@ -47,7 +46,7 @@ func TestWatchManager_Dockerignore(t *testing.T) {
 
 	actions := f.Stop(t)
 
-	assert.NotContains(t, targetFilesChangedActionsToPaths(actions), "bar/baz")
+	f.AssertActionsNotContain(actions, "bar/baz")
 }
 
 func TestWatchManager_WatchesReappliedOnDockerComposeSyncChange(t *testing.T) {
@@ -65,7 +64,7 @@ func TestWatchManager_WatchesReappliedOnDockerComposeSyncChange(t *testing.T) {
 
 	// not asserting exact contents because we can end up with duplicates since the old watch loop isn't stopped
 	// until after the new watch loop is started
-	assert.Contains(t, targetFilesChangedActionsToPaths(actions), "bar")
+	f.AssertActionsContain(actions, "bar")
 }
 
 func TestWatchManager_WatchesReappliedOnDockerIgnoreChange(t *testing.T) {
@@ -83,7 +82,7 @@ func TestWatchManager_WatchesReappliedOnDockerIgnoreChange(t *testing.T) {
 
 	// not asserting exact contents because we can end up with duplicates since the old watch loop isn't stopped
 	// until after the new watch loop is started
-	assert.Contains(t, targetFilesChangedActionsToPaths(actions), "bar")
+	f.AssertActionsContain(actions, "bar")
 }
 
 func TestWatchManager_IgnoreTiltIgnore(t *testing.T) {
@@ -99,7 +98,7 @@ func TestWatchManager_IgnoreTiltIgnore(t *testing.T) {
 
 	actions := f.Stop(t)
 
-	assert.NotContains(t, targetFilesChangedActionsToPaths(actions), "bar/foo")
+	f.AssertActionsNotContain(actions, "bar/foo")
 }
 
 func TestWatchManager_PickUpTiltIgnoreChanges(t *testing.T) {
@@ -115,10 +114,8 @@ func TestWatchManager_PickUpTiltIgnoreChanges(t *testing.T) {
 	f.ChangeFile(t, "bar/baz/foo")
 
 	actions := f.Stop(t)
-
-	observedPaths := targetFilesChangedActionsToPaths(actions)
-	assert.NotContains(t, observedPaths, "bar/foo")
-	assert.Contains(t, observedPaths, "bar/baz/foo")
+	f.AssertActionsNotContain(actions, "bar/foo")
+	f.AssertActionsContain(actions, "bar/baz/foo")
 }
 
 type wmFixture struct {
@@ -138,7 +135,9 @@ func newWMFixture(t *testing.T) *wmFixture {
 	fakeMultiWatcher := newFakeMultiWatcher()
 	wm := NewWatchManager(fakeMultiWatcher.newSub, timerMaker.maker())
 
-	ctx, cancel := context.WithCancel(output.CtxForTest())
+	ctx, _, _ := testutils.CtxAndAnalyticsForTest()
+	ctx, cancel := context.WithCancel(ctx)
+
 	go func() {
 		err := st.Loop(ctx)
 		if err != nil && err != context.Canceled {
@@ -170,22 +169,29 @@ func (f *wmFixture) TearDown() {
 }
 
 func (f *wmFixture) ChangeFile(t *testing.T, path string) {
+	path, _ = filepath.Abs(path)
+
 	select {
-	case f.fakeMultiWatcher.events <- watch.FileEvent{Path: path}:
+	case f.fakeMultiWatcher.events <- watch.NewFileEvent(path):
 	default:
 		t.Fatal("emitting a FileEvent would block. Perhaps there are too many events or the buffer size is too small.")
 	}
 }
 
-func (f *wmFixture) ReadActionsUntil(lastFile string) ([]targetFilesChangedAction, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, errors.Wrap(err, "error getting wd")
-	}
-	if relPath, ok := ospath.Child(wd, lastFile); ok {
-		lastFile = relPath
-	}
+func (f *wmFixture) AssertActionsContain(actions []targetFilesChangedAction, path string) {
+	path, _ = filepath.Abs(path)
+	observedPaths := targetFilesChangedActionsToPaths(actions)
+	assert.Contains(f.T(), observedPaths, path)
+}
 
+func (f *wmFixture) AssertActionsNotContain(actions []targetFilesChangedAction, path string) {
+	path, _ = filepath.Abs(path)
+	observedPaths := targetFilesChangedActionsToPaths(actions)
+	assert.NotContains(f.T(), observedPaths, path)
+}
+
+func (f *wmFixture) ReadActionsUntil(lastFile string) ([]targetFilesChangedAction, error) {
+	lastFile, _ = filepath.Abs(lastFile)
 	startTime := time.Now()
 	timeout := time.Second
 	var actions []targetFilesChangedAction
@@ -198,11 +204,7 @@ func (f *wmFixture) ReadActionsUntil(lastFile string) ([]targetFilesChangedActio
 			}
 			// 1. unpack to one file per action, for deterministic inspection
 			// 2. make paths relative to cwd
-			for _, absPath := range tfca.files {
-				p := absPath
-				if relPath, ok := ospath.Child(wd, absPath); ok {
-					p = relPath
-				}
+			for _, p := range tfca.files {
 				actions = append(actions, newTargetFilesChangedAction(tfca.targetID, p))
 				if p == lastFile {
 					return actions, nil

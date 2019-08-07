@@ -50,38 +50,19 @@ func (m *PodLogManager) diff(ctx context.Context, st store.RStore) (setup []PodL
 	stateWatches := make(map[podLogKey]bool)
 	for _, ms := range state.ManifestStates() {
 		for _, pod := range ms.PodSet.PodList() {
-			if pod.PodID == "" {
+			if !m.shouldWatchPodLogs(pod) {
 				continue
 			}
 
-			if pod.ContainerName == "" || pod.ContainerID == "" {
-				continue
-			}
-
-			// Only try to fetch logs if pod is in a state that can handle it;
-			// otherwise, it may reject our connection.
-			if !(pod.Phase == v1.PodRunning || pod.Phase == v1.PodSucceeded ||
-				pod.Phase == v1.PodFailed) {
-				continue
-			}
-
-			// NOTE(maia): setting up logWatchers using both containerInfos and pod.ContainerName etc.
-			// is a temporary hack. Put this in for backwards compatibility.
-			containerInfos := pod.ContainerInfos
-			if len(containerInfos) == 0 {
-				containerInfos = []store.ContainerInfo{
-					store.ContainerInfo{ID: pod.ContainerID, Name: pod.ContainerName},
-				}
-			}
 			// if pod has more than one container, we should prefix logs with the container name
-			shouldPrefix := len(containerInfos) > 1
+			shouldPrefix := len(pod.Containers) > 1
 
-			for _, cInfo := range containerInfos {
+			for _, c := range pod.Containers {
 				// Key the log watcher by the container id, so we auto-restart the
 				// watching if the container crashes.
 				key := podLogKey{
 					podID: pod.PodID,
-					cID:   cInfo.ID,
+					cID:   c.ID,
 				}
 				stateWatches[key] = true
 
@@ -106,7 +87,7 @@ func (m *PodLogManager) diff(ctx context.Context, st store.RStore) (setup []PodL
 					cancel:          cancel,
 					name:            ms.Name,
 					podID:           pod.PodID,
-					cName:           cInfo.Name,
+					cName:           c.Name,
 					namespace:       pod.Namespace,
 					startWatchTime:  startWatchTime,
 					terminationTime: make(chan time.Time, 1),
@@ -127,6 +108,31 @@ func (m *PodLogManager) diff(ctx context.Context, st store.RStore) (setup []PodL
 	}
 
 	return setup, teardown
+}
+
+func (m *PodLogManager) shouldWatchPodLogs(pod store.Pod) bool {
+	if pod.PodID == "" || len(pod.Containers) == 0 {
+		return false
+	}
+
+	// If an ID or name for the containers hasn't been created yet, weird things
+	// will happen when we try to store them in the `m.watches` map.  This should
+	// only happen if the pod is still in a weird creating state. It shouldn't
+	// happen when user code is running.
+	for _, container := range pod.Containers {
+		if container.Name == "" || container.ID == "" {
+			return false
+		}
+	}
+
+	// Only try to fetch logs if pod is in a state that can handle it;
+	// otherwise, it may reject our connection.
+	if !(pod.Phase == v1.PodRunning || pod.Phase == v1.PodSucceeded ||
+		pod.Phase == v1.PodFailed) {
+		return false
+	}
+
+	return true
 }
 
 func (m *PodLogManager) OnChange(ctx context.Context, st store.RStore) {

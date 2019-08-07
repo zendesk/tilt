@@ -33,7 +33,8 @@ type TiltfileLoadResult struct {
 	ConfigFiles        []string
 	Warnings           []string
 	TiltIgnoreContents string
-	NewFeatureFlags    map[string]bool
+	FeatureFlags       map[string]bool
+	TeamName           string
 }
 
 func (r TiltfileLoadResult) Orchestrator() model.Orchestrator {
@@ -52,10 +53,8 @@ type TiltfileLoader interface {
 }
 
 type FakeTiltfileLoader struct {
-	Manifests   []model.Manifest
-	ConfigFiles []string
-	Warnings    []string
-	Err         error
+	Result TiltfileLoadResult
+	Err    error
 }
 
 var _ TiltfileLoader = &FakeTiltfileLoader{}
@@ -65,11 +64,7 @@ func NewFakeTiltfileLoader() *FakeTiltfileLoader {
 }
 
 func (tfl *FakeTiltfileLoader) Load(ctx context.Context, filename string, matching map[string]bool) (TiltfileLoadResult, error) {
-	return TiltfileLoadResult{
-		Manifests:   tfl.Manifests,
-		ConfigFiles: tfl.ConfigFiles,
-		Warnings:    tfl.Warnings,
-	}, tfl.Err
+	return tfl.Result, tfl.Err
 }
 
 func ProvideTiltfileLoader(
@@ -77,13 +72,13 @@ func ProvideTiltfileLoader(
 	kCli k8s.Client,
 	dcCli dockercompose.DockerComposeClient,
 	kubeContext k8s.KubeContext,
-	f feature.Feature) TiltfileLoader {
+	fDefaults feature.Defaults) TiltfileLoader {
 	return tiltfileLoader{
 		analytics:   analytics,
 		kCli:        kCli,
 		dcCli:       dcCli,
 		kubeContext: kubeContext,
-		f:           f,
+		fDefaults:   fDefaults,
 	}
 }
 
@@ -92,7 +87,7 @@ type tiltfileLoader struct {
 	kCli        k8s.Client
 	dcCli       dockercompose.DockerComposeClient
 	kubeContext k8s.KubeContext
-	f           feature.Feature
+	fDefaults   feature.Defaults
 }
 
 var _ TiltfileLoader = &tiltfileLoader{}
@@ -115,7 +110,7 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, matching ma
 	}
 
 	privateRegistry := tfl.kCli.PrivateRegistry(ctx)
-	s := newTiltfileState(ctx, tfl.dcCli, absFilename, tfl.kubeContext, privateRegistry, tfl.f)
+	s := newTiltfileState(ctx, tfl.dcCli, tfl.kubeContext, privateRegistry, feature.FromDefaults(tfl.fDefaults))
 	printedWarnings := false
 	defer func() {
 		tlr.ConfigFiles = s.configFiles
@@ -126,7 +121,8 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, matching ma
 	}()
 
 	s.logger.Infof("Beginning Tiltfile execution")
-	if err := s.exec(); err != nil {
+	_, err = s.exec(absFilename)
+	if err != nil {
 		if err, ok := err.(*starlark.EvalError); ok {
 			return TiltfileLoadResult{}, errors.New(err.Backtrace())
 		}
@@ -177,19 +173,25 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, matching ma
 	printedWarnings = true
 
 	s.logger.Infof("Successfully loaded Tiltfile")
-	newFeature := s.f.GetAllFlags()
 
 	tfl.reportTiltfileLoaded(s.builtinCallCounts)
 
-	tiltIgnoreContents, err := s.readFile(s.localPathFromString(tiltIgnorePath(filename)))
+	tiltIgnoreContents, err := s.readFile(tiltIgnorePath(absFilename))
 	// missing tiltignore is fine
 	if os.IsNotExist(err) {
 		err = nil
 	} else if err != nil {
-		return TiltfileLoadResult{}, errors.Wrapf(err, "error reading %s", tiltIgnorePath(filename))
+		return TiltfileLoadResult{}, errors.Wrapf(err, "error reading %s", tiltIgnorePath(absFilename))
 	}
 
-	return TiltfileLoadResult{manifests, s.configFiles, s.warnings, string(tiltIgnoreContents), newFeature}, err
+	return TiltfileLoadResult{
+		Manifests:          manifests,
+		ConfigFiles:        s.configFiles,
+		Warnings:           s.warnings,
+		TiltIgnoreContents: string(tiltIgnoreContents),
+		FeatureFlags:       s.features.ToEnabled(),
+		TeamName:           s.teamName,
+	}, err
 }
 
 // .tiltignore sits next to Tiltfile

@@ -31,13 +31,13 @@ type resourceSet struct {
 type tiltfileState struct {
 	// set at creation
 	ctx             context.Context
-	filename        localPath
 	dcCli           dockercompose.DockerComposeClient
 	kubeContext     k8s.KubeContext
 	privateRegistry container.Registry
-	f               feature.Feature
+	features        feature.FeatureSet
 
 	// added to during execution
+	loadCache          map[string]loadCacheEntry
 	configFiles        []string
 	buildIndex         *buildIndex
 	k8s                []*k8sResource
@@ -79,6 +79,8 @@ type tiltfileState struct {
 	// for error reporting in case it's called twice
 	triggerModeCallPosition syntax.Position
 
+	teamName string
+
 	logger   logger.Logger
 	warnings []string
 }
@@ -92,18 +94,16 @@ const (
 	k8sResourceAssemblyVersionReasonExplicit
 )
 
-func newTiltfileState(ctx context.Context, dcCli dockercompose.DockerComposeClient, filename string, kubeContext k8s.KubeContext, privateRegistry container.Registry, f feature.Feature) *tiltfileState {
-	lp := localPath{path: filename}
-	s := &tiltfileState{
+func newTiltfileState(ctx context.Context, dcCli dockercompose.DockerComposeClient, kubeContext k8s.KubeContext, privateRegistry container.Registry, features feature.FeatureSet) *tiltfileState {
+	return &tiltfileState{
 		ctx:                        ctx,
-		filename:                   localPath{path: filename},
 		dcCli:                      dcCli,
 		kubeContext:                kubeContext,
 		privateRegistry:            privateRegistry,
 		buildIndex:                 newBuildIndex(),
 		k8sByName:                  make(map[string]*k8sResource),
 		k8sImageJSONPaths:          make(map[k8sObjectSelector][]k8s.JSONPath),
-		configFiles:                []string{filename, tiltIgnorePath(filename)},
+		configFiles:                []string{},
 		usedImages:                 make(map[string]bool),
 		logger:                     logger.Get(ctx),
 		builtinCallCounts:          make(map[string]int),
@@ -111,23 +111,35 @@ func newTiltfileState(ctx context.Context, dcCli dockercompose.DockerComposeClie
 		k8sResourceAssemblyVersion: 2,
 		k8sResourceOptions:         make(map[string]k8sResourceOptions),
 		triggerMode:                TriggerModeAuto,
-		f:                          f,
+		features:                   features,
+		loadCache:                  make(map[string]loadCacheEntry),
 	}
-	s.filename = s.maybeAttachGitRepo(lp, filepath.Dir(lp.path))
-	return s
+}
+
+// Path to the Tiltfile at the bottom of the call stack.
+func (s *tiltfileState) currentTiltfilePath(t *starlark.Thread) string {
+	depth := t.CallStackDepth()
+	if depth == 0 {
+		panic("internal error: currentTiltfilePath must be called from an active starlark thread")
+	}
+	return t.CallFrame(depth - 1).Pos.Filename()
+}
+
+// print() for fulfilling the starlark thread callback
+func (s *tiltfileState) print(_ *starlark.Thread, msg string) {
+	s.logger.Infof("%s", msg)
+}
+
+// load() for fulfilling the starlark thread callback
+func (s *tiltfileState) load(thread *starlark.Thread, f string) (starlark.StringDict, error) {
+	return s.exec(s.absPath(thread, f))
 }
 
 func (s *tiltfileState) starlarkThread() *starlark.Thread {
 	return &starlark.Thread{
-		Print: func(_ *starlark.Thread, msg string) {
-			s.logger.Infof("%s", msg)
-		},
+		Print: s.print,
+		Load:  s.load,
 	}
-}
-
-func (s *tiltfileState) exec() error {
-	_, err := starlark.ExecFile(s.starlarkThread(), s.filename.path, nil, s.predeclared())
-	return err
 }
 
 // Builtin functions
@@ -165,6 +177,7 @@ const (
 	decodeJSONN   = "decode_json"
 	readJSONN     = "read_json"
 	readYAMLN     = "read_yaml"
+	includeN      = "include"
 
 	// live update functions
 	fallBackOnN       = "fall_back_on"
@@ -182,8 +195,9 @@ const (
 	disableFeatureN = "disable_feature"
 
 	// other functions
-	failN = "fail"
-	blobN = "blob"
+	failN    = "fail"
+	blobN    = "blob"
+	setTeamN = "set_team"
 )
 
 type triggerMode int
@@ -289,6 +303,7 @@ func (s *tiltfileState) predeclared() starlark.StringDict {
 	addBuiltin(r, decodeJSONN, s.decodeJSON)
 	addBuiltin(r, readJSONN, s.readJson)
 	addBuiltin(r, readYAMLN, s.readYaml)
+	addBuiltin(r, includeN, s.include)
 
 	addBuiltin(r, triggerModeN, s.triggerModeFn)
 	r[triggerModeAutoN] = TriggerModeAuto
@@ -301,6 +316,8 @@ func (s *tiltfileState) predeclared() starlark.StringDict {
 
 	addBuiltin(r, enableFeatureN, s.enableFeature)
 	addBuiltin(r, disableFeatureN, s.disableFeature)
+
+	addBuiltin(r, setTeamN, s.setTeam)
 
 	s.predeclaredMap = r
 
@@ -538,7 +555,7 @@ func (s *tiltfileState) isWorkload(e k8s.K8sEntity) (bool, error) {
 
 	images, err := e.FindImages(s.imageJSONPaths(e), s.envVarImages())
 	if err != nil {
-		return false, err
+		return false, errors.Wrapf(err, "finding images in %s", e.Name())
 	} else {
 		return len(images) > 0, nil
 	}
@@ -779,9 +796,11 @@ func (s *tiltfileState) translateK8s(resources []*k8sResource) ([]model.Manifest
 
 		m = m.WithImageTargets(iTargets)
 
-		err = s.checkForImpossibleLiveUpdates(m)
-		if err != nil {
-			return nil, err
+		if !s.features.Get(feature.MultipleContainersPerPod) {
+			err = s.checkForImpossibleLiveUpdates(m)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		result = append(result, m)
@@ -795,8 +814,8 @@ func (s *tiltfileState) translateK8s(resources []*k8sResource) ([]model.Manifest
 //
 // Currently, we only collect container information for the first Tilt-built container
 // on the pod (b/c of how we assemble resources, this corresponds to the first image target).
-// We won't collect container info (including DeployInfo) on any subsequent containers
-// (i.e. subsequent image targets), so will never be able to LiveUpdate them.
+// We won't collect container info on any subsequent containers (i.e. subsequent image
+// targets), so will never be able to LiveUpdate them.
 func (s *tiltfileState) checkForImpossibleLiveUpdates(m model.Manifest) error {
 	seenDeployedImage := false
 
@@ -875,10 +894,12 @@ func (s *tiltfileState) validateLiveUpdate(iTarget model.ImageTarget, g model.Ta
 	}
 
 	for _, path := range lu.FallBackOnFiles().Paths {
-		absPath := s.absPath(path)
-		if !ospath.IsChildOfOne(watchedPaths, absPath) {
+		if !filepath.IsAbs(path) {
+			return fmt.Errorf("internal error: path not resolved correctly! Please report to https://github.com/windmilleng/tilt/issues : %s", path)
+		}
+		if !ospath.IsChildOfOne(watchedPaths, path) {
 			return fmt.Errorf("fall_back_on paths '%s' is not a child of any watched filepaths (%v)",
-				absPath, watchedPaths)
+				path, watchedPaths)
 		}
 
 	}
@@ -916,13 +937,17 @@ func (s *tiltfileState) imgTargetsForDependencyIDsHelper(ids []model.TargetID, c
 			MatchInEnvVars:   image.matchInEnvVars,
 		}.WithCachePaths(image.cachePaths)
 
+		if !image.entrypoint.Empty() {
+			iTarget = iTarget.WithOverrideCommand(image.entrypoint)
+		}
+
 		lu := image.liveUpdate
 
 		switch image.Type() {
 		case DockerBuild:
 			iTarget = iTarget.WithBuildDetails(model.DockerBuild{
 				Dockerfile: image.dbDockerfile.String(),
-				BuildPath:  string(image.dbBuildPath.path),
+				BuildPath:  image.dbBuildPath,
 				BuildArgs:  image.dbBuildArgs,
 				FastBuild:  s.fastBuildForImage(image),
 				LiveUpdate: lu,
@@ -953,7 +978,7 @@ func (s *tiltfileState) imgTargetsForDependencyIDsHelper(ids []model.TargetID, c
 		iTarget = iTarget.
 			WithRepos(s.reposForImage(image)).
 			WithDockerignores(s.dockerignoresForImage(image)). // used even for custom build
-			WithTiltFilename(s.filename.path).
+			WithTiltFilename(image.tiltfilePath).
 			WithDependencyIDs(image.dependencyIDs)
 
 		depTargets, err := s.imgTargetsForDependencyIDsHelper(image.dependencyIDs, claimStatus)
@@ -973,7 +998,7 @@ func (s *tiltfileState) translateDC(dc dcResourceSet) ([]model.Manifest, error) 
 	var result []model.Manifest
 
 	for _, svc := range dc.services {
-		m, configFiles, err := s.dcServiceToManifest(svc, dc.configPaths)
+		m, configFiles, err := s.dcServiceToManifest(svc, dc)
 		if err != nil {
 			return nil, err
 		}
@@ -982,6 +1007,13 @@ func (s *tiltfileState) translateDC(dc dcResourceSet) ([]model.Manifest, error) 
 		if err != nil {
 			return nil, errors.Wrapf(err, "getting image build info for %s", svc.Name)
 		}
+
+		for _, iTarg := range iTargets {
+			if !iTarg.OverrideCmd.Empty() {
+				return nil, fmt.Errorf("docker_build/custom_build.entrypoint not supported for Docker Compose resources")
+			}
+		}
+
 		m = m.WithImageTargets(iTargets)
 
 		err = s.checkForImpossibleLiveUpdates(m)
@@ -996,7 +1028,6 @@ func (s *tiltfileState) translateDC(dc dcResourceSet) ([]model.Manifest, error) 
 		s.configFiles = sliceutils.DedupedAndSorted(append(s.configFiles, configFiles...))
 	}
 	if len(dc.configPaths) != 0 {
-
 		s.configFiles = sliceutils.DedupedAndSorted(append(s.configFiles, dc.configPaths...))
 	}
 
@@ -1080,7 +1111,27 @@ func (s *tiltfileState) triggerModeFn(thread *starlark.Thread, fn *starlark.Buil
 	}
 
 	s.triggerMode = triggerMode
-	s.triggerModeCallPosition = thread.Caller().Position()
+	s.triggerModeCallPosition = thread.CallFrame(1).Pos
+
+	return starlark.None, nil
+}
+
+func (s *tiltfileState) setTeam(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var teamName string
+	err := starlark.UnpackArgs(fn.Name(), args, kwargs, "team_name", &teamName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(teamName) == 0 {
+		return nil, errors.New("team_name cannot be empty")
+	}
+
+	if s.teamName != "" {
+		return nil, fmt.Errorf("team_name set multiple times (to '%s' and '%s')", s.teamName, teamName)
+	}
+
+	s.teamName = teamName
 
 	return starlark.None, nil
 }

@@ -12,7 +12,8 @@ func TestLiveUpdateStepNotUsed(t *testing.T) {
 	defer f.TearDown()
 
 	f.WriteFile("Tiltfile", "restart_container()")
-	f.loadErrString("steps that were created but not used in a live_update", "restart_container", "<builtin>:1")
+
+	f.loadErrString("steps that were created but not used in a live_update", "restart_container", "Tiltfile:1")
 }
 
 func TestLiveUpdateRestartContainerNotLast(t *testing.T) {
@@ -304,7 +305,9 @@ func newLiveUpdateFixture(t *testing.T) *liveUpdateFixture {
 	var steps []model.LiveUpdateStep
 
 	steps = append(steps,
-		model.LiveUpdateFallBackOnStep{Files: []string{"foo/i", "foo/j"}},
+		model.LiveUpdateFallBackOnStep{
+			Files: []string{f.JoinPath("foo/i"), f.JoinPath("foo/j")},
+		},
 		model.LiveUpdateSyncStep{Source: f.JoinPath("foo", "b"), Dest: "/c"},
 		model.LiveUpdateRunStep{
 			Command:  model.ToShellCmd("f"),

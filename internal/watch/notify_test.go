@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/windmilleng/tilt/internal/dockerignore"
 	"github.com/windmilleng/tilt/internal/logger"
 	"github.com/windmilleng/tilt/internal/testutils/tempdir"
 )
@@ -27,6 +28,14 @@ func TestNoEvents(t *testing.T) {
 	f.assertEvents()
 }
 
+func TestNoWatches(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
+	f.paths = nil
+	f.rebuildWatcher()
+	f.assertEvents()
+}
+
 func TestEventOrdering(t *testing.T) {
 	f := newNotifyFixture(t)
 	defer f.tearDown()
@@ -36,10 +45,7 @@ func TestEventOrdering(t *testing.T) {
 	for i, _ := range dirs {
 		dir := f.TempDir("watched")
 		dirs[i] = dir
-		err := f.notify.Add(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
+		f.watch(dir)
 	}
 
 	f.fsync()
@@ -71,10 +77,7 @@ func TestGitBranchSwitch(t *testing.T) {
 	for i, _ := range dirs {
 		dir := f.TempDir("watched")
 		dirs[i] = dir
-		err := f.notify.Add(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
+		f.watch(dir)
 	}
 
 	f.fsync()
@@ -129,16 +132,13 @@ func TestWatchesAreRecursive(t *testing.T) {
 	f.MkdirAll(subPath)
 
 	// watch parent
-	err := f.notify.Add(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.watch(root)
 
 	f.fsync()
 	f.events = nil
 	// change sub directory
 	changeFilePath := filepath.Join(subPath, "change")
-	_, err = os.OpenFile(changeFilePath, os.O_RDONLY|os.O_CREATE, 0666)
+	_, err := os.OpenFile(changeFilePath, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,10 +153,7 @@ func TestNewDirectoriesAreRecursivelyWatched(t *testing.T) {
 	root := f.TempDir("root")
 
 	// watch parent
-	err := f.notify.Add(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.watch(root)
 	f.fsync()
 	f.events = nil
 
@@ -166,7 +163,7 @@ func TestNewDirectoriesAreRecursivelyWatched(t *testing.T) {
 
 	// change something inside sub directory
 	changeFilePath := filepath.Join(subPath, "change")
-	_, err = os.OpenFile(changeFilePath, os.O_RDONLY|os.O_CREATE, 0666)
+	_, err := os.OpenFile(changeFilePath, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +177,7 @@ func TestWatchNonExistentPath(t *testing.T) {
 	root := f.TempDir("root")
 	path := filepath.Join(root, "change")
 
-	err := f.notify.Add(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	f.watch(path)
 	f.fsync()
 
 	d1 := "hello\ngo\n"
@@ -200,11 +193,7 @@ func TestWatchNonExistentPathDoesNotFireSiblingEvent(t *testing.T) {
 	watchedFile := filepath.Join(root, "a.txt")
 	unwatchedSibling := filepath.Join(root, "b.txt")
 
-	err := f.notify.Add(watchedFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	f.watch(watchedFile)
 	f.fsync()
 
 	d1 := "hello\ngo\n"
@@ -222,13 +211,10 @@ func TestRemove(t *testing.T) {
 	d1 := "hello\ngo\n"
 	f.WriteFile(path, d1)
 
-	err := f.notify.Add(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.watch(path)
 	f.fsync()
 	f.events = nil
-	err = os.Remove(path)
+	err := os.Remove(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,17 +225,14 @@ func TestRemoveAndAddBack(t *testing.T) {
 	f := newNotifyFixture(t)
 	defer f.tearDown()
 
-	path := filepath.Join(f.watched, "change")
+	path := filepath.Join(f.paths[0], "change")
 
 	d1 := []byte("hello\ngo\n")
 	err := ioutil.WriteFile(path, d1, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = f.notify.Add(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.watch(path)
 	f.assertEvents(path)
 
 	err = os.Remove(path)
@@ -278,14 +261,11 @@ func TestSingleFile(t *testing.T) {
 	d1 := "hello\ngo\n"
 	f.WriteFile(path, d1)
 
-	err := f.notify.Add(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.watch(path)
 	f.fsync()
 
 	d2 := []byte("hello\nworld\n")
-	err = ioutil.WriteFile(path, d2, 0644)
+	err := ioutil.WriteFile(path, d2, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,8 +276,8 @@ func TestWriteBrokenLink(t *testing.T) {
 	f := newNotifyFixture(t)
 	defer f.tearDown()
 
-	link := filepath.Join(f.watched, "brokenLink")
-	missingFile := filepath.Join(f.watched, "missingFile")
+	link := filepath.Join(f.paths[0], "brokenLink")
+	missingFile := filepath.Join(f.paths[0], "missingFile")
 	err := os.Symlink(missingFile, link)
 	if err != nil {
 		t.Fatal(err)
@@ -310,13 +290,13 @@ func TestWriteGoodLink(t *testing.T) {
 	f := newNotifyFixture(t)
 	defer f.tearDown()
 
-	goodFile := filepath.Join(f.watched, "goodFile")
+	goodFile := filepath.Join(f.paths[0], "goodFile")
 	err := ioutil.WriteFile(goodFile, []byte("hello"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	link := filepath.Join(f.watched, "goodFileSymlink")
+	link := filepath.Join(f.paths[0], "goodFileSymlink")
 	err = os.Symlink(goodFile, link)
 	if err != nil {
 		t.Fatal(err)
@@ -342,11 +322,7 @@ func TestWatchBrokenLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = f.notify.Add(newRoot.Path())
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	f.watch(newRoot.Path())
 	os.Remove(link)
 	f.assertEvents(link)
 }
@@ -359,15 +335,11 @@ func TestMoveAndReplace(t *testing.T) {
 	file := filepath.Join(root, "myfile")
 	f.WriteFile(file, "hello")
 
-	err := f.notify.Add(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	f.watch(file)
 	tmpFile := filepath.Join(root, ".myfile.swp")
 	f.WriteFile(tmpFile, "world")
 
-	err = os.Rename(tmpFile, file)
+	err := os.Rename(tmpFile, file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,66 +421,190 @@ func TestWatchNonexistentDirectory(t *testing.T) {
 	}
 }
 
-// doesn't work on linux
-// func TestWatchNonexistentFileInNonexistentDirectory(t *testing.T) {
-// 	f := newNotifyFixture(t)
-// 	defer f.tearDown()
+func TestWatchNonexistentFileInNonexistentDirectory(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
 
-// 	root := f.JoinPath("root")
-// 	err := os.Mkdir(root, 0777)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	parent := f.JoinPath("parent")
-// 	file := f.JoinPath("parent", "a")
+	root := f.JoinPath("root")
+	err := os.Mkdir(root, 0777)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := f.JoinPath("parent")
+	file := f.JoinPath("parent", "a")
 
-// 	f.watch(file)
-// 	f.assertEvents()
+	f.watch(file)
+	f.assertEvents()
 
-// 	err = os.Mkdir(parent, 0777)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+	err = os.Mkdir(parent, 0777)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	f.assertEvents()
-// 	f.WriteFile(file, "hello")
-// 	f.assertEvents(file)
-// }
+	f.assertEvents()
+	f.WriteFile(file, "hello")
+	f.assertEvents(file)
+}
+
+func TestWatchCountInnerFile(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
+
+	root := f.paths[0]
+	a := f.JoinPath(root, "a")
+	b := f.JoinPath(a, "b")
+	file := f.JoinPath(b, "bigFile")
+	f.WriteFile(file, "hello")
+	f.assertEvents(a, b, file)
+
+	expectedWatches := 3
+	if runtime.GOOS == "darwin" {
+		expectedWatches = 1
+	}
+	assert.Equal(t, expectedWatches, int(numberOfWatches.Value()))
+}
+
+func TestWatchCountInnerFileWithIgnore(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
+
+	root := f.paths[0]
+	ignore, _ := dockerignore.NewDockerPatternMatcher(root, []string{
+		"a",
+		"!a/b",
+	})
+	f.setIgnore(ignore)
+
+	a := f.JoinPath(root, "a")
+	b := f.JoinPath(a, "b")
+	file := f.JoinPath(b, "bigFile")
+	f.WriteFile(file, "hello")
+	f.assertEvents(b, file)
+
+	expectedWatches := 3
+	if runtime.GOOS == "darwin" {
+		expectedWatches = 1
+	}
+	assert.Equal(t, expectedWatches, int(numberOfWatches.Value()))
+}
+
+func TestIgnoreCreatedDir(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
+
+	root := f.paths[0]
+	ignore, _ := dockerignore.NewDockerPatternMatcher(root, []string{"a/b"})
+	f.setIgnore(ignore)
+
+	a := f.JoinPath(root, "a")
+	b := f.JoinPath(a, "b")
+	file := f.JoinPath(b, "bigFile")
+	f.WriteFile(file, "hello")
+	f.assertEvents(a)
+
+	expectedWatches := 2
+	if runtime.GOOS == "darwin" {
+		expectedWatches = 1
+	}
+	assert.Equal(t, expectedWatches, int(numberOfWatches.Value()))
+}
+
+func TestIgnoreCreatedDirWithExclusions(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
+
+	root := f.paths[0]
+	ignore, _ := dockerignore.NewDockerPatternMatcher(root,
+		[]string{
+			"a/b",
+			"c",
+			"!c/d",
+		})
+	f.setIgnore(ignore)
+
+	a := f.JoinPath(root, "a")
+	b := f.JoinPath(a, "b")
+	file := f.JoinPath(b, "bigFile")
+	f.WriteFile(file, "hello")
+	f.assertEvents(a)
+
+	expectedWatches := 2
+	if runtime.GOOS == "darwin" {
+		expectedWatches = 1
+	}
+	assert.Equal(t, expectedWatches, int(numberOfWatches.Value()))
+}
+
+func TestIgnoreInitialDir(t *testing.T) {
+	f := newNotifyFixture(t)
+	defer f.tearDown()
+
+	root := f.TempDir("root")
+	ignore, _ := dockerignore.NewDockerPatternMatcher(root, []string{"a/b"})
+	f.setIgnore(ignore)
+
+	a := f.JoinPath(root, "a")
+	b := f.JoinPath(a, "b")
+	file := f.JoinPath(b, "bigFile")
+	f.WriteFile(file, "hello")
+	f.watch(root)
+
+	f.assertEvents()
+
+	expectedWatches := 3
+	if runtime.GOOS == "darwin" {
+		expectedWatches = 2
+	}
+	assert.Equal(t, expectedWatches, int(numberOfWatches.Value()))
+}
 
 type notifyFixture struct {
 	out *bytes.Buffer
 	*tempdir.TempDirFixture
-	notify  Notify
-	watched string
-	events  []FileEvent
+	notify Notify
+	ignore PathMatcher
+	paths  []string
+	events []FileEvent
 }
 
 func newNotifyFixture(t *testing.T) *notifyFixture {
 	out := bytes.NewBuffer(nil)
-	notify, err := NewWatcher(logger.NewLogger(logger.DebugLvl, out))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	f := tempdir.NewTempDirFixture(t)
-	watched := f.TempDir("watched")
-
-	err = notify.Add(watched)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &notifyFixture{
-		TempDirFixture: f,
-		watched:        watched,
-		notify:         notify,
+	nf := &notifyFixture{
+		TempDirFixture: tempdir.NewTempDirFixture(t),
+		paths:          []string{},
+		ignore:         EmptyMatcher{},
 		out:            out,
 	}
+	nf.watch(nf.TempDir("watched"))
+	return nf
+}
+
+func (f *notifyFixture) setIgnore(ignore PathMatcher) {
+	f.ignore = ignore
+	f.rebuildWatcher()
 }
 
 func (f *notifyFixture) watch(path string) {
-	err := f.notify.Add(path)
+	f.paths = append(f.paths, path)
+	f.rebuildWatcher()
+}
+
+func (f *notifyFixture) rebuildWatcher() {
+	// sync any outstanding events and close the old watcher
+	if f.notify != nil {
+		f.fsync()
+		f.closeWatcher()
+	}
+
+	// create a new watcher
+	notify, err := NewWatcher(f.paths, f.ignore, logger.NewLogger(logger.DebugLvl, f.out))
 	if err != nil {
-		f.T().Fatalf("notify.Add: %s", path)
+		f.T().Fatal(err)
+	}
+	f.notify = notify
+	err = f.notify.Start()
+	if err != nil {
+		f.T().Fatal(err)
 	}
 }
 
@@ -547,9 +643,13 @@ func (f *notifyFixture) consumeEventsInBackground(ctx context.Context) chan erro
 }
 
 func (f *notifyFixture) fsync() {
+	if len(f.paths) == 0 {
+		return
+	}
+
 	syncPathBase := fmt.Sprintf("sync-%d.txt", time.Now().UnixNano())
-	syncPath := filepath.Join(f.watched, syncPathBase)
-	anySyncPath := filepath.Join(f.watched, "sync-")
+	syncPath := filepath.Join(f.paths[0], syncPathBase)
+	anySyncPath := filepath.Join(f.paths[0], "sync-")
 	timeout := time.After(time.Second)
 
 	f.WriteFile(syncPath, fmt.Sprintf("%s", time.Now()))
@@ -561,16 +661,16 @@ F:
 			f.T().Fatal(err)
 
 		case event := <-f.notify.Events():
-			if strings.Contains(event.Path, syncPath) {
+			if strings.Contains(event.Path(), syncPath) {
 				break F
 			}
-			if strings.Contains(event.Path, anySyncPath) {
+			if strings.Contains(event.Path(), anySyncPath) {
 				continue
 			}
 
 			// Don't bother tracking duplicate changes to the same path
 			// for testing.
-			if len(f.events) > 0 && f.events[len(f.events)-1].Path == event.Path {
+			if len(f.events) > 0 && f.events[len(f.events)-1].Path() == event.Path() {
 				continue
 			}
 
@@ -582,21 +682,26 @@ F:
 	}
 }
 
-func (f *notifyFixture) tearDown() {
-	err := f.notify.Close()
+func (f *notifyFixture) closeWatcher() {
+	notify := f.notify
+	err := notify.Close()
 	if err != nil {
 		f.T().Fatal(err)
 	}
 
 	// drain channels from watcher
 	go func() {
-		for _ = range f.notify.Events() {
+		for _ = range notify.Events() {
 		}
 	}()
 	go func() {
-		for _ = range f.notify.Errors() {
+		for _ = range notify.Errors() {
 		}
 	}()
+}
 
+func (f *notifyFixture) tearDown() {
+	f.closeWatcher()
 	f.TempDirFixture.TearDown()
+	numberOfWatches.Set(0)
 }

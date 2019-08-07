@@ -3,7 +3,6 @@ package ignore
 import (
 	"context"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 
@@ -12,14 +11,6 @@ import (
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/ospath"
 )
-
-type fileChangeFilter struct {
-	ignoreMatchers model.PathMatcher
-}
-
-func (fcf fileChangeFilter) Matches(f string, isDir bool) (bool, error) {
-	return fcf.ignoreMatchers.Matches(f, isDir)
-}
 
 type repoTarget interface {
 	LocalRepos() []model.LocalGitRepo
@@ -37,10 +28,7 @@ func CreateBuildContextFilter(m repoTarget) model.PathMatcher {
 		}
 	}
 	for _, r := range m.LocalRepos() {
-		gim, err := git.NewRepoIgnoreTester(context.Background(), r.LocalPath)
-		if err == nil {
-			matchers = append(matchers, gim)
-		}
+		matchers = append(matchers, git.NewRepoIgnoreTester(context.Background(), r.LocalPath))
 	}
 	for _, r := range m.Dockerignores() {
 		dim, err := dockerignore.DockerIgnoreTesterFromContents(r.LocalPath, r.Contents)
@@ -64,10 +52,7 @@ type IgnorableTarget interface {
 func CreateFileChangeFilter(m IgnorableTarget) (model.PathMatcher, error) {
 	matchers := []model.PathMatcher{}
 	for _, r := range m.LocalRepos() {
-		gim, err := git.NewRepoIgnoreTester(context.Background(), r.LocalPath)
-		if err == nil {
-			matchers = append(matchers, gim)
-		}
+		matchers = append(matchers, git.NewRepoIgnoreTester(context.Background(), r.LocalPath))
 	}
 	for _, di := range m.Dockerignores() {
 		dim, err := dockerignore.DockerIgnoreTesterFromContents(di.LocalPath, di.Contents)
@@ -83,28 +68,9 @@ func CreateFileChangeFilter(m IgnorableTarget) (model.PathMatcher, error) {
 		matchers = append(matchers, dm)
 	}
 
-	// Filter out spurious changes that we don't want to rebuild on, like IDE
-	// temp/lock files.
-	//
-	// This isn't an ideal solution. In an ideal world, the user would put
-	// everything to ignore in their tiltignore/dockerignore files. This is a
-	// stop-gap so they don't have a terrible experience if those files aren't
-	// there or aren't in the right places.
-	//
-	// https://app.clubhouse.io/windmill/story/691/filter-out-ephemeral-file-changes
-	matchers = append(matchers,
-		// GoLand
-		model.NewGlobMatcher("*___jb_old___", "*___jb_tmp___"),
-		// Emacs
-		tempBrokenSymlinkMatcher{},
-	)
+	matchers = append(matchers, ephemeralPathMatcher)
 
-	ignoreMatcher := model.NewCompositeMatcher(matchers)
-
-	// TODO(maia): this doesn't have to be a composite matcher anymore since removing `configMatcher`?
-	return fileChangeFilter{
-		ignoreMatchers: ignoreMatcher,
-	}, nil
+	return model.NewCompositeMatcher(matchers), nil
 }
 
 func CreateRunMatcher(r model.Run) (model.PathMatcher, error) {
@@ -115,22 +81,6 @@ func CreateRunMatcher(r model.Run) (model.PathMatcher, error) {
 	}
 
 	return dim, nil
-}
-
-// Emacs temp files look like:
-// .#a.txt -> [some garbage]
-type tempBrokenSymlinkMatcher struct{}
-
-func (m tempBrokenSymlinkMatcher) Matches(path string, isDir bool) (bool, error) {
-	if isDir {
-		return false, nil
-	}
-
-	if !strings.HasPrefix(filepath.Base(path), ".") {
-		return false, nil
-	}
-
-	return ospath.IsBrokenSymlink(path)
 }
 
 type directoryMatcher struct {
@@ -147,6 +97,10 @@ func newDirectoryMatcher(dir string) (directoryMatcher, error) {
 	return directoryMatcher{dir}, nil
 }
 
-func (d directoryMatcher) Matches(p string, isDir bool) (bool, error) {
+func (d directoryMatcher) Matches(p string) (bool, error) {
 	return ospath.IsChild(d.dir, p), nil
+}
+
+func (d directoryMatcher) MatchesEntireDir(p string) (bool, error) {
+	return d.Matches(p)
 }

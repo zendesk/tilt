@@ -21,22 +21,26 @@ const fastBuildDeprecationWarning = "FastBuild (`fast_build`; `add_fast_build`; 
 	"information. If Live Update doesn't fit your use case, let us know."
 
 type dockerImage struct {
-	baseDockerfilePath localPath
+	tiltfilePath       string
+	baseDockerfilePath string
 	baseDockerfile     dockerfile.Dockerfile
 	configurationRef   container.RefSelector
 	deploymentRef      reference.Named
-	syncs              []pathSync
-	runs               []model.Run
-	entrypoint         string
 	cachePaths         []string
-	hotReload          bool
 	matchInEnvVars     bool
 	ignores            []string
 	onlys              []string
+	entrypoint         model.Cmd // optional: if specified, we override the image entrypoint/k8s command with this
 
-	dbDockerfilePath localPath
+	// fast-build properties -- will be deprecated
+	syncs        []pathSync
+	runs         []model.Run
+	fbEntrypoint string
+	hotReload    bool
+
+	dbDockerfilePath string
 	dbDockerfile     dockerfile.Dockerfile
-	dbBuildPath      localPath
+	dbBuildPath      string
 	dbBuildArgs      model.DockerBuildArgs
 	customCommand    string
 	customDeps       []string
@@ -65,11 +69,11 @@ const (
 )
 
 func (d *dockerImage) Type() dockerImageBuildType {
-	if !d.dbBuildPath.Empty() {
+	if d.dbBuildPath != "" {
 		return DockerBuild
 	}
 
-	if !d.baseDockerfilePath.Empty() {
+	if d.baseDockerfilePath != "" {
 		return FastBuild
 	}
 
@@ -81,7 +85,7 @@ func (d *dockerImage) Type() dockerImageBuildType {
 }
 
 func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var dockerRef string
+	var dockerRef, entrypoint string
 	var contextVal, dockerfilePathVal, buildArgs, dockerfileContentsVal, cacheVal, liveUpdateVal, ignoreVal, onlyVal starlark.Value
 	var matchInEnvVars bool
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs,
@@ -95,6 +99,7 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 		"match_in_env_vars?", &matchInEnvVars,
 		"ignore?", &ignoreVal,
 		"only?", &onlyVal,
+		"entrypoint?", &entrypoint,
 	); err != nil {
 		return nil, err
 	}
@@ -107,7 +112,7 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 	if contextVal == nil {
 		return nil, fmt.Errorf("Argument 2 (context): empty but is required")
 	}
-	context, err := s.localPathFromSkylarkValue(contextVal)
+	context, err := s.absPathFromStarlarkValue(thread, contextVal)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +130,7 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 		}
 	}
 
-	dockerfilePath := context.join("Dockerfile")
+	dockerfilePath := filepath.Join(context, "Dockerfile")
 	var dockerfileContents string
 	if dockerfileContentsVal != nil && dockerfilePathVal != nil {
 		return nil, fmt.Errorf("Cannot specify both dockerfile and dockerfile_contents keyword arguments")
@@ -140,7 +145,7 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 			return nil, fmt.Errorf("Argument (dockerfile_contents): must be string or blob.")
 		}
 	} else if dockerfilePathVal != nil {
-		dockerfilePath, err = s.localPathFromSkylarkValue(dockerfilePathVal)
+		dockerfilePath, err = s.absPathFromStarlarkValue(thread, dockerfilePathVal)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +168,7 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 		return nil, err
 	}
 
-	liveUpdate, err := s.liveUpdateFromSteps(liveUpdateVal)
+	liveUpdate, err := s.liveUpdateFromSteps(thread, liveUpdateVal)
 	if err != nil {
 		return nil, errors.Wrap(err, "live_update")
 	}
@@ -178,7 +183,13 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 		return nil, error2
 	}
 
+	var entrypointCmd model.Cmd
+	if entrypoint != "" {
+		entrypointCmd = model.ToShellCmd(entrypoint)
+	}
+
 	r := &dockerImage{
+		tiltfilePath:     s.currentTiltfilePath(thread),
 		dbDockerfilePath: dockerfilePath,
 		dbDockerfile:     dockerfile.Dockerfile(dockerfileContents),
 		dbBuildPath:      context,
@@ -189,6 +200,7 @@ func (s *tiltfileState) dockerBuild(thread *starlark.Thread, fn *starlark.Builti
 		matchInEnvVars:   matchInEnvVars,
 		ignores:          ignores,
 		onlys:            onlys,
+		entrypoint:       entrypointCmd,
 	}
 	err = s.buildIndex.addImage(r)
 	if err != nil {
@@ -207,7 +219,7 @@ func (s *tiltfileState) fastBuildForImage(image *dockerImage) model.FastBuild {
 		BaseDockerfile: image.baseDockerfile.String(),
 		Syncs:          s.syncsToDomain(image),
 		Runs:           image.runs,
-		Entrypoint:     model.ToShellCmd(image.entrypoint),
+		Entrypoint:     model.ToShellCmd(image.fbEntrypoint),
 		HotReload:      image.hotReload,
 	}
 }
@@ -219,6 +231,7 @@ func (s *tiltfileState) customBuild(thread *starlark.Thread, fn *starlark.Builti
 	var disablePush bool
 	var liveUpdateVal, ignoreVal starlark.Value
 	var matchInEnvVars bool
+	var entrypoint string
 
 	err := starlark.UnpackArgs(fn.Name(), args, kwargs,
 		"ref", &dockerRef,
@@ -229,6 +242,7 @@ func (s *tiltfileState) customBuild(thread *starlark.Thread, fn *starlark.Builti
 		"live_update?", &liveUpdateVal,
 		"match_in_env_vars?", &matchInEnvVars,
 		"ignore?", &ignoreVal,
+		"entrypoint?", &entrypoint,
 	)
 	if err != nil {
 		return nil, err
@@ -252,14 +266,14 @@ func (s *tiltfileState) customBuild(thread *starlark.Thread, fn *starlark.Builti
 	defer iter.Done()
 	var v starlark.Value
 	for iter.Next(&v) {
-		p, err := s.localPathFromSkylarkValue(v)
+		p, err := s.absPathFromStarlarkValue(thread, v)
 		if err != nil {
 			return nil, fmt.Errorf("Argument 3 (deps): %v", err)
 		}
-		localDeps = append(localDeps, p.path)
+		localDeps = append(localDeps, p)
 	}
 
-	liveUpdate, err := s.liveUpdateFromSteps(liveUpdateVal)
+	liveUpdate, err := s.liveUpdateFromSteps(thread, liveUpdateVal)
 	if err != nil {
 		return nil, errors.Wrap(err, "live_update")
 	}
@@ -267,6 +281,11 @@ func (s *tiltfileState) customBuild(thread *starlark.Thread, fn *starlark.Builti
 	ignores, error := parseValuesToStrings(ignoreVal, "ignore")
 	if error != nil {
 		return nil, error
+	}
+
+	var entrypointCmd model.Cmd
+	if entrypoint != "" {
+		entrypointCmd = model.ToShellCmd(entrypoint)
 	}
 
 	img := &dockerImage{
@@ -278,6 +297,7 @@ func (s *tiltfileState) customBuild(thread *starlark.Thread, fn *starlark.Builti
 		liveUpdate:       liveUpdate,
 		matchInEnvVars:   matchInEnvVars,
 		ignores:          ignores,
+		entrypoint:       entrypointCmd,
 	}
 
 	err = s.buildIndex.addImage(img)
@@ -368,7 +388,7 @@ func (s *tiltfileState) fastBuild(thread *starlark.Thread, fn *starlark.Builtin,
 		return nil, err
 	}
 
-	baseDockerfilePath, err := s.localPathFromSkylarkValue(baseDockerfile)
+	baseDockerfilePath, err := s.absPathFromStarlarkValue(thread, baseDockerfile)
 	if err != nil {
 		return nil, fmt.Errorf("Argument 2 (base_dockerfile): %v", err)
 	}
@@ -397,7 +417,7 @@ func (s *tiltfileState) fastBuild(thread *starlark.Thread, fn *starlark.Builtin,
 		baseDockerfilePath: baseDockerfilePath,
 		baseDockerfile:     df,
 		configurationRef:   container.NewRefSelector(ref),
-		entrypoint:         entrypoint,
+		fbEntrypoint:       entrypoint,
 		cachePaths:         cachePaths,
 	}
 	err = s.buildIndex.addImage(r)
@@ -497,7 +517,7 @@ func (b *fastBuild) add(thread *starlark.Thread, fn *starlark.Builtin, args star
 	}
 
 	s := pathSync{}
-	lp, err := b.s.localPathFromSkylarkValue(src)
+	lp, err := b.s.absPathFromStarlarkValue(thread, src)
 	if err != nil {
 		return nil, errors.Wrapf(err, "%s.%s(): invalid type for src (arg 1)", b.String(), fn.Name())
 	}
@@ -534,14 +554,14 @@ func (b *fastBuild) run(thread *starlark.Thread, fn *starlark.Builtin, args star
 	}
 
 	run := model.ToRun(model.ToShellCmd(cmd))
-	run = run.WithTriggers(triggers, b.s.absWorkingDir())
+	run = run.WithTriggers(triggers, b.s.absWorkingDir(thread))
 
 	b.img.runs = append(b.img.runs, run)
 	return b, nil
 }
 
 type pathSync struct {
-	src        localPath
+	src        string
 	mountPoint string
 }
 
@@ -549,25 +569,29 @@ func (s *tiltfileState) syncsToDomain(image *dockerImage) []model.Sync {
 	var result []model.Sync
 
 	for _, sync := range image.syncs {
-		result = append(result, model.Sync{LocalPath: sync.src.path, ContainerPath: sync.mountPoint})
+		result = append(result, model.Sync{LocalPath: sync.src, ContainerPath: sync.mountPoint})
 	}
 
 	return result
 }
 
-func reposForPaths(paths []localPath) []model.LocalGitRepo {
+func isGitRepoBase(path string) bool {
+	return ospath.IsDir(filepath.Join(path, ".git"))
+}
+
+func reposForPaths(paths []string) []model.LocalGitRepo {
 	var result []model.LocalGitRepo
 	repoSet := map[string]bool{}
 
 	for _, path := range paths {
-		repo := path.repo
-		if repo == nil || repoSet[repo.basePath] {
+		isRepoBase := isGitRepoBase(path)
+		if !isRepoBase || repoSet[path] {
 			continue
 		}
 
-		repoSet[repo.basePath] = true
+		repoSet[path] = true
 		result = append(result, model.LocalGitRepo{
-			LocalPath: repo.basePath,
+			LocalPath: path,
 		})
 	}
 
@@ -575,7 +599,7 @@ func reposForPaths(paths []localPath) []model.LocalGitRepo {
 }
 
 func (s *tiltfileState) reposForImage(image *dockerImage) []model.LocalGitRepo {
-	var paths []localPath
+	var paths []string
 	for _, sync := range image.syncs {
 		paths = append(paths, sync.src)
 	}
@@ -583,7 +607,7 @@ func (s *tiltfileState) reposForImage(image *dockerImage) []model.LocalGitRepo {
 		image.baseDockerfilePath,
 		image.dbDockerfilePath,
 		image.dbBuildPath,
-		s.filename)
+		image.tiltfilePath)
 
 	return reposForPaths(paths)
 }
@@ -628,7 +652,7 @@ func (s *tiltfileState) dockerignoresFromPathsAndContextFilters(paths []string, 
 			Contents:  onlyContents,
 		})
 
-		contents, err := s.readFile(s.localPathFromString(filepath.Join(path, ".dockerignore")))
+		contents, err := s.readFile(filepath.Join(path, ".dockerignore"))
 		if err != nil {
 			continue
 		}
@@ -673,21 +697,11 @@ func (s *tiltfileState) dockerignoresForImage(image *dockerImage) []model.Docker
 	var paths []string
 
 	for _, sync := range image.syncs {
-		paths = append(paths, sync.src.path)
-
-		// NOTE(maia): this doesn't reflect the behavior of Docker, which only
-		// looks in the build context for the .dockerignore file. Leaving it
-		// for now, though, for fastbuild cases where .dockerignore doesn't
-		// live in the user's synced dir(s) (e.g. user only syncs several specific
-		// files, not a directory containing the .dockerignore).
-		repo := sync.src.repo
-		if repo != nil {
-			paths = append(paths, repo.basePath)
-		}
+		paths = append(paths, sync.src)
 	}
 	switch image.Type() {
 	case DockerBuild:
-		paths = append(paths, image.dbBuildPath.path)
+		paths = append(paths, image.dbBuildPath)
 	case CustomBuild:
 		paths = append(paths, image.customDeps...)
 	}

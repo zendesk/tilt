@@ -14,11 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/windmilleng/tilt/internal/feature"
+	"github.com/windmilleng/tilt/internal/testutils"
+
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/testutils/output"
 )
 
 func TestEventWatchManager_dispatchesEvent(t *testing.T) {
@@ -137,11 +137,13 @@ func TestEventWatchManager_janitor(t *testing.T) {
 
 	f.assertUIDMapKeys([]types.UID{obj1.GetUID()})
 
+	f.clock.BlockUntil(1)
 	f.clock.Advance(uidMapEntryTTL / 2)
 
 	f.kClient.EmitEvent(f.ctx, f.makeEvent(obj2))
 	f.assertUIDMapKeys([]types.UID{obj1.GetUID(), obj2.GetUID()})
 
+	f.clock.BlockUntil(1)
 	f.clock.Advance(uidMapEntryTTL/2 + 1)
 	f.assertUIDMapKeys([]types.UID{obj2.GetUID()})
 }
@@ -213,16 +215,14 @@ type ewmFixture struct {
 func newEWMFixture(t *testing.T) *ewmFixture {
 	kClient := k8s.NewFakeK8sClient()
 
-	ctx := output.CtxForTest()
+	ctx, _, _ := testutils.CtxAndAnalyticsForTest()
 	ctx, cancel := context.WithCancel(ctx)
 
 	clock := clockwork.NewFakeClock()
-	f := feature.ProvideFeature()
-	f.Enable("events")
 
 	ret := &ewmFixture{
 		kClient: kClient,
-		ewm:     NewEventWatchManager(kClient, clock, f),
+		ewm:     NewEventWatchManager(kClient, clock),
 		ctx:     ctx,
 		cancel:  cancel,
 		t:       t,

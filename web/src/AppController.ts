@@ -1,4 +1,5 @@
 import HUD from "./HUD"
+import { getResourceAlerts } from "./alerts"
 
 // A Websocket that automatically retries.
 
@@ -7,7 +8,6 @@ class AppController {
   loadCount: number
   liveSocket: boolean
   tryConnectCount: number
-  // TOOD(dmiller): optional type?
   socket: WebSocket | null = null
   component: HUD
   disposed: boolean = false
@@ -44,6 +44,24 @@ class AppController {
       this.tryConnectCount = 0
 
       let data = JSON.parse(event.data)
+
+      data.Resources = data.Resources.map((r: any) => {
+        if (r.ResourceInfo === null) {
+          r.ResourceInfo = {
+            PodName: "",
+            PodCreationTime: "",
+            PodUpdateStartTime: "",
+            PodStatus: "",
+            PodStatusMessage: "",
+            PodRestarts: 0,
+            PodLog: "",
+            YAML: "",
+            Endpoints: [],
+          }
+        }
+        r.Alerts = getResourceAlerts(r)
+        return r
+      })
       // @ts-ignore
       this.component.setAppState({ View: data })
     })
@@ -68,6 +86,7 @@ class AppController {
         View: null,
         Message: "Disconnected…",
         IsSidebarClosed: false,
+        AlertLinks: {},
       })
       this.createNewSocket()
       return
@@ -92,6 +111,7 @@ class AppController {
         View: null,
         Message: message,
         IsSidebarClosed: false,
+        AlertLinks: {},
       })
       this.createNewSocket()
     }, timeout)

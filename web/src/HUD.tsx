@@ -15,9 +15,12 @@ import { incr, pathToTag } from "./analytics"
 import TopBar from "./TopBar"
 import "./HUD.scss"
 import { TiltBuild, ResourceView, Resource } from "./types"
-import AlertPane, { AlertResource } from "./AlertPane"
+import AlertPane from "./AlertPane"
 import PreviewList from "./PreviewList"
 import AnalyticsNudge from "./AnalyticsNudge"
+import NotFound from "./NotFound"
+import { numberOfAlerts, Alert, alertKey } from "./alerts"
+import Features from "./feature"
 
 type HudProps = {
   history: History
@@ -34,8 +37,14 @@ type HudState = {
     NeedsAnalyticsNudge: boolean
     RunningTiltBuild: TiltBuild
     LatestTiltBuild: TiltBuild
+    FeatureFlags: { [featureFlag: string]: boolean }
   } | null
   IsSidebarClosed: boolean
+  AlertLinks: { [key: string]: string }
+}
+
+type NewAlertResponse = {
+  url: string
 }
 
 // The Main HUD view, as specified in
@@ -80,8 +89,10 @@ class HUD extends Component<HudProps, HudState> {
           Date: "",
           Dev: false,
         },
+        FeatureFlags: {},
       },
       IsSidebarClosed: false,
+      AlertLinks: {},
     }
 
     this.toggleSidebar = this.toggleSidebar.bind(this)
@@ -128,6 +139,33 @@ class HUD extends Component<HudProps, HudState> {
     return this.pathBuilder.path(relPath)
   }
 
+  sendAlert(alert: Alert) {
+    let url = `//${window.location.host}/api/alerts/new`
+    fetch(url, {
+      method: "post",
+      body: JSON.stringify(alert),
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    })
+      .then(res => {
+        res
+          .json()
+          .then((value: NewAlertResponse) => {
+            let links = this.state.AlertLinks
+            links[alertKey(alert)] = value.url
+            this.setState({
+              AlertLinks: links,
+            })
+          })
+          .catch(err => {
+            console.error(err)
+          })
+      })
+      .then(err => console.error(err))
+  }
+
   render() {
     let view = this.state.View
     let sailEnabled = view && view.SailEnabled ? view.SailEnabled : false
@@ -138,11 +176,17 @@ class HUD extends Component<HudProps, HudState> {
     if (!resources.length) {
       return <LoadingScreen message={message} />
     }
-
     let isSidebarClosed = this.state.IsSidebarClosed
     let toggleSidebar = this.toggleSidebar
     let statusItems = resources.map(res => new StatusItem(res))
     let sidebarItems = resources.map(res => new SidebarItem(res))
+    var features: Features
+    if (this.state.View) {
+      features = new Features(this.state.View.FeatureFlags)
+    } else {
+      features = new Features({})
+    }
+
     let sidebarRoute = (t: ResourceView, props: RouteComponentProps<any>) => {
       let name = props.match.params.name
       return (
@@ -165,13 +209,23 @@ class HUD extends Component<HudProps, HudState> {
       let numAlerts = 0
       if (name !== "") {
         let selectedResource = resources.find(r => r.Name === name)
-        let er = new AlertResource(selectedResource)
-        if (er.hasAlert()) {
-          numAlerts = er.numberOfAlerts()
+        if (selectedResource === undefined) {
+          return (
+            <TopBar
+              logUrl={this.path("/")} // redirect to home page
+              alertsUrl={this.path("/alerts")}
+              previewUrl={this.path("/preview")}
+              resourceView={t}
+              sailEnabled={sailEnabled}
+              sailUrl={sailUrl}
+              numberOfAlerts={numAlerts}
+            />
+          )
         }
+        numAlerts = numberOfAlerts(selectedResource)
       } else {
-        numAlerts = resourcesWithAlerts
-          .map(er => er.numberOfAlerts())
+        numAlerts = resources
+          .map(r => numberOfAlerts(r))
           .reduce((sum, current) => sum + current, 0)
       }
       return (
@@ -200,6 +254,9 @@ class HUD extends Component<HudProps, HudState> {
       let podStatus = ""
       if (view && name !== "") {
         let r = view.Resources.find(r => r.Name === name)
+        if (r === undefined) {
+          return <Route component={NotFound} />
+        }
         logs = (r && r.CombinedLog) || ""
         endpoints = (r && r.Endpoints) || []
         podID = (r && r.PodID) || ""
@@ -226,6 +283,9 @@ class HUD extends Component<HudProps, HudState> {
       let endpoint = ""
       if (view && name !== "") {
         let r = view.Resources.find(r => r.Name === name)
+        if (r === undefined) {
+          return <Route component={NotFound} />
+        }
         endpoint = r ? r.Endpoints && r.Endpoints[0] : ""
       }
 
@@ -247,14 +307,20 @@ class HUD extends Component<HudProps, HudState> {
     let errorRoute = (props: RouteComponentProps<any>) => {
       let name = props.match.params ? props.match.params.name : ""
       let er = resources.find(r => r.Name === name)
-      if (er) {
-        return <AlertPane resources={[new AlertResource(er)]} />
+      if (er === undefined) {
+        return <Route component={NotFound} />
       }
-      return <AlertPane resources={[]} />
+      if (er) {
+        return (
+          <AlertPane
+            resources={[er]}
+            handleSendAlert={this.sendAlert.bind(this)}
+            teamAlertsIsEnabled={features.isEnabled("team_alerts")}
+            alertLinks={this.state.AlertLinks}
+          />
+        )
+      }
     }
-    let alertResources = resources.map(r => new AlertResource(r))
-    let resourcesWithAlerts = alertResources.filter(r => r.hasAlert())
-
     let runningVersion = view && view.RunningTiltBuild
     let latestVersion = view && view.LatestTiltBuild
 
@@ -330,7 +396,14 @@ class HUD extends Component<HudProps, HudState> {
           <Route
             exact
             path={this.path("/alerts")}
-            render={() => <AlertPane resources={alertResources} />}
+            render={() => (
+              <AlertPane
+                resources={resources}
+                handleSendAlert={this.sendAlert.bind(this)}
+                teamAlertsIsEnabled={features.isEnabled("team_alerts")}
+                alertLinks={this.state.AlertLinks}
+              />
+            )}
           />
           <Route exact path={this.path("/preview")} render={previewRoute} />
           <Route exact path={this.path("/r/:name")} render={logsRoute} />

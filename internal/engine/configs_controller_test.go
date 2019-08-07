@@ -13,7 +13,6 @@ import (
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/store"
 	"github.com/windmilleng/tilt/internal/testutils"
-	"github.com/windmilleng/tilt/internal/testutils/output"
 	"github.com/windmilleng/tilt/internal/testutils/tempdir"
 	"github.com/windmilleng/tilt/internal/tiltfile"
 )
@@ -59,8 +58,7 @@ func (f *ccFixture) run() ConfigsReloadedAction {
 		}
 	}()
 
-	f.tfl.Manifests = []model.Manifest{{Name: "bar"}}
-
+	f.tfl.Result = tiltfile.TiltfileLoadResult{Manifests: []model.Manifest{{Name: "bar"}}}
 	f.st.NotifySubscribers(f.ctx)
 
 	a := store.WaitForAction(f.T(), reflect.TypeOf(ConfigsReloadedAction{}), f.getActions)
@@ -89,7 +87,7 @@ func newCCFixture(t *testing.T) *ccFixture {
 	cc := NewConfigsController(tfl, docker.NewFakeClient())
 	fc := testutils.NewRandomFakeClock()
 	cc.clock = fc.Clock()
-	ctx := output.CtxForTest()
+	ctx, _, _ := testutils.CtxAndAnalyticsForTest()
 	st.AddSubscriber(ctx, cc)
 	go st.Loop(ctx)
 	return &ccFixture{

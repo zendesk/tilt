@@ -1,7 +1,7 @@
 package store
 
 import (
-	"fmt"
+	"log"
 	"sort"
 
 	"github.com/docker/distribution/reference"
@@ -22,28 +22,42 @@ type BuildResult struct {
 	// The tag is derived from a content-addressable digest.
 	Image reference.NamedTagged
 
-	// If this build was a container build, containerID we built on top of
-	ContainerID container.ID
+	// The ID of the container that Docker Compose created.
+	//
+	// When we deploy a Docker Compose service, we wait synchronously for the
+	// container to start. Note that this is a different concurrency model than
+	// we use for Kubernetes, where the pods appear some time later via an
+	// asynchronous event.
+	DockerComposeContainerID container.ID
 
-	// Some of our build engines replace the files in-place, rather
-	// than building a new image. This captures how much the code
-	// running on-pod has diverged from the original image.
-	FilesReplacedSet map[string]bool
+	// The ID of the container(s) that we live-updated in-place.
+	//
+	// The contents of the container have diverged from the image it's built on,
+	// so we need to keep track of that.
+	LiveUpdatedContainerIDs []container.ID
 }
 
-// For docker-compose deploys that don't have any built images.
-func NewContainerBuildResult(id model.TargetID, containerID container.ID) BuildResult {
+// For in-place container updates.
+func NewLiveUpdateBuildResult(id model.TargetID, containerIDs []container.ID) BuildResult {
 	return BuildResult{
-		TargetID:    id,
-		ContainerID: containerID,
+		TargetID:                id,
+		LiveUpdatedContainerIDs: containerIDs,
 	}
 }
 
-// For image targets. The container id will be added later.
+// For image targets.
 func NewImageBuildResult(id model.TargetID, image reference.NamedTagged) BuildResult {
 	return BuildResult{
 		TargetID: id,
 		Image:    image,
+	}
+}
+
+// For docker compose deploy targets.
+func NewDockerComposeDeployResult(id model.TargetID, containerID container.ID) BuildResult {
+	return BuildResult{
+		TargetID:                 id,
+		DockerComposeContainerID: containerID,
 	}
 }
 
@@ -56,43 +70,53 @@ func (b BuildResult) HasImage() bool {
 }
 
 func (b BuildResult) IsInPlaceUpdate() bool {
-	return !b.ContainerID.Empty()
-}
-
-// Clone the build result and add new replaced files.
-// Does not do a deep clone of the underlying entities.
-func (b BuildResult) ShallowCloneForContainerUpdate(filesReplacedSet map[string]bool) BuildResult {
-	result := BuildResult{}
-	result.TargetID = b.TargetID
-	result.Image = b.Image
-
-	newSet := make(map[string]bool, len(b.FilesReplacedSet)+len(filesReplacedSet))
-	for k, v := range b.FilesReplacedSet {
-		newSet[k] = v
-	}
-	for k, v := range filesReplacedSet {
-		newSet[k] = v
-	}
-	result.FilesReplacedSet = newSet
-	return result
+	return len(b.LiveUpdatedContainerIDs) != 0
 }
 
 type BuildResultSet map[model.TargetID]BuildResult
 
+func (set BuildResultSet) LiveUpdatedContainerIDs() []container.ID {
+	result := []container.ID{}
+	for _, r := range set {
+		result = append(result, r.LiveUpdatedContainerIDs...)
+	}
+	return result
+}
+
+func MergeBuildResultsSet(a, b BuildResultSet) BuildResultSet {
+	res := make(BuildResultSet)
+	for k, v := range a {
+		res[k] = v
+	}
+	for k, v := range b {
+		res[k] = v
+	}
+	return res
+}
+
 // Returns a container ID iff it's the only container ID in the result set.
 // If there are multiple container IDs, we have to give up.
-func (set BuildResultSet) OneAndOnlyContainerID() container.ID {
+func (set BuildResultSet) OneAndOnlyLiveUpdatedContainerID() container.ID {
 	var id container.ID
 	for _, result := range set {
-		if result.ContainerID == "" {
+		if len(result.LiveUpdatedContainerIDs) == 0 {
 			continue
 		}
 
-		if id != "" && result.ContainerID != id {
+		if len(result.LiveUpdatedContainerIDs) > 1 {
 			return ""
 		}
 
-		id = result.ContainerID
+		curID := result.LiveUpdatedContainerIDs[0]
+		if curID == "" {
+			continue
+		}
+
+		if id != "" && curID != id {
+			return ""
+		}
+
+		id = curID
 	}
 	return id
 }
@@ -108,7 +132,7 @@ type BuildState struct {
 	// This must be liberal: it's ok if this has too many files, but not ok if it has too few.
 	FilesChangedSet map[string]bool
 
-	DeployInfo DeployInfo
+	RunningContainers []ContainerInfo
 }
 
 func NewBuildState(result BuildResult, files []string) BuildState {
@@ -122,11 +146,19 @@ func NewBuildState(result BuildResult, files []string) BuildState {
 	}
 }
 
-func (b BuildState) WithDeployTarget(d DeployInfo) BuildState {
-	b.DeployInfo = d
+func (b BuildState) WithRunningContainers(cInfos []ContainerInfo) BuildState {
+	b.RunningContainers = cInfos
 	return b
 }
 
+// NOTE(maia): Interim method to replicate old behavior where every
+// BuildState had a single ContainerInfo
+func (b BuildState) OneContainerInfo() ContainerInfo {
+	if len(b.RunningContainers) == 0 {
+		return ContainerInfo{}
+	}
+	return b.RunningContainers[0]
+}
 func (b BuildState) LastImageAsString() string {
 	img := b.LastResult.Image
 	if img == nil {
@@ -145,33 +177,6 @@ func (b BuildState) FilesChanged() []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-// Return the files changed since the last result's image in sorted order.
-// The sorting helps ensure that this is deterministic, both for testing
-// and for deterministic builds.
-// Errors if there was no last result image.
-func (b BuildState) FilesChangedSinceLastResultImage() ([]string, error) {
-	if !b.LastResult.HasImage() {
-		return nil, fmt.Errorf("No image in last result")
-	}
-
-	cSet := b.FilesChangedSet
-	rSet := b.LastResult.FilesReplacedSet
-	sum := make(map[string]bool, len(cSet)+len(rSet))
-	for k, v := range cSet {
-		sum[k] = v
-	}
-	for k, v := range rSet {
-		sum[k] = v
-	}
-
-	result := make([]string, 0, len(sum))
-	for file, _ := range sum {
-		result = append(result, file)
-	}
-	sort.Strings(result)
-	return result, nil
 }
 
 // A build state is empty if there are no previous results.
@@ -213,49 +218,84 @@ func (set BuildStateSet) FilesChanged() []string {
 	return result
 }
 
-// The information we need to find a ready container.
-type DeployInfo struct {
+// Information describing a single running & ready container
+type ContainerInfo struct {
 	PodID         k8s.PodID
 	ContainerID   container.ID
 	ContainerName container.Name
 	Namespace     k8s.Namespace
 }
 
-func (d DeployInfo) Empty() bool {
-	return d == DeployInfo{}
+func (c ContainerInfo) Empty() bool {
+	return c == ContainerInfo{}
 }
 
-// Check to see if there's a single, unambiguous Ready container
-// in the given PodSet. If so, create a DeployInfo for that container.
-func NewDeployInfo(iTarget model.ImageTarget, deployID model.DeployID, podSet PodSet) DeployInfo {
+func IDsForInfos(infos []ContainerInfo) []container.ID {
+	ids := make([]container.ID, len(infos))
+	for i, info := range infos {
+		ids[i] = info.ContainerID
+	}
+	return ids
+}
+
+func AllRunningContainers(mt *ManifestTarget) []ContainerInfo {
+	if mt.Manifest.IsDC() {
+		return RunningContainersForDC(mt.State.DCResourceState())
+	}
+
+	result := []ContainerInfo{}
+	for _, iTarget := range mt.Manifest.ImageTargets {
+		result = append(result, RunningContainersForTarget(iTarget, mt.State.DeployID, mt.State.PodSet)...)
+	}
+	return result
+}
+
+// If all containers running the given image are ready, returns info for them.
+// (Currently only supports containers running on a single pod.)
+func RunningContainersForTarget(iTarget model.ImageTarget, deployID model.DeployID, podSet PodSet) []ContainerInfo {
 	if podSet.Len() != 1 {
-		return DeployInfo{}
+		return nil
 	}
 
 	pod := podSet.MostRecentPod()
-	if pod.PodID == "" || pod.ContainerID == "" || pod.ContainerName == "" || !pod.ContainerReady {
-		return DeployInfo{}
+	if pod.PodID == "" {
+		return nil
 	}
 
 	if podSet.DeployID != deployID {
-		return DeployInfo{}
+		return nil
 	}
 
-	// Only return the pod if it matches our image.
-	if pod.ContainerImageRef == nil || iTarget.DeploymentRef.Name() != pod.ContainerImageRef.Name() {
-		return DeployInfo{}
+	var containers []ContainerInfo
+	for _, c := range pod.Containers {
+		// Only return containers matching our image
+		if c.ImageRef == nil || iTarget.DeploymentRef.Name() != c.ImageRef.Name() {
+			log.Println("SKIPPING", iTarget.DeploymentRef, c.ImageRef)
+			continue
+		}
+		if c.ID == "" || c.Name == "" || !c.Ready {
+			// If we're missing any relevant info for this container, OR if the
+			// container isn't ready, we can't update it in place.
+			// (Since we'll need to fully rebuild this image, we shouldn't bother
+			// in-place updating ANY containers on this pod -- they'll all
+			// be recreated when we image build. So don't return ANY ContainerInfos.)
+			return nil
+		}
+		containers = append(containers, ContainerInfo{
+			PodID:         pod.PodID,
+			ContainerID:   c.ID,
+			ContainerName: c.Name,
+			Namespace:     pod.Namespace,
+		})
 	}
 
-	return DeployInfo{
-		PodID:         pod.PodID,
-		ContainerID:   pod.ContainerID,
-		ContainerName: pod.ContainerName,
-		Namespace:     pod.Namespace,
-	}
+	return containers
 }
 
-func NewDeployInfoFromDC(state dockercompose.State) DeployInfo {
-	return DeployInfo{ContainerID: state.ContainerID}
+func RunningContainersForDC(state dockercompose.State) []ContainerInfo {
+	return []ContainerInfo{
+		ContainerInfo{ContainerID: state.ContainerID},
+	}
 }
 
 var BuildStateClean = BuildState{}

@@ -2,8 +2,9 @@ package watch
 
 import (
 	"path/filepath"
-	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/windmilleng/tilt/internal/logger"
 	"github.com/windmilleng/tilt/internal/ospath"
@@ -19,14 +20,9 @@ type darwinNotify struct {
 	errors chan error
 	stop   chan struct{}
 
-	// TODO(nick): This mutex is needed for the case where we add paths after we
-	// start watching. But because fsevents supports recursive watches, we don't
-	// actually need this feature. We should change the api contract of wmNotify
-	// so that, for recursive watches, we can guarantee that the path list doesn't
-	// change.
-	sm *sync.Mutex
-
 	pathsWereWatching map[string]interface{}
+	ignore            PathMatcher
+	logger            logger.Logger
 	sawAnyHistoryDone bool
 }
 
@@ -44,9 +40,7 @@ func (d *darwinNotify) loop() {
 				e.Path = filepath.Join("/", e.Path)
 
 				if e.Flags&fsevents.HistoryDone == fsevents.HistoryDone {
-					d.sm.Lock()
 					d.sawAnyHistoryDone = true
-					d.sm.Unlock()
 					continue
 				}
 
@@ -63,48 +57,53 @@ func (d *darwinNotify) loop() {
 					continue
 				}
 
-				d.events <- FileEvent{
-					Path: e.Path,
+				ignore, err := d.ignore.Matches(e.Path)
+				if err != nil {
+					d.logger.Infof("Error matching path %q: %v", e.Path, err)
+				} else if ignore {
+					continue
 				}
+
+				d.events <- NewFileEvent(e.Path)
 			}
 		}
 	}
 }
 
-func (d *darwinNotify) Add(name string) error {
-	d.sm.Lock()
-	defer d.sm.Unlock()
-
-	es := d.stream
-
+// Add a path to be watched. Should only be called during initialization.
+func (d *darwinNotify) initAdd(name string) {
 	// Check if this is a subdirectory of any of the paths
 	// we're already watching.
-	for _, parent := range es.Paths {
+	for _, parent := range d.stream.Paths {
 		if ospath.IsChild(parent, name) {
-			return nil
+			return
 		}
 	}
 
-	es.Paths = append(es.Paths, name)
+	d.stream.Paths = append(d.stream.Paths, name)
 
 	if d.pathsWereWatching == nil {
 		d.pathsWereWatching = make(map[string]interface{})
 	}
 	d.pathsWereWatching[name] = struct{}{}
+}
 
-	if len(es.Paths) == 1 {
-		es.Start()
-		go d.loop()
-	} else {
-		es.Restart()
+func (d *darwinNotify) Start() error {
+	if len(d.stream.Paths) == 0 {
+		return nil
 	}
+
+	numberOfWatches.Add(int64(len(d.stream.Paths)))
+
+	d.stream.Start()
+
+	go d.loop()
 
 	return nil
 }
 
 func (d *darwinNotify) Close() error {
-	d.sm.Lock()
-	defer d.sm.Unlock()
+	numberOfWatches.Add(int64(-len(d.stream.Paths)))
 
 	d.stream.Stop()
 	close(d.errors)
@@ -121,8 +120,10 @@ func (d *darwinNotify) Errors() chan error {
 	return d.errors
 }
 
-func NewWatcher(l logger.Logger) (Notify, error) {
+func newWatcher(paths []string, ignore PathMatcher, l logger.Logger) (*darwinNotify, error) {
 	dw := &darwinNotify{
+		ignore: ignore,
+		logger: l,
 		stream: &fsevents.EventStream{
 			Latency: 1 * time.Millisecond,
 			Flags:   fsevents.FileEvents,
@@ -130,10 +131,17 @@ func NewWatcher(l logger.Logger) (Notify, error) {
 			// https://developer.apple.com/documentation/coreservices/1443980-fseventstreamcreate
 			EventID: fsevents.LatestEventID(),
 		},
-		sm:     &sync.Mutex{},
 		events: make(chan FileEvent),
 		errors: make(chan error),
 		stop:   make(chan struct{}),
+	}
+
+	for _, path := range paths {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return nil, errors.Wrap(err, "newWatcher")
+		}
+		dw.initAdd(path)
 	}
 
 	return dw, nil

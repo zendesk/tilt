@@ -4,7 +4,10 @@ import (
 	"github.com/windmilleng/tilt/internal/container"
 	"github.com/windmilleng/tilt/internal/k8s/testyaml"
 	"github.com/windmilleng/tilt/internal/model"
+	"github.com/windmilleng/tilt/internal/testutils/manifestbuilder"
 )
+
+type Fixture = manifestbuilder.Fixture
 
 const SanchoYAML = testyaml.SanchoYAML
 
@@ -21,17 +24,11 @@ RUN go install github.com/windmilleng/sancho
 ENTRYPOINT /go/bin/sancho
 `
 
-type pather interface {
-	Path() string
-	JoinPath(ps ...string) string
-	MkdirAll(p string)
-}
-
-var SanchoRef = container.MustParseSelector("gcr.io/some-project-162817/sancho")
+var SanchoRef = container.MustParseSelector(testyaml.SanchoImage)
 var SanchoBaseRef = container.MustParseSelector("sancho-base")
-var SanchoSidecarRef = container.MustParseSelector("gcr.io/some-project-162817/sancho-sidecar")
+var SanchoSidecarRef = container.MustParseSelector(testyaml.SanchoSidecarImage)
 
-func NewSanchoFastBuild(fixture pather) model.FastBuild {
+func NewSanchoFastBuild(fixture Fixture) model.FastBuild {
 	return model.FastBuild{
 		BaseDockerfile: SanchoBaseDockerfile,
 		Syncs: []model.Sync{
@@ -47,7 +44,7 @@ func NewSanchoFastBuild(fixture pather) model.FastBuild {
 	}
 }
 
-func SanchoSyncSteps(fixture pather) []model.LiveUpdateSyncStep {
+func SanchoSyncSteps(fixture Fixture) []model.LiveUpdateSyncStep {
 	return []model.LiveUpdateSyncStep{model.LiveUpdateSyncStep{
 		Source: fixture.Path(),
 		Dest:   "/go/src/github.com/windmilleng/sancho",
@@ -56,64 +53,75 @@ func SanchoSyncSteps(fixture pather) []model.LiveUpdateSyncStep {
 
 var SanchoRunSteps = []model.LiveUpdateRunStep{model.LiveUpdateRunStep{Command: model.Cmd{Argv: []string{"go", "install", "github.com/windmilleng/sancho"}}}}
 
-func NewSanchoFastBuildImage(fixture pather) model.ImageTarget {
+func NewSanchoFastBuildImage(fixture Fixture) model.ImageTarget {
 	fbInfo := NewSanchoFastBuild(fixture)
 	return model.NewImageTarget(SanchoRef).WithBuildDetails(fbInfo)
 }
 
-func NewSanchoFastBuildManifest(fixture pather) model.Manifest {
-	return assembleK8sManifest(
-		model.Manifest{Name: "sancho"},
-		model.K8sTarget{YAML: SanchoYAML},
-		NewSanchoFastBuildImage(fixture))
+func NewSanchoFastBuildManifest(f Fixture) model.Manifest {
+	return manifestbuilder.New(f, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTarget(NewSanchoFastBuildImage(f)).
+		Build()
 }
 
-func NewSanchoFastBuildDCManifest(fixture pather) model.Manifest {
-	return assembleDCManifest(
-		model.Manifest{Name: "sancho"},
-		NewSanchoFastBuildImage(fixture))
+func NewSanchoLiveUpdateManifest(f Fixture) model.Manifest {
+	return manifestbuilder.New(f, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTarget(NewSanchoLiveUpdateImageTarget(f)).
+		Build()
 }
 
-func NewSanchoFastBuildManifestWithCache(fixture pather, paths []string) model.Manifest {
+func NewSanchoFastBuildDCManifest(f Fixture) model.Manifest {
+	return manifestbuilder.New(f, "sancho").
+		WithDockerCompose().
+		WithImageTarget(NewSanchoFastBuildImage(f)).
+		Build()
+}
+
+func NewSanchoFastBuildManifestWithCache(fixture Fixture, paths []string) model.Manifest {
 	manifest := NewSanchoFastBuildManifest(fixture)
 	manifest = manifest.WithImageTarget(manifest.ImageTargetAt(0).WithCachePaths(paths))
 	return manifest
 }
 
-func NewSanchoManifestWithImageInEnvVar(f pather) model.Manifest {
+func NewSanchoManifestWithImageInEnvVar(f Fixture) model.Manifest {
 	it2 := model.NewImageTarget(container.MustParseSelector(SanchoRef.String() + "2")).WithBuildDetails(model.DockerBuild{
 		Dockerfile: SanchoDockerfile,
 		BuildPath:  f.Path(),
 	})
 	it2.MatchInEnvVars = true
-	return assembleK8sManifest(
-		model.Manifest{Name: "sancho"},
-		model.K8sTarget{YAML: testyaml.SanchoImageInEnvYAML},
-		NewSanchoDockerBuildImageTarget(f),
-		it2,
-	)
+	return manifestbuilder.New(f, "sancho").
+		WithK8sYAML(testyaml.SanchoImageInEnvYAML).
+		WithImageTargets(NewSanchoDockerBuildImageTarget(f), it2).
+		Build()
 }
 
-func NewSanchoCustomBuildManifest(fixture pather) model.Manifest {
+func NewSanchoCustomBuildManifest(fixture Fixture) model.Manifest {
 	return NewSanchoCustomBuildManifestWithTag(fixture, "")
 }
 
-func NewSanchoCustomBuildManifestWithTag(fixture pather, tag string) model.Manifest {
+func NewSanchoCustomBuildImageTarget(fixture Fixture) model.ImageTarget {
+	return NewSanchoCustomBuildImageTargetWithTag(fixture, "")
+}
+
+func NewSanchoCustomBuildImageTargetWithTag(fixture Fixture, tag string) model.ImageTarget {
 	cb := model.CustomBuild{
 		Command: "true",
 		Deps:    []string{fixture.JoinPath("app")},
 		Tag:     tag,
 	}
-
-	m := model.Manifest{Name: "sancho"}
-
-	return assembleK8sManifest(
-		m,
-		model.K8sTarget{YAML: SanchoYAML},
-		model.NewImageTarget(SanchoRef).WithBuildDetails(cb))
+	return model.NewImageTarget(SanchoRef).WithBuildDetails(cb)
 }
 
-func NewSanchoCustomBuildManifestWithFastBuild(fixture pather) model.Manifest {
+func NewSanchoCustomBuildManifestWithTag(fixture Fixture, tag string) model.Manifest {
+	return manifestbuilder.New(fixture, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTarget(NewSanchoCustomBuildImageTargetWithTag(fixture, tag)).
+		Build()
+}
+
+func NewSanchoCustomBuildManifestWithFastBuild(fixture Fixture) model.Manifest {
 	fb := NewSanchoFastBuild(fixture)
 	cb := model.CustomBuild{
 		Command: "true",
@@ -121,15 +129,13 @@ func NewSanchoCustomBuildManifestWithFastBuild(fixture pather) model.Manifest {
 		Fast:    fb,
 	}
 
-	m := model.Manifest{Name: "sancho"}
-
-	return assembleK8sManifest(
-		m,
-		model.K8sTarget{YAML: SanchoYAML},
-		model.NewImageTarget(SanchoRef).WithBuildDetails(cb))
+	return manifestbuilder.New(fixture, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTarget(model.NewImageTarget(SanchoRef).WithBuildDetails(cb)).
+		Build()
 }
 
-func NewSanchoCustomBuildManifestWithPushDisabled(fixture pather) model.Manifest {
+func NewSanchoCustomBuildManifestWithPushDisabled(fixture Fixture) model.Manifest {
 	cb := model.CustomBuild{
 		Command:     "true",
 		Deps:        []string{fixture.JoinPath("app")},
@@ -137,22 +143,25 @@ func NewSanchoCustomBuildManifestWithPushDisabled(fixture pather) model.Manifest
 		Tag:         "tilt-build",
 	}
 
-	m := model.Manifest{Name: "sancho"}
-
-	return assembleK8sManifest(
-		m,
-		model.K8sTarget{YAML: SanchoYAML},
-		model.NewImageTarget(SanchoRef).WithBuildDetails(cb))
+	return manifestbuilder.New(fixture, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTarget(model.NewImageTarget(SanchoRef).WithBuildDetails(cb)).
+		Build()
 }
 
-func NewSanchoDockerBuildImageTarget(f pather) model.ImageTarget {
+func NewSanchoDockerBuildImageTarget(f Fixture) model.ImageTarget {
 	return model.NewImageTarget(SanchoRef).WithBuildDetails(model.DockerBuild{
 		Dockerfile: SanchoDockerfile,
 		BuildPath:  f.Path(),
 	})
 }
 
-func NewSanchoLiveUpdateImageTarget(f pather) (model.ImageTarget, error) {
+func NewSanchoSyncOnlyImageTarget(f Fixture, syncs []model.LiveUpdateSyncStep) model.ImageTarget {
+	lu := assembleLiveUpdate(syncs, nil, false, []string{}, f)
+	return imageTargetWithLiveUpdate(NewSanchoDockerBuildImageTarget(f), lu)
+}
+
+func NewSanchoLiveUpdateImageTarget(f Fixture) model.ImageTarget {
 	syncs := []model.LiveUpdateSyncStep{
 		{
 			Source: f.Path(),
@@ -165,51 +174,49 @@ func NewSanchoLiveUpdateImageTarget(f pather) (model.ImageTarget, error) {
 		},
 	}
 
-	lu, err := assembleLiveUpdate(syncs, runs, true, []string{}, f)
-	if err != nil {
-		return model.ImageTarget{}, err
-	}
-	return imageTargetWithLiveUpdate(model.NewImageTarget(SanchoRef), lu), nil
+	lu := assembleLiveUpdate(syncs, runs, true, []string{}, f)
+	return imageTargetWithLiveUpdate(NewSanchoDockerBuildImageTarget(f), lu)
 }
 
-func NewSanchoSidecarDockerBuildImageTarget(f pather) model.ImageTarget {
+func NewSanchoSidecarDockerBuildImageTarget(f Fixture) model.ImageTarget {
 	iTarget := NewSanchoDockerBuildImageTarget(f)
 	iTarget.ConfigurationRef = SanchoSidecarRef
 	iTarget.DeploymentRef = SanchoSidecarRef.AsNamedOnly()
 	return iTarget
 }
 
-func NewSanchoSidecarFastBuildImageTarget(f pather) model.ImageTarget {
+func NewSanchoSidecarFastBuildImageTarget(f Fixture) model.ImageTarget {
 	iTarget := NewSanchoFastBuildImage(f)
 	iTarget.ConfigurationRef = SanchoSidecarRef
 	iTarget.DeploymentRef = SanchoSidecarRef.AsNamedOnly()
 	return iTarget
 }
 
-func NewSanchoSidecarLiveUpdateImageTarget(f pather) (model.ImageTarget, error) {
-	iTarget, err := NewSanchoLiveUpdateImageTarget(f)
-	if err != nil {
-		return model.ImageTarget{}, nil
-	}
+func NewSanchoSidecarLiveUpdateImageTarget(f Fixture) model.ImageTarget {
+	iTarget := NewSanchoLiveUpdateImageTarget(f)
 	iTarget.ConfigurationRef = SanchoSidecarRef
 	iTarget.DeploymentRef = SanchoSidecarRef.AsNamedOnly()
-	return iTarget, nil
+	return iTarget
 }
 
-func NewSanchoDockerBuildManifest(f pather) model.Manifest {
-	return assembleK8sManifest(
-		model.Manifest{Name: "sancho"},
-		model.K8sTarget{YAML: SanchoYAML},
-		NewSanchoDockerBuildImageTarget(f))
+func NewSanchoDockerBuildManifest(f Fixture) model.Manifest {
+	return NewSanchoDockerBuildManifestWithYaml(f, SanchoYAML)
 }
 
-func NewSanchoDockerBuildManifestWithCache(f pather, paths []string) model.Manifest {
+func NewSanchoDockerBuildManifestWithYaml(f Fixture, yaml string) model.Manifest {
+	return manifestbuilder.New(f, "sancho").
+		WithK8sYAML(yaml).
+		WithImageTarget(NewSanchoDockerBuildImageTarget(f)).
+		Build()
+}
+
+func NewSanchoDockerBuildManifestWithCache(f Fixture, paths []string) model.Manifest {
 	manifest := NewSanchoDockerBuildManifest(f)
 	manifest = manifest.WithImageTarget(manifest.ImageTargetAt(0).WithCachePaths(paths))
 	return manifest
 }
 
-func NewSanchoDockerBuildManifestWithNestedFastBuild(fixture pather) model.Manifest {
+func NewSanchoDockerBuildManifestWithNestedFastBuild(fixture Fixture) model.Manifest {
 	manifest := NewSanchoDockerBuildManifest(fixture)
 	iTarg := manifest.ImageTargetAt(0)
 	fb := NewSanchoFastBuild(fixture)
@@ -220,7 +227,7 @@ func NewSanchoDockerBuildManifestWithNestedFastBuild(fixture pather) model.Manif
 	return manifest
 }
 
-func NewSanchoDockerBuildMultiStageManifest(fixture pather) model.Manifest {
+func NewSanchoDockerBuildMultiStageManifest(fixture Fixture) model.Manifest {
 	baseImage := model.NewImageTarget(SanchoBaseRef).WithBuildDetails(model.DockerBuild{
 		Dockerfile: `FROM golang:1.10`,
 		BuildPath:  fixture.JoinPath("sancho-base"),
@@ -236,25 +243,47 @@ ENTRYPOINT /go/bin/sancho
 		BuildPath: fixture.JoinPath("sancho"),
 	}).WithDependencyIDs([]model.TargetID{baseImage.ID()})
 
-	kTarget := model.K8sTarget{YAML: SanchoYAML}.
-		WithDependencyIDs([]model.TargetID{srcImage.ID()})
-
-	return model.Manifest{Name: "sancho"}.
-		WithImageTargets([]model.ImageTarget{baseImage, srcImage}).
-		WithDeployTarget(kTarget)
+	return manifestbuilder.New(fixture, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTargets(baseImage, srcImage).
+		Build()
 }
 
-func NewSanchoFastMultiStageManifest(fixture pather) model.Manifest {
+func NewSanchoDockerBuildMultiStageManifestWithLiveUpdate(fixture Fixture, lu model.LiveUpdate) model.Manifest {
+	baseImage := model.NewImageTarget(SanchoBaseRef).WithBuildDetails(model.DockerBuild{
+		Dockerfile: `FROM golang:1.10`,
+		BuildPath:  fixture.JoinPath("sancho-base"),
+	})
+
+	srcImage := model.NewImageTarget(SanchoRef).WithBuildDetails(model.DockerBuild{
+		Dockerfile: `
+FROM sancho-base
+ADD . .
+RUN go install github.com/windmilleng/sancho
+ENTRYPOINT /go/bin/sancho
+`,
+		BuildPath: fixture.JoinPath("sancho"),
+	}).WithDependencyIDs([]model.TargetID{baseImage.ID()})
+
+	return manifestbuilder.New(fixture, "sancho").
+		WithK8sYAML(SanchoYAML).
+		WithImageTargets(baseImage, srcImage).
+		WithLiveUpdateAtIndex(lu, 1).
+		Build()
+}
+
+func NewSanchoLiveUpdateMultiStageManifest(fixture Fixture) model.Manifest {
 	baseImage := model.NewImageTarget(SanchoBaseRef).WithBuildDetails(model.DockerBuild{
 		Dockerfile: `FROM golang:1.10`,
 		BuildPath:  fixture.Path(),
 	})
 
-	fbInfo := NewSanchoFastBuild(fixture)
-	fbInfo.BaseDockerfile = `FROM sancho-base`
+	srcImage := NewSanchoLiveUpdateImageTarget(fixture)
+	dbInfo := srcImage.DockerBuildInfo()
+	dbInfo.Dockerfile = `FROM sancho-base`
 
-	srcImage := model.NewImageTarget(SanchoRef).
-		WithBuildDetails(fbInfo).
+	srcImage = srcImage.
+		WithBuildDetails(dbInfo).
 		WithDependencyIDs([]model.TargetID{baseImage.ID()})
 
 	kTarget := model.K8sTarget{YAML: SanchoYAML}.
@@ -265,7 +294,7 @@ func NewSanchoFastMultiStageManifest(fixture pather) model.Manifest {
 		WithDeployTarget(kTarget)
 }
 
-func NewManifestsWithCommonAncestor(fixture pather) (model.Manifest, model.Manifest) {
+func NewManifestsWithCommonAncestor(fixture Fixture) (model.Manifest, model.Manifest) {
 	refCommon := container.MustParseSelector("gcr.io/common")
 	ref1 := container.MustParseSelector("gcr.io/image-1")
 	ref2 := container.MustParseSelector("gcr.io/image-2")
@@ -287,46 +316,18 @@ func NewManifestsWithCommonAncestor(fixture pather) (model.Manifest, model.Manif
 		BuildPath:  fixture.JoinPath("image-2"),
 	})
 
-	m1 := assembleK8sManifest(
-		model.Manifest{Name: "image-1"},
-		model.K8sTarget{YAML: testyaml.Deployment("image-1", ref1.String())},
-		targetCommon, target1)
-	m2 := assembleK8sManifest(
-		model.Manifest{Name: "image-2"},
-		model.K8sTarget{YAML: testyaml.Deployment("image-2", ref2.String())},
-		targetCommon, target2)
+	m1 := manifestbuilder.New(fixture, "image-1").
+		WithK8sYAML(testyaml.Deployment("image-1", ref1.String())).
+		WithImageTargets(targetCommon, target1).
+		Build()
+	m2 := manifestbuilder.New(fixture, "image-2").
+		WithK8sYAML(testyaml.Deployment("image-2", ref2.String())).
+		WithImageTargets(targetCommon, target2).
+		Build()
 	return m1, m2
 }
 
-// Assemble these targets into a manifest, that deploys to k8s,
-// wiring up all the dependency ids so that the K8sTarget depends on all
-// the image targets
-func assembleK8sManifest(m model.Manifest, k model.K8sTarget, iTargets ...model.ImageTarget) model.Manifest {
-	ids := make([]model.TargetID, 0, len(iTargets))
-	for _, iTarget := range iTargets {
-		ids = append(ids, iTarget.ID())
-	}
-	k = k.WithDependencyIDs(ids)
-	return m.
-		WithImageTargets(iTargets).
-		WithDeployTarget(k)
-}
-
-// Assemble these targets into a manifest, that deploys to docker compose,
-// wiring up all the dependency ids so that the DockerComposeTarget depends on all
-// the image targets
-func assembleDCManifest(m model.Manifest, iTargets ...model.ImageTarget) model.Manifest {
-	ids := make([]model.TargetID, 0, len(iTargets))
-	for _, iTarget := range iTargets {
-		ids = append(ids, iTarget.ID())
-	}
-	dc := dcTarg.WithDependencyIDs(ids)
-	return m.
-		WithImageTargets(iTargets).
-		WithDeployTarget(dc)
-}
-
-func assembleLiveUpdate(syncs []model.LiveUpdateSyncStep, runs []model.LiveUpdateRunStep, shouldRestart bool, fallBackOn []string, f pather) (model.LiveUpdate, error) {
+func assembleLiveUpdate(syncs []model.LiveUpdateSyncStep, runs []model.LiveUpdateRunStep, shouldRestart bool, fallBackOn []string, f Fixture) model.LiveUpdate {
 	var steps []model.LiveUpdateStep
 	if len(fallBackOn) > 0 {
 		steps = append(steps, model.LiveUpdateFallBackOnStep{Files: fallBackOn})
@@ -342,9 +343,9 @@ func assembleLiveUpdate(syncs []model.LiveUpdateSyncStep, runs []model.LiveUpdat
 	}
 	lu, err := model.NewLiveUpdate(steps, f.Path())
 	if err != nil {
-		return model.LiveUpdate{}, err
+		f.T().Fatal(err)
 	}
-	return lu, nil
+	return lu
 }
 
 func imageTargetWithLiveUpdate(i model.ImageTarget, lu model.LiveUpdate) model.ImageTarget {

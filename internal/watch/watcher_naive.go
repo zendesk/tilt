@@ -3,11 +3,9 @@
 package watch
 
 import (
-	"expvar"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/windmilleng/fsnotify"
@@ -21,51 +19,52 @@ import (
 //
 // All OS-specific codepaths are handled by fsnotify.
 type naiveNotify struct {
-	log           logger.Logger
-	watcher       *fsnotify.Watcher
-	events        chan fsnotify.Event
-	wrappedEvents chan FileEvent
-	errors        chan error
-
-	mu sync.Mutex
-
 	// Paths that we're watching that should be passed up to the caller.
 	// Note that we may have to watch ancestors of these paths
 	// in order to fulfill the API promise.
 	notifyList map[string]bool
+
+	ignore PathMatcher
+	log    logger.Logger
+
+	watcher       *fsnotify.Watcher
+	events        chan fsnotify.Event
+	wrappedEvents chan FileEvent
+	errors        chan error
+	numWatches    int64
 }
 
-var (
-	numberOfWatches = expvar.NewInt("watch.naive.numberOfWatches")
-)
-
-func (d *naiveNotify) Add(name string) error {
-	fi, err := os.Stat(name)
-	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrapf(err, "notify.Add(%q)", name)
+func (d *naiveNotify) Start() error {
+	if len(d.notifyList) == 0 {
+		return nil
 	}
 
-	// if it's a file that doesn't exist, watch its parent
-	if os.IsNotExist(err) {
-		err = d.watchAncestorOfMissingPath(name)
-		if err != nil {
-			return errors.Wrapf(err, "watchAncestorOfMissingPath(%q)", name)
-		}
-	} else if fi.IsDir() {
-		err = d.watchRecursively(name)
-		if err != nil {
+	for name := range d.notifyList {
+		fi, err := os.Stat(name)
+		if err != nil && !os.IsNotExist(err) {
 			return errors.Wrapf(err, "notify.Add(%q)", name)
 		}
-	} else {
-		err = d.add(filepath.Dir(name))
-		if err != nil {
-			return errors.Wrapf(err, "notify.Add(%q)", filepath.Dir(name))
+
+		// if it's a file that doesn't exist, watch its parent
+		if os.IsNotExist(err) {
+			err = d.watchAncestorOfMissingPath(name)
+			if err != nil {
+				return errors.Wrapf(err, "watchAncestorOfMissingPath(%q)", name)
+			}
+		} else if fi.IsDir() {
+			err = d.watchRecursively(name)
+			if err != nil {
+				return errors.Wrapf(err, "notify.Add(%q)", name)
+			}
+		} else {
+			err = d.add(filepath.Dir(name))
+			if err != nil {
+				return errors.Wrapf(err, "notify.Add(%q)", filepath.Dir(name))
+			}
 		}
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.notifyList[name] = true
+	go d.loop()
 
 	return nil
 }
@@ -79,6 +78,16 @@ func (d *naiveNotify) watchRecursively(dir string) error {
 		if !mode.IsDir() {
 			return nil
 		}
+
+		shouldSkipDir, err := d.shouldSkipDir(path)
+		if err != nil {
+			return err
+		}
+
+		if shouldSkipDir {
+			return filepath.SkipDir
+		}
+
 		err = d.add(path)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -109,6 +118,8 @@ func (d *naiveNotify) watchAncestorOfMissingPath(path string) error {
 }
 
 func (d *naiveNotify) Close() error {
+	numberOfWatches.Add(-d.numWatches)
+	d.numWatches = 0
 	return d.watcher.Close()
 }
 
@@ -123,10 +134,8 @@ func (d *naiveNotify) Errors() chan error {
 func (d *naiveNotify) loop() {
 	defer close(d.wrappedEvents)
 	for e := range d.events {
-		shouldNotify := d.shouldNotify(e.Name)
-
 		if e.Op&fsnotify.Create != fsnotify.Create {
-			if shouldNotify {
+			if d.shouldNotify(e.Name) {
 				d.wrappedEvents <- FileEvent{e.Name}
 			}
 			continue
@@ -146,7 +155,15 @@ func (d *naiveNotify) loop() {
 
 			shouldWatch := false
 			if mode.IsDir() {
-				// watch all directories
+				// watch directories unless we can skip them entirely
+				shouldSkipDir, err := d.shouldSkipDir(path)
+				if err != nil {
+					return err
+				}
+				if shouldSkipDir {
+					return filepath.SkipDir
+				}
+
 				shouldWatch = true
 			} else {
 				// watch files that are explicitly named, but don't watch others
@@ -170,8 +187,13 @@ func (d *naiveNotify) loop() {
 }
 
 func (d *naiveNotify) shouldNotify(path string) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	ignore, err := d.ignore.Matches(path)
+	if err != nil {
+		d.log.Infof("Error matching path %q: %v", path, err)
+	} else if ignore {
+		return false
+	}
+
 	if _, ok := d.notifyList[path]; ok {
 		return true
 	}
@@ -184,33 +206,58 @@ func (d *naiveNotify) shouldNotify(path string) bool {
 	return false
 }
 
+func (d *naiveNotify) shouldSkipDir(path string) (bool, error) {
+	// If path is directly in the notifyList, we should always watch it.
+	if d.notifyList[path] {
+		return false, nil
+	}
+
+	skip, err := d.ignore.MatchesEntireDir(path)
+	if err != nil {
+		return false, errors.Wrap(err, "shouldSkipDir")
+	}
+	return skip, nil
+}
+
 func (d *naiveNotify) add(path string) error {
 	err := d.watcher.Add(path)
 	if err != nil {
 		return err
 	}
+	d.numWatches++
 	numberOfWatches.Add(1)
 	return nil
 }
 
-func NewWatcher(l logger.Logger) (*naiveNotify, error) {
+func newWatcher(paths []string, ignore PathMatcher, l logger.Logger) (*naiveNotify, error) {
+	if ignore == nil {
+		return nil, fmt.Errorf("newWatcher: ignore is nil")
+	}
+
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
 
 	wrappedEvents := make(chan FileEvent)
+	notifyList := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return nil, errors.Wrap(err, "newWatcher")
+		}
+		notifyList[path] = true
+	}
 
 	wmw := &naiveNotify{
+		notifyList:    notifyList,
+		ignore:        ignore,
 		log:           l,
 		watcher:       fsw,
 		events:        fsw.Events,
 		wrappedEvents: wrappedEvents,
 		errors:        fsw.Errors,
-		notifyList:    map[string]bool{},
 	}
-
-	go wmw.loop()
 
 	return wmw, nil
 }

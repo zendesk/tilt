@@ -1,43 +1,43 @@
+/**
+Code for parsing Kustomize YAML and analyzing dependencies.
+
+Adapted from
+https://github.com/GoogleContainerTools/skaffold/blob/511c77f1736b657415500eb9b820ae7e4f753347/pkg/skaffold/deploy/kustomize.go
+
+Copyright 2018 The Skaffold Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package kustomize
 
 import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 
 	yaml "gopkg.in/yaml.v2"
+	"sigs.k8s.io/kustomize/pkg/pgmconfig"
+	"sigs.k8s.io/kustomize/pkg/types"
 )
-
-var kustomizationFileNames = []string{
-	"kustomization.yaml",
-	"kustomization.yml",
-	"Kustomization",
-}
-
-// kustomization is the content of a kustomization.yaml file.
-type kustomization struct {
-	Bases              []string             `yaml:"bases"`
-	Resources          []string             `yaml:"resources"`
-	Patches            []string             `yaml:"patches"`
-	CRDs               []string             `yaml:"crds"`
-	PatchesJSON6902    []patchJSON6902      `yaml:"patchesJson6902"`
-	ConfigMapGenerator []configMapGenerator `yaml:"configMapGenerator"`
-}
-
-type patchJSON6902 struct {
-	Path string `yaml:"path"`
-}
-
-type configMapGenerator struct {
-	Files []string `yaml:"files"`
-}
 
 // Mostly taken from the [kustomize source code](https://github.com/kubernetes-sigs/kustomize/blob/ee68a9c450bc884b0d657fb7e3d62eb1ac59d14f/pkg/target/kusttarget.go#L97) itself.
 func loadKustFile(dir string) ([]byte, string, error) {
 	var content []byte
 	var path string
 	match := 0
-	for _, kf := range kustomizationFileNames {
+	for _, kf := range pgmconfig.KustomizationFileNames {
 		p := filepath.Join(dir, kf)
 		c, err := ioutil.ReadFile(p)
 		if err == nil {
@@ -51,7 +51,7 @@ func loadKustFile(dir string) ([]byte, string, error) {
 	case 0:
 		return nil, "", fmt.Errorf(
 			"unable to find one of %v in directory '%s'",
-			kustomizationFileNames, dir)
+			pgmconfig.KustomizationFileNames, dir)
 	case 1:
 		return content, path, nil
 	default:
@@ -60,6 +60,11 @@ func loadKustFile(dir string) ([]byte, string, error) {
 	}
 }
 
+// Code for parsing Kustomize adapted from Kustomize
+// https://github.com/kubernetes-sigs/kustomize/blob/ee68a9c450bc884b0d657fb7e3d62eb1ac59d14f/pkg/target/kusttarget.go#L97
+//
+// Code for parsing out dependencies copied from Skaffold
+// https://github.com/GoogleContainerTools/skaffold/blob/511c77f1736b657415500eb9b820ae7e4f753347/pkg/skaffold/deploy/kustomize.go
 func dependenciesForKustomization(dir string) ([]string, error) {
 	var deps []string
 
@@ -68,9 +73,16 @@ func dependenciesForKustomization(dir string) ([]string, error) {
 		return nil, err
 	}
 
-	content := kustomization{}
+	buf = types.FixKustomizationPreUnmarshalling(buf)
+
+	content := types.Kustomization{}
 	if err := yaml.Unmarshal(buf, &content); err != nil {
 		return nil, err
+	}
+
+	errs := content.EnforceFields()
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("Failed to read kustomization file under %s:\n"+strings.Join(errs, "\n"), dir)
 	}
 
 	for _, base := range content.Bases {
@@ -84,13 +96,15 @@ func dependenciesForKustomization(dir string) ([]string, error) {
 
 	deps = append(deps, path)
 	deps = append(deps, joinPaths(dir, content.Resources)...)
-	deps = append(deps, joinPaths(dir, content.Patches)...)
-	deps = append(deps, joinPaths(dir, content.CRDs)...)
-	for _, patch := range content.PatchesJSON6902 {
+	for _, patch := range content.PatchesStrategicMerge {
+		deps = append(deps, filepath.Join(dir, string(patch)))
+	}
+	deps = append(deps, joinPaths(dir, content.Crds)...)
+	for _, patch := range content.PatchesJson6902 {
 		deps = append(deps, filepath.Join(dir, patch.Path))
 	}
 	for _, generator := range content.ConfigMapGenerator {
-		deps = append(deps, joinPaths(dir, generator.Files)...)
+		deps = append(deps, joinPaths(dir, generator.FileSources)...)
 	}
 
 	return deps, nil

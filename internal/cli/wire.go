@@ -27,6 +27,7 @@ import (
 	"github.com/windmilleng/tilt/internal/model"
 	"github.com/windmilleng/tilt/internal/sail/client"
 	"github.com/windmilleng/tilt/internal/store"
+	tft "github.com/windmilleng/tilt/internal/tft/client"
 	"github.com/windmilleng/tilt/internal/tiltfile"
 )
 
@@ -96,6 +97,7 @@ var BaseWireSet = wire.NewSet(
 	provideWebURL,
 	provideWebPort,
 	provideWebDevPort,
+	provideNoBrowserFlag,
 	server.ProvideHeadsUpServer,
 	assets.ProvideAssetServer,
 	server.ProvideHeadsUpServerController,
@@ -103,11 +105,12 @@ var BaseWireSet = wire.NewSet(
 	provideSailMode,
 	provideSailURL,
 	client.SailWireSet,
+	tft.ProvideClient,
 
 	provideThreads,
 	engine.NewKINDPusher,
 
-	feature.ProvideFeature,
+	wire.Value(feature.MainDefaults),
 )
 
 func wireDemo(ctx context.Context, branch demo.RepoBranch, analytics *analytics.TiltAnalytics) (demo.Script, error) {
@@ -165,6 +168,11 @@ func wireK8sVersion(ctx context.Context) (*version.Info, error) {
 }
 
 func wireDockerClusterClient(ctx context.Context) (docker.ClusterClient, error) {
+	wire.Build(BaseWireSet)
+	return nil, nil
+}
+
+func wireDockerLocalClient(ctx context.Context) (docker.LocalClient, error) {
 	wire.Build(BaseWireSet)
 	return nil, nil
 }

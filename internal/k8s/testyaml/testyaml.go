@@ -72,6 +72,8 @@ spec:
   backoffLimit: 4
 `
 
+const SanchoImage = "gcr.io/some-project-162817/sancho"
+
 const SanchoYAML = `
 apiVersion: apps/v1
 kind: Deployment
@@ -99,6 +101,56 @@ spec:
               secretKeyRef:
                 name: slacktoken
                 key: token
+`
+
+const SanchoTwoContainersOneImageYAML = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sancho-2c1i
+  namespace: sancho-ns
+  labels:
+    app: sancho-2c1i
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sancho-2c1i
+  template:
+    metadata:
+      labels:
+        app: sancho-2c1i
+    spec:
+      containers:
+      - name: sancho
+        image: gcr.io/some-project-162817/sancho
+      - name: sancho2
+        image: gcr.io/some-project-162817/sancho
+`
+
+const SanchoYAMLWithCommand = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sancho
+  namespace: sancho-ns
+  labels:
+    app: sancho
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sancho
+  template:
+    metadata:
+      labels:
+        app: sancho
+    spec:
+      containers:
+      - name: sancho
+        image: gcr.io/some-project-162817/sancho
+        command: ["foo.sh"]
+        args: ["something", "something_else"]
 `
 
 const SanchoBeta1YAML = `
@@ -238,6 +290,7 @@ spec:
       - name: sancho-sidecar
         image: gcr.io/some-project-162817/sancho-sidecar
 `
+const SanchoSidecarImage = "gcr.io/some-project-162817/sancho-sidecar"
 
 const SanchoRedisSidecarYAML = `
 apiVersion: apps/v1
@@ -1174,6 +1227,8 @@ metadata:
 spec:
   replicas: 1
 `
+
+const CRDImage = "docker.io/bitnami/minideb:latest"
 
 const MyNamespaceYAML = `apiVersion: v1
 kind: Namespace

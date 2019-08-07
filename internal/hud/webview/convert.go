@@ -101,6 +101,7 @@ func StateToWebView(s store.EngineState) View {
 	ret.NeedsAnalyticsNudge = NeedsNudge(s)
 	ret.RunningTiltBuild = s.TiltBuildInfo
 	ret.LatestTiltBuild = s.LatestTiltBuild
+	ret.FeatureFlags = s.Features
 
 	return ret
 }
@@ -147,7 +148,7 @@ func resourceInfoView(mt *store.ManifestTarget) ResourceInfoView {
 			PodUpdateStartTime: pod.UpdateStartTime,
 			PodStatus:          pod.Status,
 			PodStatusMessage:   strings.Join(pod.StatusMessages, "\n"),
-			PodRestarts:        pod.ContainerRestarts - pod.OldRestarts,
+			PodRestarts:        pod.AllContainerRestarts() - pod.OldRestarts,
 			PodLog:             pod.Log(),
 			YAML:               mt.Manifest.K8sTarget().YAML,
 		}

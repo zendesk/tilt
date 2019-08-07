@@ -3,22 +3,25 @@ package model
 import (
 	"path/filepath"
 
-	"github.com/gobwas/glob"
 	"github.com/pkg/errors"
 
 	"github.com/windmilleng/tilt/internal/ospath"
 )
 
 type PathMatcher interface {
-	Matches(f string, isDir bool) (bool, error)
+	Matches(f string) (bool, error)
+
+	// If this matches the entire dir, we can often optimize filetree walks a bit
+	MatchesEntireDir(file string) (bool, error)
 }
 
 // A Matcher that matches nothing.
 type emptyMatcher struct{}
 
-func (m emptyMatcher) Matches(f string, isDir bool) (bool, error) {
+func (m emptyMatcher) Matches(f string) (bool, error) {
 	return false, nil
 }
+func (emptyMatcher) MatchesEntireDir(p string) (bool, error) { return false, nil }
 
 var EmptyMatcher PathMatcher = emptyMatcher{}
 
@@ -27,9 +30,10 @@ type fileMatcher struct {
 	paths map[string]bool
 }
 
-func (m fileMatcher) Matches(f string, isDir bool) (bool, error) {
+func (m fileMatcher) Matches(f string) (bool, error) {
 	return m.paths[f], nil
 }
+func (fileMatcher) MatchesEntireDir(f string) (bool, error) { return false, nil }
 
 // NewSimpleFileMatcher returns a matcher for the given paths; any relative paths
 // are converted to absolute (relative to cwd).
@@ -57,7 +61,7 @@ type fileOrChildMatcher struct {
 	paths map[string]bool
 }
 
-func (m fileOrChildMatcher) Matches(f string, isDir bool) (bool, error) {
+func (m fileOrChildMatcher) Matches(f string) (bool, error) {
 	// (A) Exact match
 	if m.paths[f] {
 		return true, nil
@@ -71,7 +75,10 @@ func (m fileOrChildMatcher) Matches(f string, isDir bool) (bool, error) {
 	}
 
 	return false, nil
+}
 
+func (m fileOrChildMatcher) MatchesEntireDir(f string) (bool, error) {
+	return m.Matches(f)
 }
 
 // NewRelativeFileOrChildMatcher returns a matcher for the given paths (with any
@@ -113,7 +120,7 @@ func (ps PathSet) AnyMatch(paths []string) (bool, string, error) {
 	matcher := NewRelativeFileOrChildMatcher(ps.BaseDirectory, ps.Paths...)
 
 	for _, path := range paths {
-		match, err := matcher.Matches(path, false)
+		match, err := matcher.Matches(path)
 		if err != nil {
 			return false, "", err
 		}
@@ -124,6 +131,7 @@ func (ps PathSet) AnyMatch(paths []string) (bool, string, error) {
 	return false, "", nil
 }
 
+<<<<<<< HEAD
 type globMatcher struct {
 	globs []glob.Glob
 }
@@ -157,6 +165,8 @@ type PatternMatcher interface {
 	AsMatchPatterns() []string
 }
 
+=======
+>>>>>>> origin/master
 type CompositePathMatcher struct {
 	Matchers []PathMatcher
 }
@@ -165,24 +175,12 @@ func NewCompositeMatcher(matchers []PathMatcher) PathMatcher {
 	if len(matchers) == 0 {
 		return EmptyMatcher
 	}
-	cMatcher := CompositePathMatcher{Matchers: matchers}
-	pMatchers := make([]PatternMatcher, len(matchers))
-	for i, m := range matchers {
-		pm, ok := m.(CompositePatternMatcher)
-		if !ok {
-			return cMatcher
-		}
-		pMatchers[i] = pm
-	}
-	return CompositePatternMatcher{
-		CompositePathMatcher: cMatcher,
-		Matchers:             pMatchers,
-	}
+	return CompositePathMatcher{Matchers: matchers}
 }
 
-func (c CompositePathMatcher) Matches(f string, isDir bool) (bool, error) {
+func (c CompositePathMatcher) Matches(f string) (bool, error) {
 	for _, t := range c.Matchers {
-		ret, err := t.Matches(f, isDir)
+		ret, err := t.Matches(f)
 		if err != nil {
 			return false, err
 		}
@@ -193,18 +191,14 @@ func (c CompositePathMatcher) Matches(f string, isDir bool) (bool, error) {
 	return false, nil
 }
 
-type CompositePatternMatcher struct {
-	CompositePathMatcher
-	Matchers []PatternMatcher
-}
-
-func (c CompositePatternMatcher) AsMatchPatterns() []string {
-	result := []string{}
-	for _, m := range c.Matchers {
-		result = append(result, m.AsMatchPatterns()...)
+func (c CompositePathMatcher) MatchesEntireDir(f string) (bool, error) {
+	for _, t := range c.Matchers {
+		matches, err := t.MatchesEntireDir(f)
+		if matches || err != nil {
+			return matches, err
+		}
 	}
-	return result
+	return false, nil
 }
 
 var _ PathMatcher = CompositePathMatcher{}
-var _ PatternMatcher = CompositePatternMatcher{}

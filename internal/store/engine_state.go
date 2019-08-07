@@ -84,10 +84,9 @@ type EngineState struct {
 	AnalyticsOpt           analytics.Opt // changes to this field will propagate into the TiltAnalytics subscriber + we'll record them as user choice
 	AnalyticsNudgeSurfaced bool          // this flag is set the first time we show the analytics nudge to the user.
 
-	// Features should NOT be read. Use the feature package.
-	// This field is only here to trigger rebuilds when features are
-	// toggled in the Tiltfile.
 	Features map[string]bool
+
+	TeamName string
 }
 
 func (e *EngineState) ManifestNamesForTargetID(id model.TargetID) []model.ManifestName {
@@ -248,8 +247,11 @@ type ManifestState struct {
 	// The last `BuildHistoryLimit` builds. The most recent build is first in the slice.
 	BuildHistory []model.BuildRecord
 
-	// If the pod isn't running this container then it's possible we're running stale code
-	ExpectedContainerID container.ID
+	// The container IDs that we've run a LiveUpdate on, if any. Their contents have
+	// diverged from the image they are built on. If these container don't appear on
+	// the pod, we've lost that state and need to rebuild.
+	LiveUpdatedContainerIDs map[container.ID]bool
+
 	// We detected stale code and are currently doing an image build
 	NeedsRebuildFromCrash bool
 
@@ -276,9 +278,10 @@ func NewState() *EngineState {
 
 func newManifestState(mn model.ManifestName) *ManifestState {
 	return &ManifestState{
-		Name:          mn,
-		BuildStatuses: make(map[model.TargetID]*BuildStatus),
-		LBs:           make(map[k8s.ServiceName]*url.URL),
+		Name:                    mn,
+		BuildStatuses:           make(map[model.TargetID]*BuildStatus),
+		LBs:                     make(map[k8s.ServiceName]*url.URL),
+		LiveUpdatedContainerIDs: container.NewIDSet(),
 	}
 }
 
@@ -521,29 +524,24 @@ type Pod struct {
 	// The log for the currently active pod, if any
 	CurrentLog model.Log `testdiff:"ignore"`
 
-	// Corresponds to the deployed container.
-	ContainerName     container.Name
-	ContainerID       container.ID
-	ContainerPorts    []int32
-	ContainerReady    bool
-	ContainerImageRef reference.Named
+	Containers []Container
 
 	// We want to show the user # of restarts since pod has been running current code,
 	// i.e. OldRestarts - Total Restarts
-	ContainerRestarts int
-	OldRestarts       int // # times the pod restarted when it was running old code
-
-	// HACK(maia): eventually we'll want our model of the world to handle pods with
-	// multiple containers (for logs, restart counts, port forwards, etc.). For now,
-	// we need to ship log visibility into multiple containers. Here's the minimum
-	// of info we need for that.
-	ContainerInfos []ContainerInfo
+	OldRestarts int // # times the pod restarted when it was running old code
 }
 
-// The minimum info we need to retrieve logs for a container.
-type ContainerInfo struct {
-	ID container.ID
-	container.Name
+type Container struct {
+	Name     container.Name
+	ID       container.ID
+	Ports    []int32
+	Ready    bool
+	ImageRef reference.Named
+	Restarts int
+}
+
+func (c Container) Empty() bool {
+	return c.Name == "" && c.ID == ""
 }
 
 func (p Pod) Empty() bool {
@@ -562,6 +560,31 @@ func (p Pod) isAfter(p2 Pod) bool {
 
 func (p Pod) Log() model.Log {
 	return p.CurrentLog
+}
+
+func (p Pod) AllContainerPorts() []int32 {
+	result := make([]int32, 0)
+	for _, c := range p.Containers {
+		result = append(result, c.Ports...)
+	}
+	return result
+}
+
+func (p Pod) AllContainersReady() bool {
+	for _, c := range p.Containers {
+		if !c.Ready {
+			return false
+		}
+	}
+	return true
+}
+
+func (p Pod) AllContainerRestarts() int {
+	result := 0
+	for _, c := range p.Containers {
+		result += c.Restarts
+	}
+	return result
 }
 
 func ManifestTargetEndpoints(mt *ManifestTarget) (endpoints []string) {
@@ -720,7 +743,7 @@ func resourceInfoView(mt *ManifestTarget) view.ResourceInfoView {
 			PodCreationTime:    pod.StartedAt,
 			PodUpdateStartTime: pod.UpdateStartTime,
 			PodStatus:          pod.Status,
-			PodRestarts:        pod.ContainerRestarts - pod.OldRestarts,
+			PodRestarts:        pod.AllContainerRestarts() - pod.OldRestarts,
 			PodLog:             pod.CurrentLog,
 			YAML:               mt.Manifest.K8sTarget().YAML,
 		}
