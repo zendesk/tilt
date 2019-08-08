@@ -131,42 +131,6 @@ func (ps PathSet) AnyMatch(paths []string) (bool, string, error) {
 	return false, "", nil
 }
 
-<<<<<<< HEAD
-type globMatcher struct {
-	globs []glob.Glob
-}
-
-func (gm globMatcher) Matches(f string, isDir bool) (bool, error) { //Todo maria: use this function
-	for _, g := range gm.globs {
-		if g.Match(f) {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
-func NewGlobMatcher(globs ...string) PathMatcher {
-	ret := globMatcher{}
-	for _, g := range globs {
-		ret.globs = append(ret.globs, glob.MustCompile(g))
-	}
-
-	return ret
-}
-
-type PatternMatcher interface {
-	PathMatcher
-
-	// Express this PathMatcher as a sequence of filepath.Match
-	// patterns. These patterns are widely useful in Docker-land because
-	// they're suitable in .dockerignore or Dockerfile ADD statements
-	// https://docs.docker.com/engine/reference/builder/#add
-	AsMatchPatterns() []string
-}
-
-=======
->>>>>>> origin/master
 type CompositePathMatcher struct {
 	Matchers []PathMatcher
 }
