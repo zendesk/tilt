@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/util/exec"
 
+	"github.com/windmilleng/tilt/internal/k8s/testyaml"
+
 	"github.com/windmilleng/tilt/internal/docker"
 
 	"github.com/windmilleng/tilt/internal/store"
@@ -175,7 +177,7 @@ func TestLiveUpdateDockerBuildLocalContainer(t *testing.T) {
 	runTestCase(t, f, tCase)
 }
 
-func TestLiveUpdateDockerBuildLocalContainerOnMultipleContainers(t *testing.T) {
+func TestLiveUpdateDockerBuildLocalContainerSameImgMultipleContainers(t *testing.T) {
 	f := newBDFixture(t, k8s.EnvDockerDesktop, container.RuntimeDocker)
 	defer f.TearDown()
 
@@ -196,7 +198,7 @@ func TestLiveUpdateDockerBuildLocalContainerOnMultipleContainers(t *testing.T) {
 	runTestCase(t, f, tCase)
 }
 
-func TestLiveUpdateDockerBuildSyncletOnMultipleContainers(t *testing.T) {
+func TestLiveUpdateDockerBuildSyncletSameImgMultipleContainers(t *testing.T) {
 	f := newBDFixture(t, k8s.EnvGKE, container.RuntimeDocker)
 	defer f.TearDown()
 
@@ -218,12 +220,12 @@ func TestLiveUpdateDockerBuildSyncletOnMultipleContainers(t *testing.T) {
 	runTestCase(t, f, tCase)
 }
 
-func TestLiveUpdateDockerBuildExecOnMultipleContainers(t *testing.T) {
+func TestLiveUpdateDockerBuildExecSameImgMultipleContainers(t *testing.T) {
 	f := newBDFixture(t, k8s.EnvGKE, container.RuntimeCrio)
 	defer f.TearDown()
 
-	lu := assembleLiveUpdate(SanchoSyncSteps(f), nil, false, []string{"i/match/nothing"}, f)
 	iTarg := NewSanchoDockerBuildImageTarget(f)
+	lu := assembleLiveUpdate(SanchoSyncSteps(f), nil, false, []string{"i/match/nothing"}, f)
 	cIDs := []container.ID{"c1", "c2", "c3"}
 	tCase := testCase{
 		manifest: manifestbuilder.New(f, "sancho").
@@ -238,6 +240,171 @@ func TestLiveUpdateDockerBuildExecOnMultipleContainers(t *testing.T) {
 
 		// 1 per container (tar archive) x 3 containers
 		expectK8sExecCount: 3,
+	}
+	runTestCase(t, f, tCase)
+}
+
+func TestLiveUpdateDockerBuildLocalContainerDiffImgMultipleContainers(t *testing.T) {
+	f := newBDFixture(t, k8s.EnvDockerDesktop, container.RuntimeDocker)
+	defer f.TearDown()
+
+	sanchoTarg := NewSanchoLiveUpdateImageTarget(f)
+	sidecarTarg := NewSanchoSidecarLiveUpdateImageTarget(f)
+	tCase := testCase{
+		manifest: manifestbuilder.New(f, "sanchoWithSidecar").
+			WithK8sYAML(testyaml.SanchoSidecarYAML).
+			WithImageTargets(sanchoTarg, sidecarTarg).
+			Build(),
+		runningContainersByTarget: map[model.TargetID][]container.ID{
+			sanchoTarg.ID():  []container.ID{"c1"},
+			sidecarTarg.ID(): []container.ID{"c2"},
+		},
+		changedFiles:           []string{"a.txt"},
+		expectDockerBuildCount: 0,
+		expectDockerPushCount:  0,
+
+		// one of each operation per container
+		expectDockerCopyCount:    2,
+		expectDockerExecCount:    2,
+		expectDockerRestartCount: 2,
+	}
+	runTestCase(t, f, tCase)
+}
+
+func TestLiveUpdateDockerBuildSyncletDiffImgMultipleContainers(t *testing.T) {
+	f := newBDFixture(t, k8s.EnvGKE, container.RuntimeDocker)
+	defer f.TearDown()
+
+	sanchoTarg := NewSanchoLiveUpdateImageTarget(f)
+	sidecarTarg := NewSanchoSidecarLiveUpdateImageTarget(f)
+	tCase := testCase{
+		manifest: manifestbuilder.New(f, "sanchoWithSidecar").
+			WithK8sYAML(testyaml.SanchoSidecarYAML).
+			WithImageTargets(sanchoTarg, sidecarTarg).
+			Build(),
+		runningContainersByTarget: map[model.TargetID][]container.ID{
+			sanchoTarg.ID():  []container.ID{"c1"},
+			sidecarTarg.ID(): []container.ID{"c2"},
+		},
+		changedFiles:           []string{"a.txt"},
+		expectDockerBuildCount: 0,
+		expectDockerPushCount:  0,
+
+		// one of each operation per container
+		expectSyncletUpdateContainerCount: 2,
+		expectDockerCopyCount:             2,
+		expectDockerExecCount:             2,
+		expectDockerRestartCount:          2,
+	}
+	runTestCase(t, f, tCase)
+}
+
+func TestLiveUpdateDockerBuildExecDiffImgMultipleContainers(t *testing.T) {
+	f := newBDFixture(t, k8s.EnvGKE, container.RuntimeCrio)
+	defer f.TearDown()
+
+	sanchoLU := assembleLiveUpdate(SanchoSyncSteps(f), SanchoRunSteps, false, nil, f)
+	sidecarLU := assembleLiveUpdate(SyncStepsForApp("sidecar", f), RunStepsForApp("sidecar"),
+		false, nil, f)
+	sanchoTarg := NewSanchoDockerBuildImageTarget(f)
+	sidecarTarg := NewSanchoSidecarDockerBuildImageTarget(f)
+	tCase := testCase{
+		manifest: manifestbuilder.New(f, "sanchoWithSidecar").
+			WithK8sYAML(testyaml.SanchoSidecarYAML).
+			WithImageTargets(sanchoTarg, sidecarTarg).
+			WithLiveUpdateAtIndex(sanchoLU, 0).
+			WithLiveUpdateAtIndex(sidecarLU, 1).
+			Build(),
+		runningContainersByTarget: map[model.TargetID][]container.ID{
+			sanchoTarg.ID():  []container.ID{"c1"},
+			sidecarTarg.ID(): []container.ID{"c2"},
+		},
+		changedFiles:           []string{"a.txt"},
+		expectDockerBuildCount: 0,
+		expectDockerPushCount:  0,
+
+		// two (tar archive + run step) per container
+		expectK8sExecCount: 4,
+	}
+	runTestCase(t, f, tCase)
+}
+
+func TestLiveUpdateDiffImgMultipleContainersOnlySomeSyncsMatch(t *testing.T) {
+	f := newBDFixture(t, k8s.EnvGKE, container.RuntimeCrio)
+	defer f.TearDown()
+
+	sanchoSyncs := SanchoSyncSteps(f)
+	sanchoSyncs[0].Source = f.JoinPath("sancho")
+	sidecarSyncs := SyncStepsForApp("sidecar", f)
+	sidecarSyncs[0].Source = f.JoinPath("sidecar")
+
+	sanchoLU := assembleLiveUpdate(sanchoSyncs, SanchoRunSteps, false, nil, f)
+	sidecarLU := assembleLiveUpdate(sidecarSyncs, RunStepsForApp("sidecar"),
+		false, nil, f)
+	sanchoTarg := NewSanchoDockerBuildImageTarget(f)
+	sidecarTarg := NewSanchoSidecarDockerBuildImageTarget(f)
+
+	tCase := testCase{
+		manifest: manifestbuilder.New(f, "sanchoWithSidecar").
+			WithK8sYAML(testyaml.SanchoSidecarYAML).
+			WithImageTargets(sanchoTarg, sidecarTarg).
+			WithLiveUpdateAtIndex(sanchoLU, 0).
+			WithLiveUpdateAtIndex(sidecarLU, 1).
+			Build(),
+		runningContainersByTarget: map[model.TargetID][]container.ID{
+			sanchoTarg.ID():  []container.ID{"c1"},
+			sidecarTarg.ID(): []container.ID{"c2"},
+		},
+		changedFiles:           []string{"sidecar/a.txt"},
+		expectDockerBuildCount: 0,
+		expectDockerPushCount:  0,
+
+		// two (tar archive + run step) per container
+		// only the sidecar should be updated, so expect 2 calls
+		expectK8sExecCount: 2,
+	}
+	runTestCase(t, f, tCase)
+}
+
+func TestLiveUpdateDiffImgMultipleContainersFallBackIfFilesDoesntMatchAnySyncs(t *testing.T) {
+	f := newBDFixture(t, k8s.EnvGKE, container.RuntimeCrio)
+	defer f.TearDown()
+
+	sanchoSyncs := SanchoSyncSteps(f)
+	sanchoSyncs[0].Source = f.JoinPath("sancho")
+	sidecarSyncs := SyncStepsForApp("sidecar", f)
+	sidecarSyncs[0].Source = f.JoinPath("sidecar")
+
+	sanchoLU := assembleLiveUpdate(sanchoSyncs, SanchoRunSteps, false, nil, f)
+	sidecarLU := assembleLiveUpdate(sidecarSyncs, RunStepsForApp("sidecar"),
+		false, nil, f)
+	sanchoTarg := NewSanchoDockerBuildImageTarget(f)
+	sidecarTarg := NewSanchoSidecarDockerBuildImageTarget(f)
+
+	tCase := testCase{
+		manifest: manifestbuilder.New(f, "sanchoWithSidecar").
+			WithK8sYAML(testyaml.SanchoSidecarYAML).
+			WithImageTargets(sanchoTarg, sidecarTarg).
+			WithLiveUpdateAtIndex(sanchoLU, 0).
+			WithLiveUpdateAtIndex(sidecarLU, 1).
+			Build(),
+		runningContainersByTarget: map[model.TargetID][]container.ID{
+			sanchoTarg.ID():  []container.ID{"c1"},
+			sidecarTarg.ID(): []container.ID{"c2"},
+		},
+		changedFiles: []string{"sidecar/matches_sync.txt", "./doesnt_match.txt"},
+
+		// expect to fall back to image build b/c one file matches NO syncs
+		expectDockerBuildCount: 2,
+		expectDockerPushCount:  2,
+		expectK8sDeploy:        true,
+
+		// no container update, so expect no k8s exec calls
+		expectK8sExecCount: 0,
+
+		// fallback message for 1+ files not matching a sync
+		logsContain: []string{"found file(s) not matching a LiveUpdate sync",
+			f.JoinPath("doesnt_match.txt")},
 	}
 	runTestCase(t, f, tCase)
 }
@@ -775,7 +942,8 @@ func TestLiveUpdateLocalContainerChangedFileNotMatchingSyncFallsBack(t *testing.
 		expectDockerRestartCount: 0,
 		expectK8sDeploy:          true, // Because we fell back to image builder, we also did a k8s deploy
 
-		logsContain:     []string{f.JoinPath("a.txt"), "doesn't match a LiveUpdate sync"},
+		logsContain: []string{"found file(s) not matching a LiveUpdate sync",
+			f.JoinPath("a.txt")},
 		logsDontContain: []string{"unexpected error"},
 	}
 	runTestCase(t, f, tCase)
@@ -807,7 +975,8 @@ func TestLiveUpdateSyncletChangedFileNotMatchingSyncFallsBack(t *testing.T) {
 		expectK8sDeploy:          true, // because we fell back to image builder, we also did a k8s deploy
 		expectSyncletDeploy:      true, // (and expect that yaml to have contained the synclet)
 
-		logsContain:     []string{f.JoinPath("a.txt"), "doesn't match a LiveUpdate sync"},
+		logsContain: []string{"found file(s) not matching a LiveUpdate sync",
+			f.JoinPath("a.txt")},
 		logsDontContain: []string{"unexpected error"},
 	}
 	runTestCase(t, f, tCase)
@@ -839,7 +1008,8 @@ func TestLiveUpdateSomeFilesMatchSyncSomeDontFallsBack(t *testing.T) {
 		expectDockerRestartCount: 0,
 		expectK8sDeploy:          true, // Because we fell back to image builder, we also did a k8s deploy
 
-		logsContain:     []string{f.JoinPath("a.txt"), "doesn't match a LiveUpdate sync"},
+		logsContain: []string{"found file(s) not matching a LiveUpdate sync",
+			f.JoinPath("a.txt")},
 		logsDontContain: []string{"unexpected error"},
 	}
 	runTestCase(t, f, tCase)
