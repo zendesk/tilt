@@ -100,7 +100,7 @@ func (l LiveUpdateRestartContainerStep) liveUpdateStep() {}
 
 // FallBackOnFiles returns a PathSet of files which, if any have changed, indicate
 // that we should fall back to an image build.
-func (lu LiveUpdate) FallBackOnFiles() PathSet { //todo
+func (lu LiveUpdate) FallBackOnFiles() PathSet {
 	var files []string
 	for _, step := range lu.Steps {
 		switch step := step.(type) {

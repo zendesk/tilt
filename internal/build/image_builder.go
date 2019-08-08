@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gobwas/glob"
-
 	"github.com/docker/cli/cli/command"
 	cliflags "github.com/docker/cli/cli/flags"
 	"github.com/docker/distribution/reference"
@@ -118,11 +116,6 @@ func (d *dockerImageBuilder) addConditionalRuns(df dockerfile.Dockerfile, runs [
 		}
 
 		matcher, err := ignore.CreateRunMatcher(run)
-		for _, t := range run.Triggers.Paths {
-			if isGlob(t) {
-
-			}
-		}
 		if err != nil {
 			return "", nil, err
 		}
@@ -546,11 +539,3 @@ func indent(text, indent string) string {
 	}
 	return result[:len(result)-1]
 }
-
-func isGlob(possibleGlob string) bool {
-	_, err := glob.Compile(possibleGlob)
-	if err != nil {
-		return false
-	}
-	return true
-} // what if it is a glob but an unvalid one, do this for now to check
