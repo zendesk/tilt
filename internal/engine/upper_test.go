@@ -1346,6 +1346,39 @@ func TestPodEventUpdateByTimestamp(t *testing.T) {
 	f.assertAllBuildsConsumed()
 }
 
+func TestPodEventDeleted(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.TearDown()
+	mn := model.ManifestName("foobar")
+	manifest := f.newManifest(mn.String())
+	f.Start([]model.Manifest{manifest}, true)
+
+	call := f.nextCallComplete()
+	assert.True(t, call.oneState().IsEmpty())
+
+	creationTime := time.Now()
+	pod := f.testPod("my-pod", manifest, "Running", creationTime)
+	f.podEvent(pod)
+
+	f.WaitUntilManifestState("pod crashes", mn, func(state store.ManifestState) bool {
+		return state.PodSet.ContainsID("my-pod")
+	})
+
+	pod.DeletionTimestamp = &metav1.Time{Time: pod.CreationTimestamp.Add(time.Minute)}
+	f.podEvent(pod)
+
+	f.WaitUntilManifestState("podset is empty", mn, func(state store.ManifestState) bool {
+		return state.PodSet.Len() == 0
+	})
+
+	err := f.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.assertAllBuildsConsumed()
+}
+
 func TestPodEventUpdateByPodName(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
@@ -2613,6 +2646,12 @@ type testFixture struct {
 
 func newTestFixture(t *testing.T) *testFixture {
 	f := tempdir.NewTempDirFixture(t)
+
+	log := bufsync.NewThreadSafeBuffer()
+	to := &testOpter{}
+	ctx, _, ta := testutils.ForkedCtxAndAnalyticsWithOpterForTest(log, to)
+	ctx, cancel := context.WithCancel(ctx)
+
 	watcher := newFakeMultiWatcher()
 	b := newFakeBuildAndDeployer(t)
 
@@ -2626,11 +2665,6 @@ func newTestFixture(t *testing.T) *testFixture {
 	sw := NewServiceWatcher(k8s, "")
 
 	fakeHud := hud.NewFakeHud()
-
-	log := bufsync.NewThreadSafeBuffer()
-	to := &testOpter{}
-	ctx, _, ta := testutils.ForkedCtxAndAnalyticsWithOpterForTest(log, to)
-	ctx, cancel := context.WithCancel(ctx)
 
 	fSub := fixtureSub{ch: make(chan bool, 1000)}
 	st := store.NewStore(UpperReducer, store.LogActionsFlag(false))
@@ -2658,7 +2692,9 @@ func newTestFixture(t *testing.T) *testFixture {
 	dclm := NewDockerComposeLogManager(fakeDcc)
 	pm := NewProfilerManager()
 	sCli := synclet.NewTestSyncletClient(dockerClient)
-	sm := containerupdate.NewSyncletManagerForTests(k8s, sCli)
+	sGRPCCli, err := synclet.FakeGRPCWrapper(ctx, sCli)
+	assert.NoError(t, err)
+	sm := containerupdate.NewSyncletManagerForTests(k8s, sGRPCCli, sCli)
 	hudsc := server.ProvideHeadsUpServerController(0, &server.HeadsUpServer{}, assets.NewFakeServer(), model.WebURL{}, false)
 	ghc := &github.FakeClient{}
 	sc := &client.FakeSailClient{}
