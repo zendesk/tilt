@@ -78,15 +78,7 @@ export type K8sResourceInfo = {
   Endpoints: Array<string>
 }
 
-export type DCResourceInfo = {
-  ConfigPaths: Array<string>
-  ContainerStatus: string
-  ContainerID: string
-  Log: string
-  StartTime: string
-}
-  
-export type State = {
+export type Snapshot = {
   Message: string
   View: {
     Resources: Array<Resource>
@@ -100,4 +92,5 @@ export type State = {
     FeatureFlags: { [featureFlag: string]: boolean }
   } | null
   IsSidebarClosed: boolean
+  AlertLinks: { [key: string]: string }
 }
