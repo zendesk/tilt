@@ -85,3 +85,19 @@ export type DCResourceInfo = {
   Log: string
   StartTime: string
 }
+  
+export type State = {
+  Message: string
+  View: {
+    Resources: Array<Resource>
+    Log: string
+    LogTimestamps: boolean
+    SailEnabled: boolean
+    SailURL: string
+    NeedsAnalyticsNudge: boolean
+    RunningTiltBuild: TiltBuild
+    LatestTiltBuild: TiltBuild
+    FeatureFlags: { [featureFlag: string]: boolean }
+  } | null
+  IsSidebarClosed: boolean
+}
