@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-    "io/ioutil"
-    "log"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"time"
 
@@ -47,7 +47,7 @@ type HeadsUpServer struct {
 	sailCli           client.SailClient
 	tftCli            tft.Client
 	numWebsocketConns int32
-    httpCli           *http.Client
+	httpCli           *http.Client
 }
 
 func ProvideHeadsUpServer(store *store.Store, assetServer assets.Server, analytics *tiltanalytics.TiltAnalytics, sailCli client.SailClient, tftClient tft.Client, httpClient httpClient) *HeadsUpServer {
@@ -250,7 +250,6 @@ func (s *HeadsUpServer) HandleNewAlert(w http.ResponseWriter, req *http.Request)
 	_, _ = w.Write(js)
 }
 
-
 func templateAlertURL(id tft.AlertID) string {
 	return fmt.Sprintf("https://%s/alert/%s", tiltAlertsDomain, id)
 }
@@ -273,44 +272,80 @@ func tsAlertToBackendAlert(alert tsAlert) tft.Alert {
 	}
 }
 
+/* -- SNAPSHOT: SENDING SNAPSHOT TO SERVER -- */
+type snapshotURLJson struct {
+	Url string `json:"url"`
+}
+type SnapshotID string
 
+type snapshotIDResponse struct {
+	ID string
+}
+
+func templateSnapshotURL(id SnapshotID) string {
+	return fmt.Sprintf("https://%s/snapshot/%s", tiltAlertsDomain, id)
+}
 
 func (s *HeadsUpServer) HandleNewSnapshot(w http.ResponseWriter, req *http.Request) {
-    if req.Method != http.MethodPost {
-        http.Error(w, "must be POST request", http.StatusBadRequest)
-        return
-    }
+	if req.Method != http.MethodPost {
+		http.Error(w, "must be POST request", http.StatusBadRequest)
+		return
+	}
 
-    r, err := http.NewRequest(http.MethodPost, "https://alerts.tilt.dev/api/snapshot/new", req.Body)
-    res, err := s.httpCli.Do(r)
-    if err != nil {
-        w.WriteHeader(http.StatusInternalServerError)
-        _, err := w.Write([]byte(err.Error()))
-        if err != nil {
-            log.Printf("Error writing error to response: %v\n", err)
-        }
-        return
-    }
+	request, err := http.NewRequest(http.MethodPost, "https://alerts.tilt.dev/api/snapshot/new", req.Body) // New request
+	response, err := s.httpCli.Do(request)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, err := w.Write([]byte(err.Error()))
+		if err != nil {
+			log.Printf("Error writing error to response: %v\n", err)
+		}
+		return
+	}
 
-    b, err := ioutil.ReadAll(res.Body)
-    if err != nil {
-        log.Printf("Error reading body: %v\n", err)
-        w.WriteHeader(http.StatusInternalServerError)
-        return
-    }
+	responseWithID, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Printf("Error reading responseWithID: %v\n", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-    w.WriteHeader(res.StatusCode)
-    _, err = w.Write(b)
-    if err != nil {
-        log.Printf("Error writing response: %v\n", err)
-        return
-    }
+	//unpack response with snapshot ID
+	var resp snapshotIDResponse
+	err = json.Unmarshal(responseWithID, &resp)
+	if err != nil || resp.ID == "" {
+		log.Printf("Error unpacking snapshot response json: %v\n", err)
+		return
+	}
+
+	//create URL with snapshot ID
+	var ID SnapshotID
+	ID = SnapshotID(resp.ID)
+	responsePayload := snapshotURLJson{
+		Url: templateSnapshotURL(ID),
+	}
+
+	//encode URL to json format
+	urlJS, err := json.Marshal(responsePayload)
+	if err != nil {
+		log.Printf("Error to marshal url JSON response %v\n", err)
+		return
+	}
+
+	//write URL to header
+	w.WriteHeader(response.StatusCode)
+	_, err = w.Write(urlJS)
+	if err != nil {
+		log.Printf("Error writing URL response: %v\n", err)
+		return
+	}
+
 }
 
 type httpClient interface {
-    Do(*http.Request) (*http.Response, error)
+	Do(*http.Request) (*http.Response, error)
 }
 
 func ProvideHttpClient() httpClient {
-    return http.DefaultClient
+	return http.DefaultClient
 }
