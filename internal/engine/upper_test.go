@@ -2534,6 +2534,38 @@ alert-injes…┊ ghij`)
 	assert.Nil(t, err)
 }
 
+func TestSameImageMultiContainerLiveUpdateMetric(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.TearDown()
+	f.WriteFile("Tiltfile", `
+docker_build('gcr.io/some-project-162817/sancho', '.', live_update=[sync('.', '/app')])
+k8s_yaml('sancho_twin.yaml')
+	`)
+	f.WriteFile("Dockerfile", `FROM iron/go:prod`)
+	f.WriteFile("sancho_twin.yaml", SanchoTwinYAML)
+
+	f.loadAndStart()
+
+	// Any action to trigger AnalyticsReporter.OnChange
+	f.store.Dispatch(BuildStartedAction{
+		ManifestName: "sancho2c1i",
+		StartTime:    time.Now(),
+	})
+
+	var runningEvt analytics.CountEvent
+	for _, evt := range f.ma.Counts {
+		if evt.Name == "up.running" {
+			runningEvt = evt
+			break
+		}
+	}
+	require.NotEmpty(t, runningEvt.Name, "did not find 'up.running' event in analytics events")
+	assert.Equal(t, "1", runningEvt.Tags["resource.sameimagemultiplecontainerliveupdate.count"])
+
+	err := f.Stop()
+	assert.Nil(t, err)
+}
+
 type fakeTimerMaker struct {
 	restTimerLock *sync.Mutex
 	maxTimerLock  *sync.Mutex
@@ -2629,6 +2661,7 @@ type testFixture struct {
 	tfl                   tiltfile.TiltfileLoader
 	ghc                   *github.FakeClient
 	opter                 *testOpter
+	ma                    *analytics.MemoryAnalytics
 	tiltVersionCheckDelay time.Duration
 
 	// old value of k8sEventsFeatureFlag env var, for teardown
@@ -2644,7 +2677,7 @@ func newTestFixture(t *testing.T) *testFixture {
 
 	log := bufsync.NewThreadSafeBuffer()
 	to := &testOpter{}
-	ctx, _, ta := testutils.ForkedCtxAndAnalyticsWithOpterForTest(log, to)
+	ctx, ma, ta := testutils.ForkedCtxAndAnalyticsWithOpterForTest(log, to)
 	ctx, cancel := context.WithCancel(ctx)
 
 	watcher := newFakeMultiWatcher()
@@ -2715,6 +2748,7 @@ func newTestFixture(t *testing.T) *testFixture {
 		tfl:                   tfl,
 		ghc:                   ghc,
 		opter:                 to,
+		ma:                    ma,
 		tiltVersionCheckDelay: versionCheckInterval,
 	}
 

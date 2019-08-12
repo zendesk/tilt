@@ -29,6 +29,7 @@ func (ar *AnalyticsReporter) OnChange(ctx context.Context, st store.RStore) {
 	// wait until state has been kinda initialized
 	if !state.TiltStartTime.IsZero() && state.LastTiltfileError() == nil {
 		ar.started = true
+		ar.report()
 		go func() {
 			for {
 				select {
