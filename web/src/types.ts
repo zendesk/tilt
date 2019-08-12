@@ -78,7 +78,7 @@ export type K8sResourceInfo = {
   Endpoints: Array<string>
 }
 
-export type Snapshot = {
+export type Snapshot = { // input of snapshot_storage
   Message: string
   View: {
     Resources: Array<Resource>
