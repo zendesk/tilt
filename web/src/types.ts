@@ -78,7 +78,8 @@ export type K8sResourceInfo = {
   Endpoints: Array<string>
 }
 
-export type Snapshot = { // input of snapshot_storage
+export type Snapshot = {
+  // input of snapshot_storage
   Message: string
   View: {
     Resources: Array<Resource>
@@ -92,5 +93,4 @@ export type Snapshot = { // input of snapshot_storage
     FeatureFlags: { [featureFlag: string]: boolean }
   } | null
   IsSidebarClosed: boolean
-  AlertLinks: { [key: string]: string }
 }
