@@ -77,6 +77,13 @@ export type K8sResourceInfo = {
   YAML: string
   Endpoints: Array<string>
 }
+export type DCResourceInfo = {
+  ConfigPaths: Array<string>
+  ContainerStatus: string
+  ContainerID: string
+  Log: string
+  StartTime: string
+}
 
 export type Snapshot = {
   // input of snapshot_storage
