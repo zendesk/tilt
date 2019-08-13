@@ -15,6 +15,7 @@ type TopBarProps = {
   numberOfAlerts: number
   state: Snapshot
   handleSendSnapshot: (snapshot: Snapshot) => void
+  snapshotURL: string
   //TODO TFT: add snapshot feature flag boolean
 }
 
@@ -33,7 +34,8 @@ class TopBar extends PureComponent<TopBarProps> {
         <div className="TopBar-headerDiv-snapshotURL">
           {renderSnapshotLinkButton(
             this.props.state,
-            this.props.handleSendSnapshot
+            this.props.handleSendSnapshot,
+            this.props.snapshotURL
           )}
         </div>
         <span className="TopBar-spacer">&nbsp;</span>
@@ -48,10 +50,30 @@ class TopBar extends PureComponent<TopBarProps> {
 
 function renderSnapshotLinkButton(
   snapshot: Snapshot,
-  handleSendSnapshot: (snapshot: Snapshot) => void
+  handleSendSnapshot: (snapshot: Snapshot) => void,
+  snapshotURL: string
 ) {
+  let hasLink = snapshotURL != ""
+  if (!hasLink) {
+    return (
+      <section className="TopBar-headerDiv-snapshotUrlWrap">
+        <button onClick={() => handleSendSnapshot(snapshot)}>Get Link</button>
+      </section>
+    )
+  } else {
+    return (
+      <section className="TopBar-headerDiv-snapshotUrlWrap">
+        <p className="TopBar-headerDiv-snapshotUrl">{snapshotURL}</p>
+        <button
+          title="Open link in new tab"
+          onClick={() => window.open(snapshotURL)}
+        >
+          Open
+        </button>
+      </section>
+    )
+  }
   //TODO TFT - formatting the button
-  return <button onClick={() => handleSendSnapshot(snapshot)}>Get Link</button>
 }
 
 export default TopBar
