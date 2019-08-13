@@ -401,7 +401,7 @@ func TestHandleNewAlert(t *testing.T) {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusBadRequest)
 	}
-	assert.Contains(t, rr.Body.String(), "https://alerts.tilt.dev/alert/aaaaaa") // TODO(Han): Use constant
+	assert.Contains(t, rr.Body.String(), "https://alerts.tilt.dev/alert/aaaaaa")
 }
 
 func TestHandleNewSnapshot(t *testing.T) {
@@ -424,9 +424,9 @@ func TestHandleNewSnapshot(t *testing.T) {
 
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusInternalServerError)
+			status, http.StatusOK)
 	}
-	assert.Contains(t, rr.Body.String(), "https://alerts.tilt.dev/alert/aaaaaa")
+	assert.Contains(t, rr.Body.String(), "https://alerts.tilt.dev/snapshot/aaaaa")
 }
 
 
@@ -464,8 +464,10 @@ func newTestFixture(t *testing.T) *serverFixture {
 type fakeHttpClient struct {}
 
 func (f fakeHttpClient) Do(req *http.Request) (*http.Response, error) {
-	return nil, nil
-	//w.WriteHeader(http.StatusOK)
+	return &http.Response{
+		StatusCode:       http.StatusOK,
+		Body:             ioutil.NopCloser(bytes.NewReader([]byte(`{"ID":"aaaaa"}`))),
+	}, nil
 }
 
 func (f *serverFixture) assertIncrement(name string, count int) {
