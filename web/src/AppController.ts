@@ -1,5 +1,6 @@
 import HUD from "./HUD"
 import { getResourceAlerts } from "./alerts"
+import {Resource} from "./types";
 
 // A Websocket that automatically retries.
 
@@ -45,7 +46,7 @@ class AppController {
 
       let data = JSON.parse(event.data)
 
-      data.Resources = data.Resources.map((r: any) => {
+      data.View.Resources = data.View.Resources.map((r: Resource) => {
         if (r.ResourceInfo === null) {
           r.ResourceInfo = {
             PodName: "",
@@ -87,6 +88,7 @@ class AppController {
         Message: "Disconnected…",
         IsSidebarClosed: false,
         AlertLinks: {},
+        SnapshotLink: "",
       })
       this.createNewSocket()
       return
@@ -112,6 +114,7 @@ class AppController {
         Message: message,
         IsSidebarClosed: false,
         AlertLinks: {},
+        SnapshotLink: "",
       })
       this.createNewSocket()
     }, timeout)
