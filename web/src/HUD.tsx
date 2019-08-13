@@ -41,6 +41,7 @@ type HudState = {
   } | null
   IsSidebarClosed: boolean
   AlertLinks: { [key: string]: string }
+  SnapshotLink: string
 }
 
 type NewAlertResponse = {
@@ -106,6 +107,7 @@ class HUD extends Component<HudProps, HudState> {
       },
       IsSidebarClosed: false,
       AlertLinks: {},
+      SnapshotLink: "",
     }
 
     this.toggleSidebar = this.toggleSidebar.bind(this)
@@ -189,8 +191,9 @@ class HUD extends Component<HudProps, HudState> {
         res
           .json()
           .then((value: NewSnapshotResponse) => {
-            debugger
-            window.open(value.url)
+            this.setState({
+              SnapshotLink: value.url,
+            })
           })
           .catch(err => console.error(err))
       })
@@ -255,6 +258,7 @@ class HUD extends Component<HudProps, HudState> {
               handleSendSnapshot={this.sendSnapshot.bind(
                 hudStatetoSnapshot(this.state)
               )}
+              snapshotURL={this.state.SnapshotLink}
             />
           )
         }
@@ -279,6 +283,7 @@ class HUD extends Component<HudProps, HudState> {
           handleSendSnapshot={this.sendSnapshot.bind(
             hudStatetoSnapshot(this.state)
           )}
+          snapshotURL={this.state.SnapshotLink}
         />
       )
     }
