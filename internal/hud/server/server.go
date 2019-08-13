@@ -47,7 +47,7 @@ type HeadsUpServer struct {
 	sailCli           client.SailClient
 	tftCli            tft.Client
 	numWebsocketConns int32
-    httpCli           *http.Client
+    httpCli           httpClient
 }
 
 func ProvideHeadsUpServer(store *store.Store, assetServer assets.Server, analytics *tiltanalytics.TiltAnalytics, sailCli client.SailClient, tftClient tft.Client, httpClient httpClient) *HeadsUpServer {
@@ -58,7 +58,7 @@ func ProvideHeadsUpServer(store *store.Store, assetServer assets.Server, analyti
 		a:       analytics,
 		sailCli: sailCli,
 		tftCli:  tftClient,
-		httpCli: http.DefaultClient,
+		httpCli: httpClient,
 	}
 
 	r.HandleFunc("/api/view", s.ViewJSON)
