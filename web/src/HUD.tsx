@@ -53,12 +53,12 @@ type NewSnapshotResponse = {
   url: string
 }
 
-function hudStatetoSnapshot(h: HudState): Snapshot {
+function hudStatetoSnapshot(h: HUD): Snapshot {
   //used this because hudState has extra fields we don't care about
   return {
-    Message: h.Message,
-    View: h.View,
-    IsSidebarClosed: h.IsSidebarClosed,
+    Message: h.state.Message,
+    View: h.state.View,
+    IsSidebarClosed: h.state.IsSidebarClosed,
   }
 }
 // The Main HUD view, as specified in
@@ -199,7 +199,7 @@ class HUD extends Component<HudProps, HudState> {
           .catch(err => console.error(err))
       })
       .then(err => console.error(err))
-    //TODO TFT: maybe do something other than console the error
+    // //TODO TFT: maybe do something other than console the error
   }
 
   render() {
@@ -256,9 +256,7 @@ class HUD extends Component<HudProps, HudState> {
               sailUrl={sailUrl}
               numberOfAlerts={numAlerts}
               state={this.state}
-              handleSendSnapshot={this.sendSnapshot.bind(
-                hudStatetoSnapshot(this.state)
-              )}
+              handleSendSnapshot={this.sendSnapshot.bind(this)}
               snapshotURL={this.state.SnapshotLink}
             />
           )
@@ -281,9 +279,7 @@ class HUD extends Component<HudProps, HudState> {
           sailUrl={sailUrl}
           numberOfAlerts={numAlerts}
           state={this.state}
-          handleSendSnapshot={this.sendSnapshot.bind(
-            hudStatetoSnapshot(this.state)
-          )}
+          handleSendSnapshot={this.sendSnapshot.bind(this)}
           snapshotURL={this.state.SnapshotLink}
         />
       )
