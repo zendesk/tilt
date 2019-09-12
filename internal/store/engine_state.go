@@ -602,6 +602,7 @@ func resourceInfoView(mt *ManifestTarget) view.ResourceInfoView {
 		}
 	}
 
+	// XXX(dbentley)
 	if dcState, ok := mt.State.RuntimeState.(dockercompose.State); ok {
 		return view.NewDCResourceInfo(mt.Manifest.DockerComposeTarget().ConfigPaths, dcState.Status, dcState.ContainerID, dcState.Log(), dcState.StartTime)
 	} else {

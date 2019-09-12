@@ -52,6 +52,15 @@ type K8sResourceInfo struct {
 
 var _ ResourceInfoView = K8sResourceInfo{}
 
+type LocalResourceInfo struct {
+}
+
+func (LocalResourceInfo) resourceInfoView()     {}
+func (LocalResourceInfo) RuntimeLog() model.Log { return model.Log{} }
+func (LocalResourceInfo) Status() string        { return "" }
+
+var _ ResourceInfoView = LocalResourceInfo{}
+
 func (K8sResourceInfo) resourceInfoView()             {}
 func (k8sInfo K8sResourceInfo) RuntimeLog() model.Log { return k8sInfo.PodLog }
 func (k8sInfo K8sResourceInfo) Status() string        { return k8sInfo.PodStatus }
@@ -117,6 +126,16 @@ func (r Resource) K8sInfo() K8sResourceInfo {
 
 func (r Resource) IsK8s() bool {
 	_, ok := r.ResourceInfo.(K8sResourceInfo)
+	return ok
+}
+
+func (r Resource) LocalInfo() LocalResourceInfo {
+	ret, _ := r.ResourceInfo.(LocalResourceInfo)
+	return ret
+}
+
+func (r Resource) IsLocal() bool {
+	_, ok := r.ResourceInfo.(LocalResourceInfo)
 	return ok
 }
 

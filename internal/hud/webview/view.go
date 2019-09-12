@@ -62,6 +62,8 @@ type YAMLResourceInfo struct {
 
 var _ ResourceInfoView = YAMLResourceInfo{}
 
+// XXX(dbehtley): LocalResourceInfo
+
 func (YAMLResourceInfo) resourceInfoView()              {}
 func (yamlInfo YAMLResourceInfo) RuntimeLog() model.Log { return model.NewLog("") }
 func (yamlInfo YAMLResourceInfo) Status() string        { return "" }

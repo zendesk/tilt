@@ -142,6 +142,8 @@ func resourceInfoView(mt *store.ManifestTarget) ResourceInfoView {
 			K8sResources: mt.Manifest.K8sTarget().DisplayNames,
 		}
 	}
+
+	// XXX(dbentley): IsLocalResource
 	if mt.Manifest.IsDC() {
 		dc := mt.Manifest.DockerComposeTarget()
 		dcState := mt.State.DCRuntimeState()

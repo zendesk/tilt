@@ -60,7 +60,7 @@ export type Resource = {
   PendingBuildEdits: Array<string>
   PendingBuildReason: number
   PendingBuildSince: string
-  ResourceInfo: K8sResourceInfo | DCResourceInfo
+  ResourceInfo: K8sResourceInfo | DCResourceInfo | LocalResourceInfo
   RuntimeStatus: string
   TriggerMode: TriggerMode
   HasPendingChanges: boolean
@@ -83,6 +83,8 @@ export type DCResourceInfo = {
   ContainerID: string
   Log: string
   StartTime: string
+}
+export type LocalResourceInfo = {
 }
 
 export type Snapshot = {

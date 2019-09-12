@@ -28,6 +28,8 @@ const (
 	// In the future, we might have a separate build target and deploy target.
 	TargetTypeDockerCompose TargetType = "docker-compose"
 
+	TargetTypeLocal TargetType = "local"
+
 	// Aggregation of multiple targets into one UI view.
 	// TODO(nick): Currenly used as the type for both Manifest and YAMLManifest, though
 	// we expect YAMLManifest to go away.

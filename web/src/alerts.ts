@@ -50,7 +50,7 @@ function buildFailed(resource: Resource) {
 }
 
 function isK8sResourceInfo(
-  resourceInfo: K8sResourceInfo | DCResourceInfo
+  resourceInfo: K8sResourceInfo | DCResourceInfo | LocalResourceInfo
 ): resourceInfo is K8sResourceInfo {
   return (<K8sResourceInfo>resourceInfo).PodName !== undefined
 }
