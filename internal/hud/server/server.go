@@ -33,6 +33,7 @@ type analyticsOptPayload struct {
 	Opt string `json:"opt"`
 }
 
+// Also used for ResetRestarts
 type triggerPayload struct {
 	ManifestNames []string `json:"manifest_names"`
 }
@@ -60,6 +61,7 @@ func ProvideHeadsUpServer(store *store.Store, assetServer assets.Server, analyti
 	r.HandleFunc("/api/analytics", s.HandleAnalytics)
 	r.HandleFunc("/api/analytics_opt", s.HandleAnalyticsOpt)
 	r.HandleFunc("/api/trigger", s.HandleTrigger)
+	r.HandleFunc("/api/reset_restarts", s.HandleResetRestarts)
 	r.HandleFunc("/api/snapshot/new", s.HandleNewSnapshot).Methods("POST")
 	// this endpoint is only used for testing snapshots in development
 	r.HandleFunc("/api/snapshot/{snapshot_id}", s.SnapshotJSON)
@@ -219,6 +221,29 @@ func MaybeSendToTriggerQueue(st store.RStore, name string) error {
 
 	st.Dispatch(AppendToTriggerQueueAction{Name: mName})
 	return nil
+}
+
+func (s *HeadsUpServer) HandleResetRestarts(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "must be POST request", http.StatusBadRequest)
+		return
+	}
+
+	var payload triggerPayload
+
+	decoder := json.NewDecoder(req.Body)
+	err := decoder.Decode(&payload)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error parsing JSON payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if len(payload.ManifestNames) != 1 {
+		http.Error(w, fmt.Sprintf("/api/trigger currently supports exactly one manifest name, got %d", len(payload.ManifestNames)), http.StatusBadRequest)
+		return
+	}
+
+	s.store.Dispatch(ResetRestartsAction{Name: model.ManifestName(payload.ManifestNames[0])})
 }
 
 /* -- SNAPSHOT: SENDING SNAPSHOT TO SERVER -- */

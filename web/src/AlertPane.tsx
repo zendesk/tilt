@@ -5,7 +5,7 @@ import TimeAgo from "react-timeago"
 import "./AlertPane.scss"
 import { Resource } from "./types"
 import { timeAgoFormatter } from "./timeFormatters"
-import { Alert, hasAlert } from "./alerts"
+import { Alert, hasAlert, PodRestartErrorType } from "./alerts"
 
 type AlertsProps = {
   resources: Array<Resource>
@@ -22,12 +22,33 @@ function renderAlerts(resources: Array<Resource>) {
   let alertResources = resources.filter(r => hasAlert(r))
   alertResources.forEach(resource => {
     resource.Alerts.forEach(alert => {
+      const dismiss = () => {
+        let url = `//${window.location.host}/api/reset_restarts`
+        let payload = { manifest_names: [resource.Name] }
+        fetch(url, {
+          method: "post",
+          body: JSON.stringify(payload)
+        })
+      }
+      const button = (): JSX.Element => {
+        if (alert.alertType != PodRestartErrorType) {
+          return <></>
+        }
+
+        return <button
+          className="AlertPane-button"
+          onClick={dismiss}
+          >
+          Dismiss
+        </button>
+      }
       alertElements.push(
         <li key={alert.alertType + resource.Name} className="AlertPane-item">
           <header>
             <div className="AlertPane-headerDiv">
               <h3 className="AlertPane-headerDiv-header">{alert.header}</h3>
             </div>
+            {button()}
             <div className="AlertPane-headerDiv">
               <p>
                 <span>Resource: {alert.resourceName}</span>

@@ -56,6 +56,17 @@
   margin-top: $spacing-unit;
 }
 
+.AlertPane-button {
+  align-content: center;
+  background-color: $color-gray-dark;
+  color: $color-gray-lightest;
+  @include button-text;
+  border: 1px solid $color-gray-light;
+  padding: $spacing-unit/3;
+  margin-left: $spacing-unit/2;
+  min-width: $spacing-unit * 3;
+}
+
 // Hide all lines by default
 .AlertPane-item code {
   display: block;

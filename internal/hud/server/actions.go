@@ -7,3 +7,9 @@ type AppendToTriggerQueueAction struct {
 }
 
 func (AppendToTriggerQueueAction) Action() {}
+
+type ResetRestartsAction struct {
+	Name model.ManifestName
+}
+
+func (ResetRestartsAction) Action() {}

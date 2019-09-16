@@ -172,6 +172,8 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleDockerComposeLogAction(state, action)
 	case server.AppendToTriggerQueueAction:
 		appendToTriggerQueue(state, action.Name)
+	case server.ResetRestartsAction:
+		handleResetRestartsAction(state, action.Name)
 	case hud.StartProfilingAction:
 		handleStartProfilingAction(state)
 	case hud.StopProfilingAction:
@@ -396,6 +398,23 @@ func removeFromTriggerQueue(state *store.EngineState, mn model.ManifestName) {
 			state.TriggerQueue = append(state.TriggerQueue[:i], state.TriggerQueue[i+1:]...)
 			break
 		}
+	}
+}
+
+func handleResetRestartsAction(state *store.EngineState, mn model.ManifestName) {
+	ms, ok := state.ManifestState(mn)
+	if !ok {
+		return
+	}
+
+	if !ms.IsK8s() {
+		return
+	}
+
+	for _, pod := range ms.K8sRuntimeState().Pods {
+		// Reset the baseline, so that we don't show restarts
+		// from before any live-updates
+		pod.BaselineRestarts = pod.AllContainerRestarts()
 	}
 }
 
