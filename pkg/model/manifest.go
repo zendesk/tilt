@@ -249,6 +249,14 @@ type LocalGitRepo struct {
 
 func (LocalGitRepo) IsRepo() {}
 
+func RepoPaths(repos []LocalGitRepo) []string {
+	res := make([]string, len(repos))
+	for i, r := range repos {
+		res[i] = r.LocalPath
+	}
+	return res
+}
+
 type Run struct {
 	// Required. The command to run.
 	Cmd Cmd

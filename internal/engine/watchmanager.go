@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/windmilleng/fsnotify"
+	"github.com/windmilleng/tilt/internal/sliceutils"
 
 	"github.com/windmilleng/tilt/internal/dockerignore"
 	"github.com/windmilleng/tilt/internal/ignore"
@@ -215,6 +217,8 @@ func (w *WatchManager) OnChange(ctx context.Context, st store.RStore) {
 		ctx, cancel := context.WithCancel(ctx)
 		go w.dispatchFileChangesLoop(ctx, target, watcher, st)
 		newWatches[target.ID()] = targetNotifyCancel{target, watcher, cancel}
+
+		prettyPrintSuccessfulWatchDebug(ctx, target)
 	}
 
 	for _, name := range teardown {
@@ -330,4 +334,35 @@ func coalesceEvents(timerMaker timerMaker, eventChan <-chan watch.FileEvent) <-c
 
 	}()
 	return ret
+}
+
+func prettyPrintSuccessfulWatchDebug(ctx context.Context, target WatchableTarget) {
+	if len(target.Dependencies()) == 0 {
+		return
+	}
+
+	l := logger.Get(ctx)
+	if l.Level() < logger.DebugLvl {
+		return
+	}
+
+	l.Debugf("[%s] Successfully watching paths:\n\t%s", target.ID(), strings.Join(target.Dependencies(), ","))
+
+	repoPaths := model.RepoPaths(target.LocalRepos())
+	if len(repoPaths) != 0 {
+		l.Debugf("+ Ignoring .git directories for:%s", sliceutils.BulletedIndentedStringList(repoPaths))
+	}
+
+	if len(target.IgnoredLocalDirectories()) != 0 {
+		l.Debugf("+ Ignoring local dirs:%s", sliceutils.BulletedIndentedStringList(target.IgnoredLocalDirectories()))
+	}
+
+	if len(target.Dockerignores()) != 0 {
+		l.Debugf("+ With .dockerignore patterns:")
+		for _, ig := range target.Dockerignores() {
+			l.Debugf("\t%s", ig.Contents)
+		}
+	}
+
+	l.Debugf("\n")
 }
