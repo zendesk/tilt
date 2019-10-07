@@ -172,6 +172,11 @@ func (w *WatchManager) diff(ctx context.Context, st store.RStore) (setup []Watch
 		if err != nil {
 			st.Dispatch(NewErrorAction(err))
 		}
+
+		if state.TiltIgnoreContents != "" {
+			logger.Get(ctx).Debugf("Setting up watch with .tiltignore:\n\t%s", state.TiltIgnoreContents)
+		}
+
 		w.tiltIgnore = tiltIgnoreFilter
 	}
 
