@@ -41,6 +41,28 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
 
     window.addEventListener("scroll", this.refreshAutoScroll, { passive: true })
     window.addEventListener("wheel", this.handleWheel, { passive: true })
+    document.onselectionchange = this.handleSelectionChange
+  }
+
+  private handleSelectionChange() {
+    // TODO restrict to only things in the scrolling log view
+    // TODO store on state
+    // TODO differentiate the thing currently selected for the local case (ie I'm a user and I'm using Tilt to create a highlighted snapshot
+    // vs, I'm the snapshot server and I'm telling the JavaScript what is highlighted
+    let selection = document.getSelection()
+    if (selection) {
+      let beginning = selection.focusNode
+      let end = selection.anchorNode
+
+      if (beginning && end) {
+        // @ts-ignore
+        let firstID = beginning.parentNode.parentNode.className
+        // @ts-ignore
+        let lastID = end.parentNode.parentNode.className
+        console.log("First ID: " + firstID)
+        console.log("Last ID: " + lastID)
+      }
+    }
   }
 
   componentDidUpdate() {
@@ -55,6 +77,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
   componentWillUnmount() {
     window.removeEventListener("scroll", this.refreshAutoScroll)
     window.removeEventListener("wheel", this.handleWheel)
+    document.onselectionchange = () => {}
     if (this.rafID) {
       clearTimeout(this.rafID)
     }
@@ -153,7 +176,8 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     let lines = log.split("\n")
     logLines = lines.map(
       (line: string, i: number): React.ReactElement => {
-        return <AnsiLine key={"logLine" + i} line={line} />
+        let key = "logLine" + i
+        return <AnsiLine key={"logLine" + i} line={line} className={key} />
       }
     )
     logLines.push(
