@@ -14,7 +14,9 @@ type AlertsProps = {
 }
 
 function logToLines(s: string) {
-  return s.split("\n").map((l, i) => <AnsiLine key={"logLine" + i} line={l} />)
+  return s
+    .split("\n")
+    .map((l, i) => <AnsiLine key={"logLine" + i} id={"logLine" + 1} line={l} />)
 }
 
 class AlertPane extends PureComponent<AlertsProps> {

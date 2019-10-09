@@ -10796,6 +10796,11 @@ react-helmet@^5.2.0:
     react-fast-compare "^2.0.2"
     react-side-effect "^1.1.0"
 
+react-highlight-pop@^1.0.2:
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/react-highlight-pop/-/react-highlight-pop-1.0.2.tgz#385b5a1d3dcbf8facaef2d602218179a7292ba3d"
+  integrity sha512-CfBUWJuz5dMbscpCHTzjoKgbTBszucYnW8bf8hbGDPClks+XmP1okzXSjNO+0E0e+rNaQj1rOpoRwIwRgN3KhQ==
+
 react-hotkeys@2.0.0-pre4:
   version "2.0.0-pre4"
   resolved "https://registry.yarnpkg.com/react-hotkeys/-/react-hotkeys-2.0.0-pre4.tgz#a1c248a51bdba4282c36bf3204f80d58abc73333"

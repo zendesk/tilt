@@ -2,6 +2,7 @@ import React, { Component } from "react"
 import { ReactComponent as LogoWordmarkSvg } from "./assets/svg/logo-wordmark-gray.svg"
 import AnsiLine from "./AnsiLine"
 import "./LogPane.scss"
+import HighlightPop from "./HighlightPop"
 
 const WHEEL_DEBOUNCE_MS = 250
 
@@ -153,7 +154,8 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     let lines = log.split("\n")
     logLines = lines.map(
       (line: string, i: number): React.ReactElement => {
-        return <AnsiLine key={"logLine" + i} line={line} />
+        let key = "logLine" + i
+        return <AnsiLine key={key} line={line} id={key} />
       }
     )
     logLines.push(
@@ -176,7 +178,9 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
             {endpointsEl}
           </section>
         )}
-        <section className="logText">{logLines}</section>
+        <HighlightPop>
+          <section className="logText h-popable">{logLines}</section>
+        </HighlightPop>
       </section>
     )
   }
