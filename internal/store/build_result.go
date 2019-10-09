@@ -87,6 +87,10 @@ func (b BuildResult) IsInPlaceUpdate() bool {
 	return len(b.LiveUpdatedContainerIDs) != 0
 }
 
+// type BuildResultSet2 struct {
+// 	PerTarget
+// }
+
 type BuildResultSet map[model.TargetID]BuildResult
 
 func (set BuildResultSet) LiveUpdatedContainerIDs() []container.ID {
@@ -154,6 +158,9 @@ type BuildState struct {
 	// This must be liberal: it's ok if this has too many files, but not ok if it has too few.
 	FilesChangedSet map[string]bool
 
+	// Whether there was a manual trigger
+	ForceUpdate bool
+
 	RunningContainers []ContainerInfo
 }
 
@@ -170,6 +177,11 @@ func NewBuildState(result BuildResult, files []string) BuildState {
 
 func (b BuildState) WithRunningContainers(cInfos []ContainerInfo) BuildState {
 	b.RunningContainers = cInfos
+	return b
+}
+
+func (b BuildState) WithForceUpdate(forceUpdate bool) BuildState {
+	b.ForceUpdate = forceUpdate
 	return b
 }
 
@@ -215,7 +227,7 @@ func (b BuildState) HasImage() bool {
 // changed since then, then we can re-use the previous result.
 func (b BuildState) NeedsImageBuild() bool {
 	lastBuildWasImgBuild := b.LastResult.HasImage() && !b.LastResult.IsInPlaceUpdate()
-	return !lastBuildWasImgBuild || len(b.FilesChangedSet) > 0
+	return !lastBuildWasImgBuild || len(b.FilesChangedSet) > 0 || b.ForceUpdate
 }
 
 type BuildStateSet map[model.TargetID]BuildState

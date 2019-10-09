@@ -395,12 +395,7 @@ func handleDeployIDAction(ctx context.Context, state *store.EngineState, action 
 }
 
 func appendToTriggerQueue(state *store.EngineState, mn model.ManifestName) {
-	ms, ok := state.ManifestState(mn)
-	if !ok {
-		return
-	}
-
-	ok, _ = ms.HasPendingChanges()
+	_, ok := state.ManifestState(mn)
 	if !ok {
 		return
 	}
