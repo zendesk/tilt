@@ -62,6 +62,9 @@ type tiltfileState struct {
 	workloadToResourceFunction       workloadToResourceFunction
 	allowedK8SContexts               []k8s.KubeContext
 
+	// set at the end of execution/beginning of assembly
+	k8sUniqueNames map[string]bool
+
 	// for assembly
 	usedImages map[string]bool
 
@@ -116,6 +119,7 @@ func newTiltfileState(
 		k8sByName:                  make(map[string]*k8sResource),
 		k8sImageJSONPaths:          make(map[k8sObjectSelector][]k8s.JSONPath),
 		configFiles:                []string{},
+		k8sUniqueNames:             make(map[string]bool),
 		usedImages:                 make(map[string]bool),
 		logger:                     logger.Get(ctx),
 		builtinCallCounts:          make(map[string]int),
@@ -541,7 +545,7 @@ func (s *tiltfileState) assembleDC() error {
 }
 
 func (s *tiltfileState) assembleK8sV1() error {
-	err := s.assembleK8sWithImages()
+	err := s.assembleK8sV1WithImages()
 	if err != nil {
 		return err
 	}
@@ -584,6 +588,9 @@ func (s *tiltfileState) assembleK8sV2() error {
 				r.name = opts.newName
 				s.k8sByName[r.name] = r
 			}
+			if err := s.addObjects(r, opts.objects); err != nil {
+				return err
+			}
 		} else {
 			var knownResources []string
 			for name := range s.k8sByName {
@@ -602,6 +609,11 @@ func (s *tiltfileState) assembleK8sV2() error {
 }
 
 func (s *tiltfileState) assembleK8sByWorkload() error {
+	// before we do anything, generate the unique names considering all entities
+	for _, n := range k8s.UniqueNames(s.k8sUnresourced, 2) {
+		s.k8sUniqueNames[n] = true
+	}
+
 	var workloads, rest []k8s.K8sEntity
 	for _, e := range s.k8sUnresourced {
 		isWorkload, err := s.isWorkload(e)
@@ -644,6 +656,7 @@ func (s *tiltfileState) assembleK8sByWorkload() error {
 		}
 
 		s.k8sUnresourced = rest
+
 	}
 
 	return nil
@@ -676,9 +689,9 @@ func (s *tiltfileState) isWorkload(e k8s.K8sEntity) (bool, error) {
 	}
 }
 
-// assembleK8sWithImages matches images we know how to build with any k8s entities
+// assembleK8sV1WithImages matches images we know how to build with any k8s entities
 // that use that image, storing the resulting resource(s) on the tiltfileState.
-func (s *tiltfileState) assembleK8sWithImages() error {
+func (s *tiltfileState) assembleK8sV1WithImages() error {
 	// find all images mentioned in k8s entities that don't yet belong to k8sResources
 	k8sRefs, err := s.findUnresourcedImages()
 	if err != nil {
@@ -699,7 +712,7 @@ func (s *tiltfileState) assembleK8sWithImages() error {
 		}
 		// find k8s entities that use this image; pull them out of pool of
 		// unresourced entities and instead attach them to the target k8sResource
-		if err := s.extractEntities(target, ref); err != nil {
+		if err := s.extractEntitiesV1(target, ref); err != nil {
 			return err
 		}
 	}
@@ -819,8 +832,8 @@ func (s *tiltfileState) findUnresourcedImages() ([]reference.Named, error) {
 	return result, nil
 }
 
-// extractEntities extracts k8s entities matching the image ref and stores them on the dest k8sResource
-func (s *tiltfileState) extractEntities(dest *k8sResource, imageRef container.RefSelector) error {
+// extractEntitiesV1 extracts k8s entities matching the image ref and stores them on the dest k8sResource
+func (s *tiltfileState) extractEntitiesV1(dest *k8sResource, imageRef container.RefSelector) error {
 	extracted, remaining, err := k8s.FilterByImage(s.k8sUnresourced, imageRef, s.imageJSONPaths, false)
 	if err != nil {
 		return err
@@ -882,6 +895,10 @@ Is this a typo? Existing resources in Tiltfile: %s`,
 	}
 
 	return result, nil
+}
+
+func (s *tiltfileState) addObjects(r *k8sResource, objects []string) error {
+	return fmt.Errorf("addObjects not yet implemented")
 }
 
 func (s *tiltfileState) translateK8s(resources []*k8sResource) ([]model.Manifest, error) {

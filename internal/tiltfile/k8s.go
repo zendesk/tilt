@@ -62,6 +62,7 @@ type k8sResourceOptions struct {
 	triggerMode       triggerMode
 	tiltfilePosition  syntax.Position
 	consumed          bool
+	objects           []string
 }
 
 func (r *k8sResource) addRefSelector(selector container.RefSelector) {
@@ -880,9 +881,9 @@ func (s *tiltfileState) calculateResourceNames(workloads []k8s.K8sEntity) ([]str
 			return nil, errors.Wrapf(err, "error applying workload_to_resource_function %s", s.workloadToResourceFunction.pos.String())
 		}
 		return names, nil
-	} else {
-		return k8s.UniqueNames(workloads, 1), nil
 	}
+
+	return k8s.UniqueNames(workloads), nil
 }
 
 // calculates names for workloads using s.workloadToResourceFunction

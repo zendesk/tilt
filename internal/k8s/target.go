@@ -11,6 +11,7 @@ import (
 func NewTarget(
 	name model.TargetName,
 	entities []K8sEntity,
+	entitiyNames []string,
 	portForwards []model.PortForward,
 	extraPodSelectors []labels.Selector,
 	dependencyIDs []model.TargetID,
