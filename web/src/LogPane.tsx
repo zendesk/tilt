@@ -2,6 +2,7 @@ import React, { Component } from "react"
 import { ReactComponent as LogoWordmarkSvg } from "./assets/svg/logo-wordmark-gray.svg"
 import AnsiLine from "./AnsiLine"
 import "./LogPane.scss"
+import ReactDOM from "react-dom"
 
 const WHEEL_DEBOUNCE_MS = 250
 
@@ -32,6 +33,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
 
     this.refreshAutoScroll = this.refreshAutoScroll.bind(this)
     this.handleWheel = this.handleWheel.bind(this)
+    this.handleSelectionChange = this.handleSelectionChange.bind(this)
   }
 
   componentDidMount() {
@@ -41,7 +43,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
 
     window.addEventListener("scroll", this.refreshAutoScroll, { passive: true })
     window.addEventListener("wheel", this.handleWheel, { passive: true })
-    document.onselectionchange = this.handleSelectionChange
+    document.addEventListener("selectionchange", this.handleSelectionChange, { passive: true })
   }
 
   private handleSelectionChange() {
@@ -53,8 +55,9 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     if (selection) {
       let beginning = selection.focusNode
       let end = selection.anchorNode
+      let node = ReactDOM.findDOMNode(this)
 
-      if (beginning && end) {
+      if (beginning && end && node && node.contains(beginning) && node.contains(end) && !node.isEqualNode(beginning) && !node.isEqualNode(end)) {
         // @ts-ignore
         let firstID = beginning.parentNode.parentNode.className
         // @ts-ignore
