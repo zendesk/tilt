@@ -3,6 +3,7 @@ package starkit
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 	"go.starlark.net/starlark"
@@ -27,19 +28,21 @@ func UnpackArgs(t *starlark.Thread, fnName string, args starlark.Tuple, kwargs [
 
 // A starlark execution environment.
 type Environment struct {
-	unpackArgs  ArgUnpacker
-	loadCache   map[string]loadCacheEntry
-	predeclared starlark.StringDict
-	print       func(thread *starlark.Thread, msg string)
-	extensions  []Extension
+	unpackArgs     ArgUnpacker
+	loadCache      map[string]loadCacheEntry
+	predeclared    starlark.StringDict
+	print          func(thread *starlark.Thread, msg string)
+	extensions     []Extension
+	fakeFileSystem map[string]string
 }
 
 func newEnvironment(extensions ...Extension) *Environment {
 	return &Environment{
-		unpackArgs:  starlark.UnpackArgs,
-		loadCache:   make(map[string]loadCacheEntry),
-		extensions:  append([]Extension{}, extensions...),
-		predeclared: starlark.StringDict{},
+		unpackArgs:     starlark.UnpackArgs,
+		loadCache:      make(map[string]loadCacheEntry),
+		extensions:     append([]Extension{}, extensions...),
+		predeclared:    starlark.StringDict{},
+		fakeFileSystem: nil,
 	}
 }
 
@@ -52,7 +55,7 @@ func (e *Environment) SetArgUnpacker(unpackArgs ArgUnpacker) {
 // All builtins will be wrapped to invoke OnBuiltinCall on every extension.
 //
 // All builtins should use starkit.UnpackArgs to get instrumentation.
-func (e *Environment) AddBuiltin(name string, b func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error)) {
+func (e *Environment) AddBuiltin(name string, b func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error)) error {
 	wrapped := starlark.NewBuiltin(name, func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		for _, ext := range e.extensions {
 			onBuiltinCallExt, ok := ext.(OnBuiltinCallExtension)
@@ -64,15 +67,46 @@ func (e *Environment) AddBuiltin(name string, b func(thread *starlark.Thread, fn
 		return b(thread, fn, args, kwargs)
 	})
 
-	e.predeclared[name] = wrapped
+	return e.AddValue(name, wrapped)
 }
 
-func (e *Environment) AddValue(name string, val starlark.Value) {
-	e.predeclared[name] = val
+func (e *Environment) AddValue(name string, val starlark.Value) error {
+	split := strings.Split(name, ".")
+
+	// Handle the simple case first.
+	if len(split) == 1 {
+		e.predeclared[name] = val
+		return nil
+	}
+
+	if len(split) == 2 {
+		var currentModule Module
+		predeclaredVal, ok := e.predeclared[split[0]]
+		if ok {
+			predeclaredDict, ok := predeclaredVal.(Module)
+			if !ok {
+				return fmt.Errorf("Module conflict at %s. Existing: %s", name, predeclaredVal)
+			}
+			currentModule = predeclaredDict
+		} else {
+			currentModule = Module{name: split[0], attrs: starlark.StringDict{}}
+			e.predeclared[split[0]] = currentModule
+		}
+		currentModule.attrs[split[1]] = val
+		return nil
+	}
+
+	return fmt.Errorf("multi-level modules not supported yet")
 }
 
 func (e *Environment) SetPrint(print func(thread *starlark.Thread, msg string)) {
 	e.print = print
+}
+
+// Set a fake file system so that we can write tests that don't
+// touch the file system. Expressed as a map from paths to contents.
+func (e *Environment) SetFakeFileSystem(files map[string]string) {
+	e.fakeFileSystem = files
 }
 
 func (e *Environment) start(path string) error {
@@ -82,7 +116,10 @@ func (e *Environment) start(path string) error {
 	}
 
 	for _, ext := range e.extensions {
-		ext.OnStart(e)
+		err := ext.OnStart(e)
+		if err != nil {
+			return errors.Wrapf(err, "%T", ext)
+		}
 	}
 
 	t := &starlark.Thread{
@@ -124,7 +161,16 @@ func (e *Environment) exec(t *starlark.Thread, path string) (starlark.StringDict
 		}
 	}
 
-	exports, err := starlark.ExecFile(t, path, nil, e.predeclared)
+	var contentBytes interface{} = nil
+	if e.fakeFileSystem != nil {
+		contents, ok := e.fakeFileSystem[path]
+		if !ok {
+			return starlark.StringDict{}, fmt.Errorf("Not in fake file system: %s", path)
+		}
+		contentBytes = []byte(contents)
+	}
+
+	exports, err := starlark.ExecFile(t, path, contentBytes, e.predeclared)
 	e.loadCache[path] = loadCacheEntry{
 		status:  loadStatusDone,
 		exports: exports,

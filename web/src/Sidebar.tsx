@@ -17,7 +17,6 @@ import { timeAgoFormatter } from "./timeFormatters"
 import SidebarIcon from "./SidebarIcon"
 import SidebarBlankIcon from "./SidebarBlankIcon"
 import SidebarTriggerButton from "./SidebarTriggerButton"
-import { number } from "prop-types"
 import { numberOfAlerts } from "./alerts"
 
 class SidebarItem {
@@ -98,13 +97,11 @@ class Sidebar extends PureComponent<SidebarProps> {
             </li>
         )
 
-        let listItems = this.props.items.map(item => {
-            let link = `/r/${item.name}`
-            if (this.props.resourceView === ResourceView.Preview) {
-                link += "/preview"
-            } else if (this.props.resourceView === ResourceView.Alerts) {
-                link += "/alerts"
-            }
+      let listItems = this.props.items.map(item => {
+        let link = `/r/${item.name}`
+        if (this.props.resourceView === ResourceView.Alerts) {
+          link += "/alerts"
+        }
 
             let formatter = timeAgoFormatter
             let hasBuilt = !isZeroTime(item.lastDeployTime)

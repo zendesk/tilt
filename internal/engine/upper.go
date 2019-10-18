@@ -19,6 +19,7 @@ import (
 	"github.com/windmilleng/tilt/internal/dockercompose"
 	"github.com/windmilleng/tilt/internal/engine/configs"
 	"github.com/windmilleng/tilt/internal/engine/k8swatch"
+	"github.com/windmilleng/tilt/internal/engine/runtimelog"
 	"github.com/windmilleng/tilt/internal/hud"
 	"github.com/windmilleng/tilt/internal/hud/server"
 	"github.com/windmilleng/tilt/internal/k8s"
@@ -170,7 +171,7 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleServiceEvent(ctx, state, action)
 	case store.K8sEventAction:
 		handleK8sEvent(ctx, state, action)
-	case PodLogAction:
+	case runtimelog.PodLogAction:
 		handlePodLogAction(state, action)
 	case BuildLogAction:
 		handleBuildLogAction(state, action)
@@ -186,7 +187,7 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleConfigsReloaded(ctx, state, action)
 	case DockerComposeEventAction:
 		handleDockerComposeEvent(ctx, state, action)
-	case DockerComposeLogAction:
+	case runtimelog.DockerComposeLogAction:
 		handleDockerComposeLogAction(state, action)
 	case server.AppendToTriggerQueueAction:
 		appendToTriggerQueue(state, action.Name)
@@ -280,6 +281,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	bs := ms.CurrentBuild
 	bs.Error = err
 	bs.FinishTime = time.Now()
+	bs.BuildTypes = cb.Result.BuildTypes()
 	ms.AddCompletedBuild(bs)
 
 	ms.CurrentBuild = model.BuildRecord{}
@@ -352,7 +354,8 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	if mt.Manifest.IsDC() {
 		state, _ := ms.RuntimeState.(dockercompose.State)
 
-		dcResult := cb.Result[mt.Manifest.DockerComposeTarget().ID()]
+		result := cb.Result[mt.Manifest.DockerComposeTarget().ID()]
+		dcResult, _ := result.(store.DockerComposeBuildResult)
 		cid := dcResult.DockerComposeContainerID
 		if cid != "" {
 			state = state.WithContainerID(cid)
@@ -534,9 +537,10 @@ func handleConfigsReloaded(
 				}
 			}
 		}
-
 		return
 	}
+
+	state.DockerPruneSettings = event.DockerPruneSettings
 
 	newDefOrder := make([]model.ManifestName, len(manifests))
 	for i, m := range manifests {
@@ -592,7 +596,7 @@ func handleBuildLogAction(state *store.EngineState, action BuildLogAction) {
 func handleLogAction(state *store.EngineState, action store.LogAction) {
 	manifestName := action.Source()
 	alreadyHasSourcePrefix := false
-	if _, isDCLog := action.(DockerComposeLogAction); isDCLog {
+	if _, isDCLog := action.(runtimelog.DockerComposeLogAction); isDCLog {
 		// DockerCompose logs are prefixed by the docker-compose engine
 		alreadyHasSourcePrefix = true
 	}
@@ -732,7 +736,7 @@ func handleDockerComposeEvent(ctx context.Context, engineState *store.EngineStat
 	ms.RuntimeState = state
 }
 
-func handleDockerComposeLogAction(state *store.EngineState, action DockerComposeLogAction) {
+func handleDockerComposeLogAction(state *store.EngineState, action runtimelog.DockerComposeLogAction) {
 	manifestName := action.Source()
 	ms, ok := state.ManifestState(manifestName)
 	if !ok {

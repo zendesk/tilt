@@ -11,7 +11,9 @@ type props = {
   snapshotUrl: string
   tiltCloudUsername: string | null
   tiltCloudSchemeHost: string
+  tiltCloudTeamID: string | null
   isOpen: boolean
+  highlightedLines: number | null
 }
 
 export default class ShareSnapshotModal extends PureComponent<props> {
@@ -40,10 +42,11 @@ export default class ShareSnapshotModal extends PureComponent<props> {
       return (
         <section className="ShareSnapshotModal-shareLinkWrap">
           {this.renderShareLink()}
-          {this.renderLoginState()}
+          {this.renderShareLinkInfo()}
         </section>
       )
     }
+
     return (
       <section>
         {this.renderIntro()}
@@ -56,7 +59,11 @@ export default class ShareSnapshotModal extends PureComponent<props> {
     return (
       <div className="ShareSnapshotModal-intro">
         <div className="u-inlineBlock">
-          <img src={intro} className="ShareSnapshotModal-introImage" />
+          <img
+            src={intro}
+            className="ShareSnapshotModal-introImage"
+            alt="hand holding up a copy of the Tilt User Interface"
+          />
         </div>
         <div className="u-inlineBlock ShareSnapshotModal-details">
           <ul className="ShareSnapshotModal-detailsList">
@@ -68,6 +75,7 @@ export default class ShareSnapshotModal extends PureComponent<props> {
             className="ShareSnapshotModal-docsLink"
             href="https://docs.tilt.dev/snapshots.html"
             target="_blank"
+            rel="noopener noreferrer"
           >
             Learn more in our docs
           </a>
@@ -127,6 +135,7 @@ export default class ShareSnapshotModal extends PureComponent<props> {
           className="ShareSnapshotModal-button ShareSnapshotModal-button--inline"
           href={this.props.snapshotUrl}
           target="_blank"
+          rel="noopener noreferrer"
         >
           Open
         </a>
@@ -142,11 +151,19 @@ export default class ShareSnapshotModal extends PureComponent<props> {
     )
   }
 
-  renderLoginState() {
+  renderShareLinkInfo() {
+    let lines = this.props.highlightedLines
     return (
-      <p className="ShareSnapshotModal-loginState">
-        Sharing as <strong>{this.props.tiltCloudUsername}</strong>
-      </p>
+      <section className="ShareSnapshotModal-shareLinkInfo">
+        <p className="ShareSnapshotModal-loginState">
+          Sharing as <strong>{this.props.tiltCloudUsername}</strong>
+        </p>
+        {lines && (
+          <p>
+            {lines} Line{lines > 1 ? "s" : ""} Highlighted
+          </p>
+        )}
+      </section>
     )
   }
 
@@ -162,19 +179,32 @@ export default class ShareSnapshotModal extends PureComponent<props> {
             className="ShareSnapshotModal-tiltCloudLink"
             href={this.props.tiltCloudSchemeHost + "/snapshots"}
             target="_blank"
+            rel="noopener noreferrer"
           >
             <span>TiltCloud</span>
             <ArrowSvg />
           </a>
         </p>
+        {this.props.tiltCloudTeamID ? (
+          <p>
+            View snapshots from your{" "}
+            <a
+              className="ShareSnapshotModal-tiltCloudLink"
+              rel="noopener noreferrer"
+              href={`${this.props.tiltCloudSchemeHost}/team/${this.props.tiltCloudTeamID}/snapshots`}
+              target="_blank"
+            >
+              <span>team</span>
+              <ArrowSvg />
+            </a>
+          </p>
+        ) : null}
       </section>
     )
   }
 
   static notifyTiltOfRegistration() {
-    let url = `${window.location.protocol}//${
-      window.location.host
-    }/api/user_started_tilt_cloud_registration`
+    let url = `${window.location.protocol}//${window.location.host}/api/user_started_tilt_cloud_registration`
     fetch(url, {
       method: "POST",
       headers: {

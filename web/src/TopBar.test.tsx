@@ -12,13 +12,13 @@ it("shows snapshot url", () => {
       <MemoryRouter>
         <TopBar
           logUrl="/r/foo"
-          previewUrl="/r/foo/preview"
           alertsUrl="/r/foo/alerts"
           resourceView={ResourceView.Alerts}
           numberOfAlerts={1}
           showSnapshotButton={true}
           snapshotOwner={null}
           handleOpenModal={fakeHandleOpenModal}
+          highlight={null}
         />
       </MemoryRouter>
     )
@@ -33,13 +33,13 @@ it("shows snapshot owner", () => {
       <MemoryRouter>
         <TopBar
           logUrl="/r/foo"
-          previewUrl="/r/foo/preview"
           alertsUrl="/r/foo/alerts"
           resourceView={ResourceView.Alerts}
           numberOfAlerts={1}
           showSnapshotButton={false}
           snapshotOwner="foo"
           handleOpenModal={fakeHandleOpenModal}
+          highlight={null}
         />
       </MemoryRouter>
     )

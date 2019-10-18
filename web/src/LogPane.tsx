@@ -2,6 +2,8 @@ import React, { Component } from "react"
 import { ReactComponent as LogoWordmarkSvg } from "./assets/svg/logo-wordmark-gray.svg"
 import AnsiLine from "./AnsiLine"
 import "./LogPane.scss"
+import ReactDOM from "react-dom"
+import { SnapshotHighlight } from "./types"
 
 const WHEEL_DEBOUNCE_MS = 250
 
@@ -9,10 +11,12 @@ type LogPaneProps = {
   log: string
   message?: string
   isExpanded: boolean
-  podID: string
-  endpoints: string[]
-  podStatus: string
+  handleSetHighlight: (highlight: SnapshotHighlight) => void
+  handleClearHighlight: () => void
+  highlight: SnapshotHighlight | null
+  modalIsOpen: boolean
 }
+
 type LogPaneState = {
   autoscroll: boolean
   lastWheelEventTimeMs: number
@@ -32,18 +36,21 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
 
     this.refreshAutoScroll = this.refreshAutoScroll.bind(this)
     this.handleWheel = this.handleWheel.bind(this)
+    this.handleSelectionChange = this.handleSelectionChange.bind(this)
   }
 
   componentDidMount() {
     if (this.lastElement !== null) {
       this.lastElement.scrollIntoView()
     }
-
     window.addEventListener("scroll", this.refreshAutoScroll, { passive: true })
     window.addEventListener("wheel", this.handleWheel, { passive: true })
+    document.addEventListener("selectionchange", this.handleSelectionChange, {
+      passive: true,
+    })
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(prevProps: LogPaneProps) {
     if (!this.state.autoscroll) {
       return
     }
@@ -58,6 +65,63 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     if (this.rafID) {
       clearTimeout(this.rafID)
     }
+    document.removeEventListener("selectionchange", this.handleSelectionChange)
+  }
+
+  private handleSelectionChange() {
+    let selection = document.getSelection()
+    if (
+      selection &&
+      selection.focusNode &&
+      selection.anchorNode &&
+      !this.props.modalIsOpen
+    ) {
+      let node = ReactDOM.findDOMNode(this)
+      let beginning = selection.focusNode
+      let end = selection.anchorNode
+
+      // if end is before beginning
+      if (
+        beginning.compareDocumentPosition(end) &
+        Node.DOCUMENT_POSITION_PRECEDING
+      ) {
+        // swap beginning and end
+        ;[beginning, end] = [end, beginning]
+      }
+
+      if (selection.isCollapsed) {
+        this.props.handleClearHighlight()
+      } else if (
+        node &&
+        node.contains(beginning) &&
+        node.contains(end) &&
+        !node.isEqualNode(beginning) &&
+        !node.isEqualNode(end)
+      ) {
+        let beginningLogLine = this.findLogLineID(beginning.parentElement)
+        let endingLogLine = this.findLogLineID(end.parentElement)
+
+        if (beginningLogLine && endingLogLine) {
+          this.props.handleSetHighlight({
+            beginningLogID: beginningLogLine,
+            endingLogID: endingLogLine,
+          })
+        }
+      }
+    }
+  }
+
+  findLogLineID(el: HTMLElement | null): string | null {
+    if (el && el.attributes.getNamedItem("data-lineid")) {
+      let lineID = el.attributes.getNamedItem("data-lineid")
+      if (lineID) {
+        return lineID.value
+      }
+      return null
+    } else if (el) {
+      return this.findLogLineID(el.parentElement)
+    }
+    return null
   }
 
   private handleWheel(event: WheelEvent) {
@@ -120,42 +184,41 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       )
     }
 
-    let podID = this.props.podID
-    let podStatus = this.props.podStatus
-    let podIDEl = podID && (
-      <>
-        <div className="resourceInfo">
-          <div className="resourceInfo-label">Pod Status:</div>
-          <div className="resourceInfo-value">{podStatus}</div>
-        </div>
-        <div className="resourceInfo">
-          <div className="resourceInfo-label">Pod ID:</div>
-          <div className="resourceInfo-value">{podID}</div>
-        </div>
-      </>
-    )
-
-    let endpoints = this.props.endpoints
-    let endpointsEl = endpoints.length > 0 && (
-      <div className="resourceInfo">
-        <div className="resourceInfo-label">
-          Endpoint{endpoints.length > 1 ? "s" : ""}:
-        </div>
-        {endpoints.map(ep => (
-          <a className="resourceInfo-value" href={ep} target="_blank" key={ep}>
-            {ep}
-          </a>
-        ))}
-      </div>
-    )
-
     let logLines: Array<React.ReactElement> = []
     let lines = log.split("\n")
-    logLines = lines.map(
-      (line: string, i: number): React.ReactElement => {
-        return <AnsiLine key={"logLine" + i} line={line} />
+
+    let sawBeginning = false
+    let sawEnd = false
+    let highlight = this.props.highlight
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i]
+      const key = "logLine" + i
+
+      let shouldHighlight = false
+      if (highlight) {
+        if (highlight.beginningLogID === i.toString()) {
+          sawBeginning = true
+        }
+        if (highlight.endingLogID === i.toString()) {
+          shouldHighlight = true
+          sawEnd = true
+        }
+        if (sawBeginning && !sawEnd) {
+          shouldHighlight = true
+        }
       }
-    )
+
+      logLines.push(
+        <div
+          key={key}
+          data-lineid={i}
+          className={`logLine ${shouldHighlight ? "highlighted" : ""}`}
+        >
+          <AnsiLine line={l} />
+        </div>
+      )
+    }
+
     logLines.push(
       <p
         key="logEnd"
@@ -168,17 +231,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       </p>
     )
 
-    return (
-      <section className={classes}>
-        {(endpoints || podID) && (
-          <section className="resourceBar">
-            {podIDEl}
-            {endpointsEl}
-          </section>
-        )}
-        <section className="logText">{logLines}</section>
-      </section>
-    )
+    return <section className={classes}>{logLines}</section>
   }
 }
 

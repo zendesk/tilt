@@ -13,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/tools/clientcmd/api"
 
+	"github.com/windmilleng/tilt/internal/engine/dockerprune"
+
 	"github.com/windmilleng/tilt/internal/analytics"
 	"github.com/windmilleng/tilt/internal/build"
 	"github.com/windmilleng/tilt/internal/cloud"
@@ -23,6 +25,7 @@ import (
 	"github.com/windmilleng/tilt/internal/engine"
 	"github.com/windmilleng/tilt/internal/engine/configs"
 	"github.com/windmilleng/tilt/internal/engine/k8swatch"
+	"github.com/windmilleng/tilt/internal/engine/runtimelog"
 	"github.com/windmilleng/tilt/internal/feature"
 	"github.com/windmilleng/tilt/internal/hud"
 	"github.com/windmilleng/tilt/internal/hud/server"
@@ -30,7 +33,6 @@ import (
 	"github.com/windmilleng/tilt/internal/store"
 	"github.com/windmilleng/tilt/internal/tiltfile"
 	"github.com/windmilleng/tilt/internal/token"
-	"github.com/windmilleng/tilt/pkg/assets"
 	"github.com/windmilleng/tilt/pkg/model"
 )
 
@@ -53,33 +55,28 @@ var K8sWireSet = wire.NewSet(
 
 var BaseWireSet = wire.NewSet(
 	K8sWireSet,
+	tiltfile.WireSet,
 	provideKubectlLogLevel,
 
 	docker.SwitchWireSet,
 
 	dockercompose.NewDockerComposeClient,
 
-	build.NewImageReaper,
-
-	tiltfile.ProvideTiltfileLoader,
-
 	clockwork.NewRealClock,
 	engine.DeployerWireSet,
-	engine.NewPodLogManager,
+	runtimelog.NewPodLogManager,
 	engine.NewPortForwardController,
 	engine.NewBuildController,
 	k8swatch.NewPodWatcher,
 	k8swatch.NewServiceWatcher,
 	k8swatch.NewEventWatchManager,
-	engine.NewImageController,
 	configs.NewConfigsController,
 	engine.NewDockerComposeEventWatcher,
-	engine.NewDockerComposeLogManager,
+	runtimelog.NewDockerComposeLogManager,
 	engine.NewProfilerManager,
 	engine.NewGithubClientFactory,
 	engine.NewTiltVersionChecker,
-	cloud.ProvideHttpClient,
-	cloud.NewUsernameManager,
+	cloud.WireSet,
 
 	provideClock,
 	hud.NewRenderer,
@@ -87,7 +84,9 @@ var BaseWireSet = wire.NewSet(
 
 	provideLogActions,
 	store.NewStore,
-	wire.Bind(new(store.RStore), new(store.Store)),
+	wire.Bind(new(store.RStore), new(*store.Store)),
+
+	dockerprune.NewDockerPruner,
 
 	provideTiltInfo,
 	engine.ProvideSubscribers,
@@ -103,16 +102,13 @@ var BaseWireSet = wire.NewSet(
 	provideWebMode,
 	provideWebURL,
 	provideWebPort,
-	provideWebDevPort,
 	provideNoBrowserFlag,
 	server.ProvideHeadsUpServer,
-	assets.ProvideAssetServer,
+	provideAssetServer,
 	server.ProvideHeadsUpServerController,
-	server.ProvideHttpClient,
 
 	dirs.UseWindmillDir,
 	token.GetOrCreateToken,
-	cloud.ProvideAddress,
 
 	provideThreads,
 	engine.NewKINDPusher,
@@ -123,6 +119,11 @@ var BaseWireSet = wire.NewSet(
 func wireDemo(ctx context.Context, branch demo.RepoBranch, analytics *analytics.TiltAnalytics) (demo.Script, error) {
 	wire.Build(BaseWireSet, demo.NewScript, build.ProvideClock)
 	return demo.Script{}, nil
+}
+
+func wireDockerPrune(ctx context.Context, analytics *analytics.TiltAnalytics) (dpDeps, error) {
+	wire.Build(BaseWireSet, newDPDeps)
+	return dpDeps{}, nil
 }
 
 func wireThreads(ctx context.Context, analytics *analytics.TiltAnalytics) (Threads, error) {

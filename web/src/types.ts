@@ -2,7 +2,6 @@ import { Alert } from "./alerts"
 
 export enum ResourceView {
   Log,
-  Preview,
   Alerts,
 }
 
@@ -92,8 +91,6 @@ export type Snapshot = {
     Resources: Array<Resource>
     Log: string
     LogTimestamps: boolean
-    SailEnabled: boolean
-    SailURL: string
     NeedsAnalyticsNudge: boolean
     RunningTiltBuild: TiltBuild
     LatestTiltBuild: TiltBuild
@@ -102,6 +99,13 @@ export type Snapshot = {
   IsSidebarClosed: boolean
   SnapshotLink: string
   showSnapshotModal: boolean
+  path?: string
+  snapshotHighlight?: SnapshotHighlight | null
+}
+
+export type SnapshotHighlight = {
+  beginningLogID: string
+  endingLogID: string
 }
 
 export enum ShowFatalErrorModal {

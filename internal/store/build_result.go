@@ -14,16 +14,71 @@ import (
 )
 
 // The results of a successful build.
-// TODO(nick): This should probably be implemented
-// as different typer per targetID type
-type BuildResult struct {
-	// The image target that this built.
-	TargetID model.TargetID
+type BuildResult interface {
+	TargetID() model.TargetID
+	BuildType() model.BuildType
+}
+
+type LocalBuildResult struct {
+	id model.TargetID
+}
+
+func (r LocalBuildResult) TargetID() model.TargetID   { return r.id }
+func (r LocalBuildResult) BuildType() model.BuildType { return model.BuildTypeLocal }
+
+func NewLocalBuildResult(id model.TargetID) LocalBuildResult {
+	return LocalBuildResult{
+		id: id,
+	}
+}
+
+type ImageBuildResult struct {
+	id model.TargetID
 
 	// The name+tag of the image that the pod is running.
 	//
 	// The tag is derived from a content-addressable digest.
 	Image reference.NamedTagged
+}
+
+func (r ImageBuildResult) TargetID() model.TargetID   { return r.id }
+func (r ImageBuildResult) BuildType() model.BuildType { return model.BuildTypeImage }
+
+// For image targets.
+func NewImageBuildResult(id model.TargetID, image reference.NamedTagged) ImageBuildResult {
+	return ImageBuildResult{
+		id:    id,
+		Image: image,
+	}
+}
+
+type LiveUpdateBuildResult struct {
+	id model.TargetID
+
+	// The name+tag of the image that the pod is running.
+	Image reference.NamedTagged
+
+	// The ID of the container(s) that we live-updated in-place.
+	//
+	// The contents of the container have diverged from the image it's built on,
+	// so we need to keep track of that.
+	LiveUpdatedContainerIDs []container.ID
+}
+
+func (r LiveUpdateBuildResult) TargetID() model.TargetID   { return r.id }
+func (r LiveUpdateBuildResult) BuildType() model.BuildType { return model.BuildTypeLiveUpdate }
+
+// For in-place container updates.
+func NewLiveUpdateBuildResult(id model.TargetID, image reference.NamedTagged, containerIDs []container.ID) LiveUpdateBuildResult {
+	return LiveUpdateBuildResult{
+		id:    id,
+		Image: image,
+		LiveUpdatedContainerIDs: containerIDs,
+	}
+}
+
+type DockerComposeBuildResult struct {
+	id model.TargetID
 
 	// The ID of the container that Docker Compose created.
 	//
@@ -32,59 +87,45 @@ type BuildResult struct {
 	// we use for Kubernetes, where the pods appear some time later via an
 	// asynchronous event.
 	DockerComposeContainerID container.ID
+}
 
-	// The ID of the container(s) that we live-updated in-place.
-	//
-	// The contents of the container have diverged from the image it's built on,
-	// so we need to keep track of that.
-	LiveUpdatedContainerIDs []container.ID
+func (r DockerComposeBuildResult) TargetID() model.TargetID   { return r.id }
+func (r DockerComposeBuildResult) BuildType() model.BuildType { return model.BuildTypeDockerCompose }
+
+// For docker compose deploy targets.
+func NewDockerComposeDeployResult(id model.TargetID, containerID container.ID) DockerComposeBuildResult {
+	return DockerComposeBuildResult{
+		id: id,
+		DockerComposeContainerID: containerID,
+	}
+}
+
+type K8sBuildResult struct {
+	id model.TargetID
 
 	// The UIDs that we deployed to a Kubernetes cluster.
 	DeployedUIDs []types.UID
 }
 
-// For in-place container updates.
-func NewLiveUpdateBuildResult(id model.TargetID, containerIDs []container.ID) BuildResult {
-	return BuildResult{
-		TargetID:                id,
-		LiveUpdatedContainerIDs: containerIDs,
-	}
-}
-
-// For image targets.
-func NewImageBuildResult(id model.TargetID, image reference.NamedTagged) BuildResult {
-	return BuildResult{
-		TargetID: id,
-		Image:    image,
-	}
-}
-
-// For docker compose deploy targets.
-func NewDockerComposeDeployResult(id model.TargetID, containerID container.ID) BuildResult {
-	return BuildResult{
-		TargetID:                 id,
-		DockerComposeContainerID: containerID,
-	}
-}
+func (r K8sBuildResult) TargetID() model.TargetID   { return r.id }
+func (r K8sBuildResult) BuildType() model.BuildType { return model.BuildTypeK8s }
 
 // For kubernetes deploy targets.
 func NewK8sDeployResult(id model.TargetID, uids []types.UID) BuildResult {
-	return BuildResult{
-		TargetID:     id,
+	return K8sBuildResult{
+		id:           id,
 		DeployedUIDs: uids,
 	}
 }
 
-func (b BuildResult) IsEmpty() bool {
-	return b.TargetID.Empty()
-}
-
-func (b BuildResult) HasImage() bool {
-	return b.Image != nil
-}
-
-func (b BuildResult) IsInPlaceUpdate() bool {
-	return len(b.LiveUpdatedContainerIDs) != 0
+func ImageFromBuildResult(r BuildResult) reference.NamedTagged {
+	switch r := r.(type) {
+	case ImageBuildResult:
+		return r.Image
+	case LiveUpdateBuildResult:
+		return r.Image
+	}
+	return nil
 }
 
 // type BuildResultSet2 struct {
@@ -96,7 +137,10 @@ type BuildResultSet map[model.TargetID]BuildResult
 func (set BuildResultSet) LiveUpdatedContainerIDs() []container.ID {
 	result := []container.ID{}
 	for _, r := range set {
-		result = append(result, r.LiveUpdatedContainerIDs...)
+		r, ok := r.(LiveUpdateBuildResult)
+		if ok {
+			result = append(result, r.LiveUpdatedContainerIDs...)
+		}
 	}
 	return result
 }
@@ -104,7 +148,10 @@ func (set BuildResultSet) LiveUpdatedContainerIDs() []container.ID {
 func (set BuildResultSet) DeployedUIDSet() UIDSet {
 	result := NewUIDSet()
 	for _, r := range set {
-		result.Add(r.DeployedUIDs...)
+		r, ok := r.(K8sBuildResult)
+		if ok {
+			result.Add(r.DeployedUIDs...)
+		}
 	}
 	return result
 }
@@ -120,11 +167,30 @@ func MergeBuildResultsSet(a, b BuildResultSet) BuildResultSet {
 	return res
 }
 
+func (set BuildResultSet) BuildTypes() []model.BuildType {
+	btMap := make(map[model.BuildType]bool, len(set))
+	for _, br := range set {
+		if br != nil {
+			btMap[br.BuildType()] = true
+		}
+	}
+	result := make([]model.BuildType, 0, len(btMap))
+	for key := range btMap {
+		result = append(result, key)
+	}
+	return result
+}
+
 // Returns a container ID iff it's the only container ID in the result set.
 // If there are multiple container IDs, we have to give up.
 func (set BuildResultSet) OneAndOnlyLiveUpdatedContainerID() container.ID {
 	var id container.ID
-	for _, result := range set {
+	for _, br := range set {
+		result, ok := br.(LiveUpdateBuildResult)
+		if !ok {
+			continue
+		}
+
 		if len(result.LiveUpdatedContainerIDs) == 0 {
 			continue
 		}
@@ -194,7 +260,7 @@ func (b BuildState) OneContainerInfo() ContainerInfo {
 	return b.RunningContainers[0]
 }
 func (b BuildState) LastImageAsString() string {
-	img := b.LastResult.Image
+	img := ImageFromBuildResult(b.LastResult)
 	if img == nil {
 		return ""
 	}
@@ -215,11 +281,11 @@ func (b BuildState) FilesChanged() []string {
 
 // A build state is empty if there are no previous results.
 func (b BuildState) IsEmpty() bool {
-	return b.LastResult.IsEmpty()
+	return b.LastResult == nil
 }
 
 func (b BuildState) HasImage() bool {
-	return b.LastResult.HasImage()
+	return ImageFromBuildResult(b.LastResult) != nil
 }
 
 // Whether the image represented by this state needs to be built.

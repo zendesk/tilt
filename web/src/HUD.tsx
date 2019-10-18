@@ -5,8 +5,8 @@ import LoadingScreen from "./LoadingScreen"
 import Sidebar, { SidebarItem } from "./Sidebar"
 import Statusbar, { StatusItem } from "./Statusbar"
 import LogPane from "./LogPane"
+import ResourceInfo from "./ResourceInfo"
 import K8sViewPane from "./K8sViewPane"
-import PreviewPane from "./PreviewPane"
 import PathBuilder from "./PathBuilder"
 import { Route, Switch, RouteComponentProps } from "react-router-dom"
 import { History, UnregisterCallback } from "history"
@@ -19,9 +19,9 @@ import {
   Resource,
   Snapshot,
   ShowFatalErrorModal,
+  SnapshotHighlight,
 } from "./types"
 import AlertPane from "./AlertPane"
-import PreviewList from "./PreviewList"
 import AnalyticsNudge from "./AnalyticsNudge"
 import NotFound from "./NotFound"
 import { numberOfAlerts } from "./alerts"
@@ -38,14 +38,13 @@ type HudView = {
   Resources: Array<Resource>
   Log: string
   LogTimestamps: boolean
-  SailEnabled: boolean
-  SailURL: string
   NeedsAnalyticsNudge: boolean
   RunningTiltBuild: TiltBuild
   LatestTiltBuild: TiltBuild
   FeatureFlags: { [featureFlag: string]: boolean }
   TiltCloudUsername: string
   TiltCloudSchemeHost: string
+  TiltCloudTeamID: string
   FatalError: string | null
 }
 
@@ -56,6 +55,7 @@ type HudState = {
   SnapshotLink: string
   showSnapshotModal: boolean
   showFatalErrorModal: ShowFatalErrorModal
+  snapshotHighlight: SnapshotHighlight | null
 }
 
 type NewSnapshotResponse = {
@@ -81,11 +81,15 @@ class HUD extends Component<HudProps, HudState> {
       window.location.host,
       window.location.pathname
     )
-    this.controller = new AppController(this.pathBuilder.getDataUrl(), this)
+    this.controller = new AppController(this.pathBuilder, this)
     this.history = props.history
     this.unlisten = this.history.listen((location, _) => {
       let tags = { type: pathToTag(location.pathname) }
       incr("ui.web.navigation", tags)
+
+      this.handleClearHighlight()
+      let selection = document.getSelection()
+      selection && selection.removeAllRanges()
     })
 
     this.state = {
@@ -94,8 +98,6 @@ class HUD extends Component<HudProps, HudState> {
         Resources: [],
         Log: "",
         LogTimestamps: false,
-        SailEnabled: false,
-        SailURL: "",
         NeedsAnalyticsNudge: false,
         FatalError: null,
         RunningTiltBuild: {
@@ -111,14 +113,18 @@ class HUD extends Component<HudProps, HudState> {
         FeatureFlags: {},
         TiltCloudUsername: "",
         TiltCloudSchemeHost: "",
+        TiltCloudTeamID: "",
       },
       IsSidebarClosed: false,
       SnapshotLink: "",
       showSnapshotModal: false,
       showFatalErrorModal: ShowFatalErrorModal.Default,
+      snapshotHighlight: null,
     }
 
     this.toggleSidebar = this.toggleSidebar.bind(this)
+    this.handleClearHighlight = this.handleClearHighlight.bind(this)
+    this.handleSetHighlight = this.handleSetHighlight.bind(this)
   }
 
   componentDidMount() {
@@ -142,20 +148,16 @@ class HUD extends Component<HudProps, HudState> {
     this.setState(state)
   }
 
+  setHistoryLocation(path: string) {
+    this.props.history.replace(path)
+  }
+
   toggleSidebar() {
     this.setState(prevState => {
       return {
         IsSidebarClosed: !prevState.IsSidebarClosed,
       }
     })
-  }
-
-  getPreviewForName(name: string, resources: Array<SidebarItem>): string {
-    if (name) {
-      return `/r/${name}/preview`
-    }
-
-    return `/preview`
   }
 
   path(relPath: string) {
@@ -165,6 +167,8 @@ class HUD extends Component<HudProps, HudState> {
   sendSnapshot(snapshot: Snapshot) {
     let url = `//${window.location.host}/api/snapshot/new`
     let sanitizedSnapshot = cleanStateForSnapshotPOST(snapshot)
+    sanitizedSnapshot.path = this.props.history.location.pathname
+    sanitizedSnapshot.snapshotHighlight = this.state.snapshotHighlight
     fetch(url, {
       method: "post",
       body: JSON.stringify(sanitizedSnapshot),
@@ -182,6 +186,26 @@ class HUD extends Component<HudProps, HudState> {
       .catch(err => console.error(err))
   }
 
+  private getFeatures(): Features {
+    if (this.state.View) {
+      return new Features(this.state.View.FeatureFlags)
+    }
+
+    return new Features({})
+  }
+
+  handleSetHighlight(highlight: SnapshotHighlight) {
+    this.setState({
+      snapshotHighlight: highlight,
+    })
+  }
+
+  handleClearHighlight() {
+    this.setState({
+      snapshotHighlight: null,
+    })
+  }
+
   render() {
     let view = this.state.View
     let needsNudge = view ? view.NeedsAnalyticsNudge : false
@@ -194,14 +218,10 @@ class HUD extends Component<HudProps, HudState> {
     let toggleSidebar = this.toggleSidebar
     let statusItems = resources.map(res => new StatusItem(res))
     let sidebarItems = resources.map(res => new SidebarItem(res))
-    var features: Features
-    if (this.state.View) {
-      features = new Features(this.state.View.FeatureFlags)
-    } else {
-      features = new Features({})
-    }
+
     let showSnapshot =
-      features.isEnabled("snapshots") && !this.pathBuilder.isSnapshot()
+      this.getFeatures().isEnabled("snapshots") &&
+      !this.pathBuilder.isSnapshot()
     let snapshotOwner: string | null = null
     if (this.pathBuilder.isSnapshot() && this.state.View) {
       snapshotOwner = this.state.View.TiltCloudUsername
@@ -221,8 +241,9 @@ class HUD extends Component<HudProps, HudState> {
       )
     }
 
-    let handleOpenModal = () => this.setState({ showSnapshotModal: true })
-
+    let handleOpenModal = () => {
+      this.setState({ showSnapshotModal: true })
+    }
     let topBarRoute = (t: ResourceView, props: RouteComponentProps<any>) => {
       let name =
         props.match.params && props.match.params.name
@@ -236,12 +257,12 @@ class HUD extends Component<HudProps, HudState> {
             <TopBar
               logUrl={this.path("/")} // redirect to home page
               alertsUrl={this.path("/alerts")}
-              previewUrl={this.path("/preview")}
               resourceView={t}
               numberOfAlerts={numAlerts}
               showSnapshotButton={showSnapshot}
               snapshotOwner={snapshotOwner}
               handleOpenModal={handleOpenModal}
+              highlight={this.state.snapshotHighlight}
             />
           )
         }
@@ -257,12 +278,12 @@ class HUD extends Component<HudProps, HudState> {
           alertsUrl={
             name === "" ? this.path("/alerts") : this.path(`/r/${name}/alerts`)
           }
-          previewUrl={this.path(this.getPreviewForName(name, sidebarItems))}
           resourceView={t}
           numberOfAlerts={numAlerts}
           showSnapshotButton={showSnapshot}
           snapshotOwner={snapshotOwner}
           handleOpenModal={handleOpenModal}
+          highlight={this.state.snapshotHighlight}
         />
       )
     }
@@ -287,45 +308,27 @@ class HUD extends Component<HudProps, HudState> {
         podStatus = (r.K8sResourceInfo && r.K8sResourceInfo.PodStatus) || ""
       }
       return (
-        <LogPane
-          log={logs}
-          isExpanded={isSidebarClosed}
-          endpoints={endpoints}
-          podID={podID}
-          podStatus={podStatus}
-        />
+        <>
+          <ResourceInfo
+            endpoints={endpoints}
+            podID={podID}
+            podStatus={podStatus}
+          />
+          <LogPane
+            log={logs}
+            isExpanded={isSidebarClosed}
+            handleSetHighlight={this.handleSetHighlight}
+            handleClearHighlight={this.handleClearHighlight}
+            highlight={this.state.snapshotHighlight}
+            modalIsOpen={this.state.showSnapshotModal}
+          />
+        </>
       )
     }
 
     let combinedLog = ""
     if (view) {
       combinedLog = view.Log
-    }
-
-    let previewRoute = (props: RouteComponentProps<any>) => {
-      let name = props.match.params ? props.match.params.name : ""
-      let endpoint = ""
-      if (view && name) {
-        let r = view.Resources.find(r => r.Name === name)
-        if (r === undefined) {
-          return <Route component={NotFound} />
-        }
-        endpoint = r ? r.Endpoints && r.Endpoints[0] : ""
-      }
-
-      if (view && endpoint === "") {
-        let resourceNamesWithEndpoints = view.Resources.filter(
-          r => r.Endpoints && r.Endpoints.length > 0
-        ).map(r => r.Name)
-        return (
-          <PreviewList
-            resourcesWithEndpoints={resourceNamesWithEndpoints}
-            pathBuilder={this.pathBuilder}
-          />
-        )
-      }
-
-      return <PreviewPane endpoint={endpoint} isExpanded={isSidebarClosed} />
     }
 
     let errorRoute = (props: RouteComponentProps<any>) => {
@@ -370,14 +373,6 @@ class HUD extends Component<HudProps, HudState> {
             render={topBarRoute.bind(null, ResourceView.Alerts)}
           />
           <Route
-            path={this.path("/r/:name/preview")}
-            render={topBarRoute.bind(null, ResourceView.Preview)}
-          />
-          <Route
-            path={this.path("/preview")}
-            render={topBarRoute.bind(null, ResourceView.Preview)}
-          />
-          <Route
             path={this.path("/r/:name")}
             render={topBarRoute.bind(null, ResourceView.Log)}
           />
@@ -395,14 +390,6 @@ class HUD extends Component<HudProps, HudState> {
           <Route
             path={this.path("/alerts")}
             render={sidebarRoute.bind(null, ResourceView.Alerts)}
-          />
-          <Route
-            path={this.path("/r/:name/preview")}
-            render={sidebarRoute.bind(null, ResourceView.Preview)}
-          />
-          <Route
-            path={this.path("/preview")}
-            render={sidebarRoute.bind(null, ResourceView.Preview)}
           />
           <Route
             path={this.path("/r/:name")}
@@ -424,9 +411,10 @@ class HUD extends Component<HudProps, HudState> {
               <LogPane
                 log={combinedLog}
                 isExpanded={isSidebarClosed}
-                podID={""}
-                endpoints={[]}
-                podStatus={""}
+                handleSetHighlight={this.handleSetHighlight}
+                handleClearHighlight={this.handleClearHighlight}
+                highlight={this.state.snapshotHighlight}
+                modalIsOpen={this.state.showSnapshotModal}
               />
             )}
           />
@@ -437,7 +425,6 @@ class HUD extends Component<HudProps, HudState> {
               <AlertPane pathBuilder={this.pathBuilder} resources={resources} />
             )}
           />
-          <Route exact path={this.path("/preview")} render={previewRoute} />
           <Route exact path={this.path("/r/:name")} render={logsRoute} />
           <Route
             exact
@@ -454,11 +441,6 @@ class HUD extends Component<HudProps, HudState> {
             path={this.path("/r/:name/alerts")}
             render={errorRoute}
           />
-          <Route
-            exact
-            path={this.path("/r/:name/preview")}
-            render={previewRoute}
-          />
           <Route component={NoMatch} />
         </Switch>
       </div>
@@ -470,6 +452,13 @@ class HUD extends Component<HudProps, HudState> {
     let handleSendSnapshot = () => this.sendSnapshot(this.state)
     let tiltCloudUsername = (view && view.TiltCloudUsername) || null
     let tiltCloudSchemeHost = (view && view.TiltCloudSchemeHost) || ""
+    let tiltCloudTeamID = (view && view.TiltCloudTeamID) || null
+    let highlightedLines = this.state.snapshotHighlight
+      ? Math.abs(
+          parseInt(this.state.snapshotHighlight.endingLogID, 10) -
+            parseInt(this.state.snapshotHighlight.beginningLogID, 10)
+        ) + 1
+      : null
     return (
       <ShareSnapshotModal
         handleSendSnapshot={handleSendSnapshot}
@@ -477,7 +466,9 @@ class HUD extends Component<HudProps, HudState> {
         snapshotUrl={this.state.SnapshotLink}
         tiltCloudUsername={tiltCloudUsername}
         tiltCloudSchemeHost={tiltCloudSchemeHost}
+        tiltCloudTeamID={tiltCloudTeamID}
         isOpen={this.state.showSnapshotModal}
+        highlightedLines={highlightedLines}
       />
     )
   }

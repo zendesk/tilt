@@ -1,5 +1,124 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`ShareSnapshotModal renders team link 1`] = `
+<div
+  className="ReactModal__Overlay ReactModal__Overlay--after-open"
+  onClick={[Function]}
+  onMouseDown={[Function]}
+  style={
+    Object {
+      "backgroundColor": "rgba(255, 255, 255, 0.75)",
+      "bottom": 0,
+      "left": 0,
+      "position": "fixed",
+      "right": 0,
+      "top": 0,
+    }
+  }
+>
+  <div
+    className="ReactModal__Content ReactModal__Content--after-open ShareSnapshotModal"
+    onClick={[Function]}
+    onKeyDown={[Function]}
+    onMouseDown={[Function]}
+    onMouseUp={[Function]}
+    role="dialog"
+    style={Object {}}
+    tabIndex="-1"
+  >
+    <h2
+      className="ShareSnapshotModal-title"
+    >
+      Share a Shapshot
+    </h2>
+    <section
+      className="ShareSnapshotModal-pane u-flexColumn"
+    >
+      <p
+        className="ShareSnapshotModal-description"
+      >
+        Get a link to a snapshot — a browsable, sharable view of the current state of your Tilt session.
+      </p>
+      <section
+        className="ShareSnapshotModal-shareLinkWrap"
+      >
+        <div
+          className="ShareSnapshotModal-shareLink"
+        >
+          <div
+            className="ShareSnapshotModal-shareLink-urlBox"
+          >
+            <p
+              className="ShareSnapshotModal-shareLink-url"
+            >
+              http://test.com
+            </p>
+          </div>
+          <a
+            className="ShareSnapshotModal-button ShareSnapshotModal-button--inline"
+            href="http://test.com"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Open
+          </a>
+        </div>
+        <section
+          className="ShareSnapshotModal-shareLinkInfo"
+        >
+          <p
+            className="ShareSnapshotModal-loginState"
+          >
+            Sharing as 
+            <strong>
+              Hello
+            </strong>
+          </p>
+        </section>
+      </section>
+    </section>
+    <section
+      className="ShareSnapshotModal-manageSnapshots"
+    >
+      <p>
+        Manage your snapshots on
+         
+        <a
+          className="ShareSnapshotModal-tiltCloudLink"
+          href="https://cloud.tilt.dev/snapshots"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          <span>
+            TiltCloud
+          </span>
+          <svg>
+            arrow.svg
+          </svg>
+        </a>
+      </p>
+      <p>
+        View snapshots from your
+         
+        <a
+          className="ShareSnapshotModal-tiltCloudLink"
+          href="https://cloud.tilt.dev/team/abcdefg/snapshots"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          <span>
+            team
+          </span>
+          <svg>
+            arrow.svg
+          </svg>
+        </a>
+      </p>
+    </section>
+  </div>
+</div>
+`;
+
 exports[`ShareSnapshotModal renders with modal closed 1`] = `null`;
 
 exports[`ShareSnapshotModal renders with modal open w/ known username 1`] = `
@@ -59,19 +178,24 @@ exports[`ShareSnapshotModal renders with modal open w/ known username 1`] = `
           <a
             className="ShareSnapshotModal-button ShareSnapshotModal-button--inline"
             href="http://test.com"
+            rel="noopener noreferrer"
             target="_blank"
           >
             Open
           </a>
         </div>
-        <p
-          className="ShareSnapshotModal-loginState"
+        <section
+          className="ShareSnapshotModal-shareLinkInfo"
         >
-          Sharing as 
-          <strong>
-            tacocat
-          </strong>
-        </p>
+          <p
+            className="ShareSnapshotModal-loginState"
+          >
+            Sharing as 
+            <strong>
+              tacocat
+            </strong>
+          </p>
+        </section>
       </section>
     </section>
     <section
@@ -83,6 +207,7 @@ exports[`ShareSnapshotModal renders with modal open w/ known username 1`] = `
         <a
           className="ShareSnapshotModal-tiltCloudLink"
           href="https://cloud.tilt.dev/snapshots"
+          rel="noopener noreferrer"
           target="_blank"
         >
           <span>
@@ -145,6 +270,7 @@ exports[`ShareSnapshotModal renders with modal open w/o known username 1`] = `
             className="u-inlineBlock"
           >
             <img
+              alt="hand holding up a copy of the Tilt User Interface"
               className="ShareSnapshotModal-introImage"
               src="share-snapshot-intro.png"
             />
@@ -168,6 +294,7 @@ exports[`ShareSnapshotModal renders with modal open w/o known username 1`] = `
             <a
               className="ShareSnapshotModal-docsLink"
               href="https://docs.tilt.dev/snapshots.html"
+              rel="noopener noreferrer"
               target="_blank"
             >
               Learn more in our docs
@@ -252,6 +379,7 @@ exports[`ShareSnapshotModal renders without snapshotUrl 1`] = `
             className="u-inlineBlock"
           >
             <img
+              alt="hand holding up a copy of the Tilt User Interface"
               className="ShareSnapshotModal-introImage"
               src="share-snapshot-intro.png"
             />
@@ -275,6 +403,7 @@ exports[`ShareSnapshotModal renders without snapshotUrl 1`] = `
             <a
               className="ShareSnapshotModal-docsLink"
               href="https://docs.tilt.dev/snapshots.html"
+              rel="noopener noreferrer"
               target="_blank"
             >
               Learn more in our docs

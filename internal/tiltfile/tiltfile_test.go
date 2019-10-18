@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
@@ -31,6 +32,7 @@ import (
 	"github.com/windmilleng/tilt/internal/sliceutils"
 	"github.com/windmilleng/tilt/internal/testutils"
 	"github.com/windmilleng/tilt/internal/testutils/tempdir"
+	"github.com/windmilleng/tilt/internal/tiltfile/k8scontext"
 	"github.com/windmilleng/tilt/internal/tiltfile/testdata"
 	"github.com/windmilleng/tilt/internal/yaml"
 	"github.com/windmilleng/tilt/pkg/model"
@@ -3842,6 +3844,57 @@ k8s_yaml('secret.yaml')
 	assert.Equal(t, "d29ybGQ=", string(secrets["world"].ValueEncoded))
 }
 
+func TestDockerPruneSettings(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+
+	f.file("Tiltfile", `
+docker_prune_settings(max_age_mins=111, num_builds=222)
+`)
+
+	f.load()
+	res := f.loadResult.DockerPruneSettings
+
+	assert.True(t, res.Enabled)
+	assert.Equal(t, time.Minute*111, res.MaxAge)
+	assert.Equal(t, 222, res.NumBuilds)
+	assert.Equal(t, model.DockerPruneDefaultInterval, res.Interval) // default
+}
+
+func TestDockerPruneSettingsDefaultsWhenCalled(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+
+	f.file("Tiltfile", `
+docker_prune_settings(num_builds=123)
+`)
+
+	f.load()
+	res := f.loadResult.DockerPruneSettings
+
+	assert.True(t, res.Enabled)
+	assert.Equal(t, model.DockerPruneDefaultMaxAge, res.MaxAge)
+	assert.Equal(t, 123, res.NumBuilds)
+	assert.Equal(t, model.DockerPruneDefaultInterval, res.Interval)
+}
+
+func TestDockerPruneSettingsDefaultsWhenNotCalled(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+
+	f.file("Tiltfile", `
+print('nothing to see here')
+`)
+
+	f.load()
+	res := f.loadResult.DockerPruneSettings
+
+	assert.True(t, res.Enabled)
+	assert.Equal(t, model.DockerPruneDefaultMaxAge, res.MaxAge)
+	assert.Equal(t, 0, res.NumBuilds)
+	assert.Equal(t, model.DockerPruneDefaultInterval, res.Interval)
+}
+
 type fixture struct {
 	ctx context.Context
 	out *bytes.Buffer
@@ -3866,7 +3919,9 @@ func (f *fixture) newTiltfileLoader() TiltfileLoader {
 		feature.MultipleContainersPerPod: feature.Value{Enabled: false},
 		feature.Snapshots:                feature.Value{Enabled: true},
 	}
-	return ProvideTiltfileLoader(f.ta, f.kCli, dcc, f.k8sContext, f.k8sEnv, features)
+
+	k8sContextExt := k8scontext.NewExtension(f.k8sContext, f.k8sEnv)
+	return ProvideTiltfileLoader(f.ta, f.kCli, k8sContextExt, dcc, features)
 }
 
 func newFixture(t *testing.T) *fixture {

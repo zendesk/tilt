@@ -12,11 +12,15 @@ import (
 	"go.starlark.net/resolve"
 	"go.starlark.net/starlark"
 
+	"github.com/windmilleng/tilt/internal/tiltfile/dockerprune"
+
 	"github.com/windmilleng/tilt/internal/analytics"
 	"github.com/windmilleng/tilt/internal/dockercompose"
 	"github.com/windmilleng/tilt/internal/feature"
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/ospath"
+	"github.com/windmilleng/tilt/internal/tiltfile/k8scontext"
+	"github.com/windmilleng/tilt/internal/tiltfile/value"
 	"github.com/windmilleng/tilt/pkg/model"
 )
 
@@ -30,14 +34,15 @@ func init() {
 }
 
 type TiltfileLoadResult struct {
-	Manifests          []model.Manifest
-	ConfigFiles        []string
-	Warnings           []string
-	TiltIgnoreContents string
-	FeatureFlags       map[string]bool
-	TeamName           string
-	Secrets            model.SecretSet
-	Error              error
+	Manifests           []model.Manifest
+	ConfigFiles         []string
+	Warnings            []string
+	TiltIgnoreContents  string
+	FeatureFlags        map[string]bool
+	TeamName            string
+	Secrets             model.SecretSet
+	Error               error
+	DockerPruneSettings model.DockerPruneSettings
 }
 
 func (r TiltfileLoadResult) Orchestrator() model.Orchestrator {
@@ -78,27 +83,27 @@ func (tfl *FakeTiltfileLoader) Load(ctx context.Context, filename string, matchi
 func ProvideTiltfileLoader(
 	analytics *analytics.TiltAnalytics,
 	kCli k8s.Client,
+	k8sContextExt *k8scontext.Extension,
 	dcCli dockercompose.DockerComposeClient,
-	kubeContext k8s.KubeContext,
-	kubeEnv k8s.Env,
 	fDefaults feature.Defaults) TiltfileLoader {
 	return tiltfileLoader{
-		analytics:   analytics,
-		kCli:        kCli,
-		dcCli:       dcCli,
-		kubeContext: kubeContext,
-		kubeEnv:     kubeEnv,
-		fDefaults:   fDefaults,
+		analytics:     analytics,
+		kCli:          kCli,
+		k8sContextExt: k8sContextExt,
+		dpExt:         dockerprune.NewExtension(),
+		dcCli:         dcCli,
+		fDefaults:     fDefaults,
 	}
 }
 
 type tiltfileLoader struct {
-	analytics   *analytics.TiltAnalytics
-	kCli        k8s.Client
-	dcCli       dockercompose.DockerComposeClient
-	kubeContext k8s.KubeContext
-	kubeEnv     k8s.Env
-	fDefaults   feature.Defaults
+	analytics *analytics.TiltAnalytics
+	kCli      k8s.Client
+	dcCli     dockercompose.DockerComposeClient
+
+	k8sContextExt *k8scontext.Extension
+	dpExt         *dockerprune.Extension
+	fDefaults     feature.Defaults
 }
 
 var _ TiltfileLoader = &tiltfileLoader{}
@@ -143,7 +148,7 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, matching ma
 	tlr.TiltIgnoreContents = string(tiltIgnoreContents)
 
 	privateRegistry := tfl.kCli.PrivateRegistry(ctx)
-	s := newTiltfileState(ctx, tfl.dcCli, tfl.kubeContext, tfl.kubeEnv, privateRegistry, feature.FromDefaults(tfl.fDefaults))
+	s := newTiltfileState(ctx, tfl.dcCli, tfl.k8sContextExt, tfl.dpExt, privateRegistry, feature.FromDefaults(tfl.fDefaults))
 
 	manifests, err := s.loadManifests(absFilename, matching)
 	tlr.Secrets = s.extractSecrets()
@@ -153,6 +158,7 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, matching ma
 	tlr.Error = err
 	tlr.Manifests = manifests
 	tlr.TeamName = s.teamName
+	tlr.DockerPruneSettings = tfl.dpExt.Settings()
 
 	printWarnings(s)
 	s.logger.Infof("Successfully loaded Tiltfile")
@@ -190,24 +196,8 @@ func skylarkStringDictToGoMap(d *starlark.Dict) (map[string]string, error) {
 	return r, nil
 }
 
-// If `v` is a `starlark.Sequence`, return a slice of its elements
-// Otherwise, return it as a single-element slice
-// For functions that take `Union[List[T], T]`
 func starlarkValueOrSequenceToSlice(v starlark.Value) []starlark.Value {
-	if seq, ok := v.(starlark.Sequence); ok {
-		var ret []starlark.Value
-		it := seq.Iterate()
-		defer it.Done()
-		var i starlark.Value
-		for it.Next(&i) {
-			ret = append(ret, i)
-		}
-		return ret
-	} else if v == nil || v == starlark.None {
-		return nil
-	} else {
-		return []starlark.Value{v}
-	}
+	return value.ValueOrSequenceToSlice(v)
 }
 
 func (tfl *tiltfileLoader) reportTiltfileLoaded(callCounts map[string]int,

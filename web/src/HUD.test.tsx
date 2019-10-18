@@ -119,7 +119,7 @@ it("renders tab nav", () => {
   let resourceView = oneResourceView()
   hud.setState({ View: resourceView })
   let tabNavLinks = root.find(".TabNav Link")
-  expect(tabNavLinks).toHaveLength(3)
+  expect(tabNavLinks).toHaveLength(2)
 })
 
 it("renders number of errors in tabnav when no resource is selected", () => {
@@ -193,17 +193,6 @@ it("log page for nonexistent resource shows error", async () => {
   )
 })
 
-it("preview page for nonexistent resource shows error", async () => {
-  const root = mount(HUDAtPath("/r/nonexistentresource/preview"))
-  const hud = root.find(HUD)
-  hud.setState({ View: oneResourceView() })
-
-  let loadingScreen = root.find(".LoadingScreen")
-  expect(loadingScreen.at(0).text()).toEqual(
-    "No resource found at /r/nonexistentresource/preview"
-  )
-})
-
 it("alerts page for nonexistent resource shows error", async () => {
   const root = mount(HUDAtPath("/r/nonexistentresource/alerts"))
   const hud = root.find(HUD)
@@ -215,25 +204,6 @@ it("alerts page for nonexistent resource shows error", async () => {
   )
 })
 
-it("preview pane for all resources", async () => {
-  const root = mount(HUDAtPath("/preview"))
-  const hud = root.find(HUD)
-  hud.setState({ View: twoResourceView() })
-
-  let previewScreens = root.find(".PreviewList")
-  expect(previewScreens).toHaveLength(1)
-  expect(previewScreens.at(0).text()).toEqual("snack")
-})
-
-it("preview pane for one resource", async () => {
-  const root = mount(HUDAtPath("/r/snack/preview"))
-  const hud = root.find(HUD)
-  hud.setState({ View: twoResourceView() })
-
-  let previewScreens = root.find(".PreviewPane")
-  expect(previewScreens).toHaveLength(1)
-})
-
 it("renders snapshot button if snapshots are enabled and this isn't a snapshot view", async () => {
   const root = mount(HUDAtPath("/"))
   const hud = root.find(HUD)
@@ -241,7 +211,7 @@ it("renders snapshot button if snapshots are enabled and this isn't a snapshot v
   view.FeatureFlags = { snapshots: true }
   hud.setState({ View: view })
 
-  let snapshotSection = root.find(".TopBar-snapshotUrlWrap")
+  let snapshotSection = root.find(".TopBar-snapshotButton")
   expect(snapshotSection.exists()).toBe(true)
 })
 
@@ -261,6 +231,6 @@ it("doesn't render snapshot button if snapshots are enabled and this is a snapsh
   view.FeatureFlags = { snapshots: true }
   hud.setState({ View: view })
 
-  let snapshotSection = root.find(".TopBar-snapshotUrlWrap")
+  let snapshotSection = root.find(".TopBar-snapshotButton")
   expect(snapshotSection.exists()).toBe(false)
 })

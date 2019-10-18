@@ -17,10 +17,13 @@ let signedOut = () => {
       snapshotUrl={""}
       tiltCloudUsername={""}
       tiltCloudSchemeHost={"https://cloud.tilt.dev"}
+      tiltCloudTeamID={""}
       isOpen={true}
+      highlightedLines={null}
     />
   )
 }
+
 let signedIn = () => {
   return (
     <ShareSnapshotModal
@@ -29,7 +32,9 @@ let signedIn = () => {
       snapshotUrl={""}
       tiltCloudUsername={"peridot"}
       tiltCloudSchemeHost={"https://cloud.tilt.dev"}
+      tiltCloudTeamID={""}
       isOpen={true}
+      highlightedLines={null}
     />
   )
 }
@@ -42,7 +47,9 @@ let withUrl = () => {
       snapshotUrl={"https://cloud.tilt.dev/snapshot/garnet"}
       tiltCloudUsername={"peridot"}
       tiltCloudSchemeHost={"https://cloud.tilt.dev"}
+      tiltCloudTeamID={""}
       isOpen={true}
+      highlightedLines={null}
     />
   )
 }
@@ -57,7 +64,24 @@ let withUrlOverflow = () => {
       }
       tiltCloudUsername={"peridot"}
       tiltCloudSchemeHost={"https://cloud.tilt.dev"}
+      tiltCloudTeamID={""}
       isOpen={true}
+      highlightedLines={null}
+    />
+  )
+}
+
+let withTeam = () => {
+  return (
+    <ShareSnapshotModal
+      handleSendSnapshot={handleSendSnapshot}
+      handleClose={handleClose}
+      snapshotUrl={""}
+      tiltCloudUsername={"peridot"}
+      tiltCloudSchemeHost={"https://cloud.tilt.dev"}
+      tiltCloudTeamID={"3e8e3af3-52e7-4f86-9006-9b1cce9ec85d"}
+      isOpen={true}
+      highlightedLines={null}
     />
   )
 }
@@ -67,3 +91,4 @@ storiesOf("ShareSnapshotModal", module)
   .add("signed-in", signedIn)
   .add("with-url", withUrl)
   .add("with-url-overflow", withUrlOverflow)
+  .add("with-team", withTeam)
