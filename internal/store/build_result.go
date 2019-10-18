@@ -292,7 +292,8 @@ func (b BuildState) HasImage() bool {
 // If the image has already been built, and no files have been
 // changed since then, then we can re-use the previous result.
 func (b BuildState) NeedsImageBuild() bool {
-	lastBuildWasImgBuild := b.LastResult.HasImage() && !b.LastResult.IsInPlaceUpdate()
+	lastBuildWasImgBuild := b.LastResult != nil &&
+		b.LastResult.BuildType() == model.BuildTypeImage
 	return !lastBuildWasImgBuild || len(b.FilesChangedSet) > 0 || b.ForceUpdate
 }
 
