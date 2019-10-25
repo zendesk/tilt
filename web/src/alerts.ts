@@ -25,6 +25,7 @@ function hasAlert(resource: Resource) {
 
 //Errors for K8s Resources
 function crashRebuild(r: Resource): boolean {
+  console.log(r)
   return r.buildHistory.length > 0 && r.buildHistory[0].isCrashRebuild
 }
 
