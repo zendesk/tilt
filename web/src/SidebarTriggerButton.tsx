@@ -48,7 +48,10 @@ export default class SidebarTriggerButton extends PureComponent<
 
     return (
       <button
-        onClick={() => triggerUpdate(props.resourceName)}
+        onClick={(e) => {
+          e.stopPropagation()
+          triggerUpdate(props.resourceName)
+        }}
         className={`SidebarTriggerButton ${props.isSelected ? "isSelected" : ""}
           ${isReady ? " isReady" : ""}${isDirty ? " isDirty" : ""}`}
       />
