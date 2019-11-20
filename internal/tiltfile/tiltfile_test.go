@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/windmilleng/wmclient/pkg/analytics"
@@ -1022,7 +1021,7 @@ func TestHelm(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 
-	f.setupHelm()
+	f.setupHelmV3()
 
 	f.file("Tiltfile", `
 yml = helm('helm')
@@ -1043,7 +1042,7 @@ func TestHelmArgs(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 
-	f.setupHelm()
+	f.setupHelmV3()
 
 	f.file("Tiltfile", `
 yml = helm('./helm', name='rose-quartz', namespace='garnet', values=['./dev/helm/values-dev.yaml'])
@@ -1073,7 +1072,7 @@ func TestHelmNamespaceFlagDoesNotInsertNSEntityIfNSInChart(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 
-	f.setupHelm()
+	f.setupHelmV3()
 
 	valuesWithNamespace := `
 namespace:
@@ -1105,7 +1104,7 @@ func TestHelmNamespaceFlagInsertsNSEntityIfDifferentNSInChart(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 
-	f.setupHelm()
+	f.setupHelmV3()
 
 	valuesWithNamespace := `
 namespace:
@@ -1140,7 +1139,7 @@ func TestHelmFromRepoPath(t *testing.T) {
 	defer f.TearDown()
 
 	f.gitInit(".")
-	f.setupHelm()
+	f.setupHelmV3()
 
 	f.file("Tiltfile", `
 r = local_git_repo('.')
@@ -1776,7 +1775,7 @@ k8s_yaml(['sancho_twin.yaml', 'sancho_sidecar.yaml', 'blorg.yaml'])
 	assert.Equal(t, blorgJob.K8sTarget().RefInjectCounts()["gcr.io/blorg-dev/blorg-backend:devel-nick"], 1)
 }
 
-func TestYamlErrorFromLocal(t *testing.T) {
+func TestYAMLErrorFromLocal(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 	f.file("Tiltfile", `
@@ -1786,7 +1785,7 @@ k8s_yaml(yaml)
 	f.loadErrString("local: echo hi")
 }
 
-func TestYamlErrorFromReadFile(t *testing.T) {
+func TestYAMLErrorFromReadFile(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 	f.file("foo.yaml", "hi")
@@ -1796,18 +1795,19 @@ k8s_yaml(read_file('foo.yaml'))
 	f.loadErrString(fmt.Sprintf("file: %s", f.JoinPath("foo.yaml")))
 }
 
-func TestYamlErrorFromHelm(t *testing.T) {
+func TestYAMLErrorFromHelm(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
-	f.setupHelm()
+	f.setupHelmV3()
 	f.file("helm/templates/foo.yaml", "hi")
 	f.file("Tiltfile", `
 k8s_yaml(helm('helm'))
 `)
-	f.loadErrString("from helm")
+	// TODO(dmiller): should this error message be better?
+	f.loadErrString("YAML Parse Error")
 }
 
-func TestYamlErrorFromBlob(t *testing.T) {
+func TestYAMLErrorFromBlob(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
 	f.file("Tiltfile", `
@@ -3264,7 +3264,7 @@ k8s_yaml(yml)
 
 	f.load()
 
-	f.assertNextManifestUnresourced("release-name-helloworld-chart")
+	f.assertNextManifest("release-name-helloworld-chart:deployment:default:apps:0")
 	f.assertConfigFiles(
 		"Tiltfile",
 		".tiltignore",
@@ -3921,7 +3921,6 @@ local_resource("toplvl-local", "echo hello world", ["foo/baz", "foo/a.txt"])
 		f.JoinPath("foo/baz"),
 		f.JoinPath("foo/a.txt"),
 	}, ltTop.Dependencies())
-	spew.Dump(ltTop.LocalRepos())
 	f.assertRepos([]string{
 		f.JoinPath("foo/baz"),
 		f.Path(),
@@ -3967,7 +3966,6 @@ func (f *fixture) assertRepos(expectedLocalPaths []string, repos []model.LocalGi
 	for _, r := range repos {
 		actualLocalPaths = append(actualLocalPaths, r.LocalPath)
 	}
-	spew.Dump(actualLocalPaths)
 	assert.ElementsMatch(f.t, expectedLocalPaths, actualLocalPaths)
 }
 
@@ -5074,15 +5072,27 @@ func (f *fixture) setupHelm() {
 	f.file("helm/templates/namespace.yaml", namespaceYAML)
 }
 
+func (f *fixture) setupHelmV3() {
+	f.file("helm/Chart.yaml", chartYAML3)
+	f.file("helm/values.yaml", valuesYAML3)
+	f.file("dev/helm/values-dev.yaml", valuesDevYAML) // make sure we can pull in a values.yaml file from outside chart dir
+
+	f.file("helm/templates/_helpers.tpl", helpersTPL3)
+	f.file("helm/templates/deployment.yaml", deploymentYAML3)
+	f.file("helm/templates/ingress.yaml", ingressYAML3)
+	f.file("helm/templates/service.yaml", serviceYAML3)
+	f.file("helm/templates/serviceaccount.yaml", serviceYAML3)
+}
+
 func (f *fixture) setupHelmWithRequirements() {
-	f.setupHelm()
+	f.setupHelmV3()
 
 	nginxIngressChartPath := testdata.NginxIngressChartPath()
 	f.CopyFile(nginxIngressChartPath, filepath.Join("helm/charts", filepath.Base(nginxIngressChartPath)))
 }
 
 func (f *fixture) setupHelmWithTest() {
-	f.setupHelm()
+	f.setupHelmV3()
 	f.file("helm/templates/tests/test-mariadb-connection.yaml", helmTestYAML)
 }
 
