@@ -1,6 +1,7 @@
 package tiltfile
 
 import (
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -63,12 +64,15 @@ func isHelmInstalled() bool {
 }
 
 func getHelmVersion() (helmVersion, error) {
+	if !isHelmInstalled() {
+		return unknownHelmVersion, fmt.Errorf("Unable to find Helm installation. Make sure is there is a binary called `helm` available in your $PATH.")
+	}
+
 	// NOTE(dmiller): I pass `--client` here even though that doesn't do anything in Helm v3.
-	// In Helm v2 that causes `helm version` to not reach out to tiller, which can cause the
+	// In Helm v2 that causes `helm version` to not reach out to tiller. Doing so can cause the
 	// command to fail, even though Tilt doesn't use the server at all (it just calls
 	// `helm template`).
 	// In Helm v3, it has no effect, not even an unknown flag error.
-
 	cmd := exec.Command("helm", "version", "--client", "--short")
 
 	out, err := cmd.Output()

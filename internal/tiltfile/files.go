@@ -125,9 +125,19 @@ func (s *tiltfileState) helm(thread *starlark.Thread, fn *starlark.Builtin, args
 		return nil, err
 	}
 
-	// TODO(dmiller):
-	// Check if helm is installed
-	// parse the version?
+	version, err := getHelmVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(dmiller) it would be nice if we could display the verison here, maybe move this in to getHelmVersion
+	if version == unknownHelmVersion {
+		return nil, fmt.Errorf("Unknown Helm version")
+	}
+
+	if version == helmV3 {
+		return nil, fmt.Errorf("Helm v3 isn't supported yet")
+	}
 
 	localPath, err := value.ValueToAbsPath(thread, path)
 	if err != nil {
