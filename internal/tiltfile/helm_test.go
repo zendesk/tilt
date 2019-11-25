@@ -8,7 +8,7 @@ import (
 
 func TestHelmSetArgs(t *testing.T) {
 	f := newFixture(t)
-	defer f.TearDown()
+	//defer f.TearDown()
 
 	f.setupHelm()
 
