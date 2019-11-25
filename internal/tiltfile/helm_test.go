@@ -38,6 +38,26 @@ k8s_yaml(yml)
 	assert.Contains(t, yaml, "servicePort: 1234")
 }
 
-func TestHelmVersion(t *testing.T) {
+const exampleHelmV2VersionOutput = `Client: v2.12.3+geecf22f`
+const exampleHelmV3VersionOutput = `v3.0.0`
 
+func TestParseHelmV2Version(t *testing.T) {
+	expected := helmV2
+	actual := parseVersion(exampleHelmV2VersionOutput)
+
+	assert.Equal(t, expected, actual)
+}
+
+func TestParseHelmV3Version(t *testing.T) {
+	expected := helmV3
+	actual := parseVersion(exampleHelmV3VersionOutput)
+
+	assert.Equal(t, expected, actual)
+}
+
+func TestHelmUnknownVersion(t *testing.T) {
+	expected := unknownHelmVersion
+	actual := parseVersion("v4.1.2")
+
+	assert.Equal(t, expected, actual)
 }
