@@ -33,3 +33,21 @@ func isHelmTestYAML(resource string) bool {
 	}
 	return false
 }
+
+type helmVersion int
+
+const (
+	unknownHelmVersion helmVersion = iota
+	helmV2
+	helmV3
+)
+
+func parseVersion(version string) helmVersion {
+	if strings.HasPrefix(version, "v3") {
+		return helmV3
+	} else if strings.HasPrefix(version, "v2") {
+		return helmV2
+	}
+
+	return unknownHelmVersion
+}

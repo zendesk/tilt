@@ -37,3 +37,7 @@ k8s_yaml(yml)
 	assert.Contains(t, yaml, "serviceName: rose-quartz-helloworld-chart")
 	assert.Contains(t, yaml, "servicePort: 1234")
 }
+
+func TestHelmVersion(t *testing.T) {
+
+}

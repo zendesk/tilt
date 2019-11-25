@@ -125,6 +125,10 @@ func (s *tiltfileState) helm(thread *starlark.Thread, fn *starlark.Builtin, args
 		return nil, err
 	}
 
+	// TODO(dmiller):
+	// Check if helm is installed
+	// parse the version?
+
 	localPath, err := value.ValueToAbsPath(thread, path)
 	if err != nil {
 		return nil, fmt.Errorf("Argument 0 (paths): %v", err)
@@ -154,6 +158,8 @@ func (s *tiltfileState) helm(thread *starlark.Thread, fn *starlark.Builtin, args
 	cmd := []string{"helm", "template", localPath}
 	if name != "" {
 		cmd = append(cmd, "--name", name)
+	} else {
+		cmd = append(cmd, "--generate-name")
 	}
 	if namespace != "" {
 		cmd = append(cmd, "--namespace", namespace)
