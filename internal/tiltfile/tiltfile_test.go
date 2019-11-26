@@ -1045,8 +1045,9 @@ func TestHelmArgs(t *testing.T) {
 
 	f.setupHelmV3()
 
+	// TODO(dmiller): this name parameter doesn't seem to work
 	f.file("Tiltfile", `
-yml = helm('./helm', name='rose-quartz', namespace='garnet', values=['./dev/helm/values-dev.yaml'])
+yml = helm('./helloworld-chart', name='rose-quartz', namespace='garnet', values=['./dev/helm/values-dev.yaml'])
 k8s_yaml(yml)
 `)
 
@@ -1066,7 +1067,7 @@ k8s_yaml(yml)
 	expectedNames := []string{"garnet:namespace", "rose-quartz-helloworld-chart:service"}
 	assert.ElementsMatch(t, expectedNames, names)
 
-	f.assertConfigFiles("./helm/", "./dev/helm/values-dev.yaml", ".tiltignore", "Tiltfile")
+	f.assertConfigFiles("./helloworld-chart/", "./dev/helm/values-dev.yaml", ".tiltignore", "Tiltfile")
 }
 
 func TestHelmNamespaceFlagDoesNotInsertNSEntityIfNSInChart(t *testing.T) {
