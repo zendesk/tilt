@@ -1,4 +1,4 @@
-# Default values for helm3testchart.
+# Default values for helloworld-chart.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 

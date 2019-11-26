@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/windmilleng/wmclient/pkg/analytics"
@@ -1024,17 +1025,17 @@ func TestHelm(t *testing.T) {
 	f.setupHelmV3()
 
 	f.file("Tiltfile", `
-yml = helm('helm')
+yml = helm('helloworld-chart')
 k8s_yaml(yml)
 `)
 
 	f.load()
 
-	f.assertNextManifestUnresourced("release-name-helloworld-chart")
+	f.assertNextManifest("release-name-helloworld-chart")
 	f.assertConfigFiles(
 		"Tiltfile",
 		".tiltignore",
-		"helm",
+		"helloworld-chart",
 	)
 }
 
@@ -5073,26 +5074,18 @@ func (f *fixture) setupHelm() {
 }
 
 func (f *fixture) setupHelmV3() {
-	f.file("helm/Chart.yaml", chartYAML3)
-	f.file("helm/values.yaml", valuesYAML3)
-	f.file("dev/helm/values-dev.yaml", valuesDevYAML) // make sure we can pull in a values.yaml file from outside chart dir
-
-	f.file("helm/templates/_helpers.tpl", helpersTPL3)
-	f.file("helm/templates/deployment.yaml", deploymentYAML3)
-	f.file("helm/templates/ingress.yaml", ingressYAML3)
-	f.file("helm/templates/service.yaml", serviceYAML3)
-	f.file("helm/templates/serviceaccount.yaml", serviceYAML3)
+	copy.Copy(filepath.Join("testdata", "helloworld-chart"), filepath.Join(f.Path(), "helloworld-chart"))
 }
 
 func (f *fixture) setupHelmWithRequirements() {
-	f.setupHelmV3()
+	f.setupHelm()
 
 	nginxIngressChartPath := testdata.NginxIngressChartPath()
 	f.CopyFile(nginxIngressChartPath, filepath.Join("helm/charts", filepath.Base(nginxIngressChartPath)))
 }
 
 func (f *fixture) setupHelmWithTest() {
-	f.setupHelmV3()
+	f.setupHelm()
 	f.file("helm/templates/tests/test-mariadb-connection.yaml", helmTestYAML)
 }
 

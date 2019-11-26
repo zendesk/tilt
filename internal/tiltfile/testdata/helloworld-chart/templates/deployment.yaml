@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "helm3testchart.fullname" . }}
+  name: {{ include "helloworld-chart.fullname" . }}
   labels:
-    {{- include "helm3testchart.labels" . | nindent 4 }}
+    {{- include "helloworld-chart.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "helm3testchart.selectorLabels" . | nindent 6 }}
+      {{- include "helloworld-chart.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "helm3testchart.selectorLabels" . | nindent 8 }}
+        {{- include "helloworld-chart.selectorLabels" . | nindent 8 }}
     spec:
     {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
     {{- end }}
-      serviceAccountName: {{ include "helm3testchart.serviceAccountName" . }}
+      serviceAccountName: {{ include "helloworld-chart.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
