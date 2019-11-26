@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime/pprof"
+	"time"
 
 	"github.com/pkg/errors"
+	"github.com/windmilleng/tilt/internal/hud"
 
 	"github.com/windmilleng/tilt/internal/store"
 	"github.com/windmilleng/tilt/pkg/logger"
@@ -41,6 +44,7 @@ func (p *ProfilerManager) Stop(ctx context.Context) error {
 }
 
 type ProfilerManager struct {
+	dispatched  bool
 	isProfiling bool
 	f           *os.File
 }
@@ -49,6 +53,17 @@ func (p *ProfilerManager) OnChange(ctx context.Context, st store.RStore) {
 	state := st.RLockState()
 	defer st.RUnlockState()
 
+	if !p.dispatched {
+		p.dispatched = true
+		go func() {
+			time.Sleep(time.Second * 15)
+			fmt.Println("Starting auto-profile... ✅")
+			st.Dispatch(hud.StartProfilingAction{})
+			time.Sleep(time.Second * 10)
+			fmt.Println("Stopping auto-profile... 🛑")
+			st.Dispatch(hud.StopProfilingAction{})
+		}()
+	}
 	if p.isProfiling == state.IsProfiling {
 		return
 	}
