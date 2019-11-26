@@ -163,13 +163,11 @@ func (s *tiltfileState) helm(thread *starlark.Thread, fn *starlark.Builtin, args
 
 	cmd := []string{"helm", "template", localPath}
 
-	if name != "" {
-		if version == helmV2 {
-			cmd = append(cmd, "--name", name)
-		} else {
-			cmd = append(cmd, name)
-		}
-	} else {
+	if name != "" && version == helmV2 {
+		cmd = append(cmd, "--name", name)
+	} else if name != "" && version == helmV3 {
+		cmd = append(cmd, name)
+	} else if name == "" && version == helmV3 {
 		cmd = append(cmd, "--generate-name")
 	}
 

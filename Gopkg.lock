@@ -880,6 +880,12 @@
   version = "v0.3.2"
 
 [[projects]]
+  name = "github.com/otiai10/copy"
+  packages = ["."]
+  revision = "f98458f9df5788f53462a1bf427b728f113ab481"
+  version = "v1.0.2"
+
+[[projects]]
   branch = "master"
   name = "github.com/petar/GoLLRB"
   packages = ["llrb"]
@@ -1770,6 +1776,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a1c672396acd9e14e4b4483bc5815c5c8ebeeee879eb39f8566ca20ec07662ff"
+  inputs-digest = "ba07c3ab9ec044a9dba95008648ba33d9698acc9d5b7d12aa930b7703df46613"
   solver-name = "gps-cdcl"
   solver-version = 1
