@@ -20,6 +20,7 @@
 package thrift
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"time"
@@ -158,7 +159,7 @@ func (p *TSSLSocket) Write(buf []byte) (int, error) {
 	return p.conn.Write(buf)
 }
 
-func (p *TSSLSocket) Flush() error {
+func (p *TSSLSocket) Flush(ctx context.Context) error {
 	return nil
 }
 
@@ -171,5 +172,5 @@ func (p *TSSLSocket) Interrupt() error {
 
 func (p *TSSLSocket) RemainingBytes() (num_bytes uint64) {
 	const maxSize = ^uint64(0)
-	return maxSize // the thruth is, we just don't know unless framed is used
+	return maxSize // the truth is, we just don't know unless framed is used
 }

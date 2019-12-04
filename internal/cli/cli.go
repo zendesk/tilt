@@ -87,6 +87,9 @@ func preCommand(ctx context.Context, a *analytics.TiltAnalytics) (context.Contex
 
 	initKlog(l.Writer(logger.InfoLvl))
 
+	if err := tracer.InitOpenTelemetry(); err != nil {
+		log.Printf("Warning: couldn't start open telemetry backend: %v", err)
+	}
 	if trace {
 		backend, err := tracer.StringToTracerBackend(traceType)
 		if err != nil {

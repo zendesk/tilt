@@ -94,6 +94,8 @@ type tiltfileState struct {
 	logger            logger.Logger
 	warnings          []string
 	postExecReadFiles []string
+
+	cloudPorts []int
 }
 
 type k8sResourceAssemblyVersionReason int
@@ -279,8 +281,9 @@ const (
 	disableSnapshotsN = "disable_snapshots"
 
 	// other functions
-	failN    = "fail"
-	setTeamN = "set_team"
+	failN       = "fail"
+	setTeamN    = "set_team"
+	cloudPortsN = "cloud_ports"
 )
 
 type triggerMode int
@@ -451,6 +454,7 @@ func (s *tiltfileState) OnStart(e *starkit.Environment) error {
 		{disableFeatureN, s.disableFeature},
 		{disableSnapshotsN, s.disableSnapshots},
 		{setTeamN, s.setTeam},
+		{cloudPortsN, s.setCloudPorts},
 	} {
 		err := e.AddBuiltin(b.name, b.builtin)
 		if err != nil {

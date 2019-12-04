@@ -50,6 +50,7 @@ type TiltfileLoadResult struct {
 	DockerPruneSettings model.DockerPruneSettings
 	AnalyticsOpt        wmanalytics.Opt
 	VersionSettings     model.VersionSettings
+	CloudPorts          []int
 }
 
 func (r TiltfileLoadResult) Orchestrator() model.Orchestrator {
@@ -172,6 +173,7 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, args []stri
 	tlr.Error = err
 	tlr.Manifests = manifests
 	tlr.TeamName = s.teamName
+	tlr.CloudPorts = s.cloudPorts
 
 	vs, _ := version.GetState(result)
 	tlr.VersionSettings = vs

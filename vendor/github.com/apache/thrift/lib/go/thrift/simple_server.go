@@ -20,8 +20,8 @@
 package thrift
 
 import (
-	"log"
-	"runtime/debug"
+	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 )
@@ -42,6 +42,11 @@ type TSimpleServer struct {
 	outputTransportFactory TTransportFactory
 	inputProtocolFactory   TProtocolFactory
 	outputProtocolFactory  TProtocolFactory
+
+	// Headers to auto forward in THeaderProtocol
+	forwardHeaders []string
+
+	logger Logger
 }
 
 func NewTSimpleServer2(processor TProcessor, serverTransport TServerTransport) *TSimpleServer {
@@ -125,30 +130,72 @@ func (p *TSimpleServer) Listen() error {
 	return p.serverTransport.Listen()
 }
 
+// SetForwardHeaders sets the list of header keys that will be auto forwarded
+// while using THeaderProtocol.
+//
+// "forward" means that when the server is also a client to other upstream
+// thrift servers, the context object user gets in the processor functions will
+// have both read and write headers set, with write headers being forwarded.
+// Users can always override the write headers by calling SetWriteHeaderList
+// before calling thrift client functions.
+func (p *TSimpleServer) SetForwardHeaders(headers []string) {
+	size := len(headers)
+	if size == 0 {
+		p.forwardHeaders = nil
+		return
+	}
+
+	keys := make([]string, size)
+	copy(keys, headers)
+	p.forwardHeaders = keys
+}
+
+// SetLogger sets the logger used by this TSimpleServer.
+//
+// If no logger was set before Serve is called, a default logger using standard
+// log library will be used.
+func (p *TSimpleServer) SetLogger(logger Logger) {
+	p.logger = logger
+}
+
+func (p *TSimpleServer) innerAccept() (int32, error) {
+	client, err := p.serverTransport.Accept()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	closed := atomic.LoadInt32(&p.closed)
+	if closed != 0 {
+		return closed, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if client != nil {
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			if err := p.processRequests(client); err != nil {
+				p.logger(fmt.Sprintf("error processing request: %v", err))
+			}
+		}()
+	}
+	return 0, nil
+}
+
 func (p *TSimpleServer) AcceptLoop() error {
 	for {
-		client, err := p.serverTransport.Accept()
-		p.mu.Lock()
-		if atomic.LoadInt32(&p.closed) != 0 {
-			return nil
-		}
+		closed, err := p.innerAccept()
 		if err != nil {
 			return err
 		}
-		if client != nil {
-			p.wg.Add(1)
-			go func() {
-				defer p.wg.Done()
-				if err := p.processRequests(client); err != nil {
-					log.Println("error processing request:", err)
-				}
-			}()
+		if closed != 0 {
+			return nil
 		}
-		p.mu.Unlock()
 	}
 }
 
 func (p *TSimpleServer) Serve() error {
+	p.logger = fallbackLogger(p.logger)
+
 	err := p.Listen()
 	if err != nil {
 		return err
@@ -169,23 +216,50 @@ func (p *TSimpleServer) Stop() error {
 	return nil
 }
 
-func (p *TSimpleServer) processRequests(client TTransport) error {
+// If err is actually EOF, return nil, otherwise return err as-is.
+func treatEOFErrorsAsNil(err error) error {
+	if err == nil {
+		return nil
+	}
+	// err could be io.EOF wrapped with TProtocolException,
+	// so that err == io.EOF doesn't necessarily work in some cases.
+	if err.Error() == io.EOF.Error() {
+		return nil
+	}
+	if err, ok := err.(TTransportException); ok && err.TypeId() == END_OF_FILE {
+		return nil
+	}
+	return err
+}
+
+func (p *TSimpleServer) processRequests(client TTransport) (err error) {
+	defer func() {
+		err = treatEOFErrorsAsNil(err)
+	}()
+
 	processor := p.processorFactory.GetProcessor(client)
 	inputTransport, err := p.inputTransportFactory.GetTransport(client)
 	if err != nil {
 		return err
 	}
-	outputTransport, err := p.outputTransportFactory.GetTransport(client)
-	if err != nil {
-		return err
-	}
 	inputProtocol := p.inputProtocolFactory.GetProtocol(inputTransport)
-	outputProtocol := p.outputProtocolFactory.GetProtocol(outputTransport)
-	defer func() {
-		if e := recover(); e != nil {
-			log.Printf("panic in processor: %s: %s", e, debug.Stack())
+	var outputTransport TTransport
+	var outputProtocol TProtocol
+
+	// for THeaderProtocol, we must use the same protocol instance for
+	// input and output so that the response is in the same dialect that
+	// the server detected the request was in.
+	headerProtocol, ok := inputProtocol.(*THeaderProtocol)
+	if ok {
+		outputProtocol = inputProtocol
+	} else {
+		oTrans, err := p.outputTransportFactory.GetTransport(client)
+		if err != nil {
+			return err
 		}
-	}()
+		outputTransport = oTrans
+		outputProtocol = p.outputProtocolFactory.GetProtocol(outputTransport)
+	}
 
 	if inputTransport != nil {
 		defer inputTransport.Close()
@@ -198,10 +272,28 @@ func (p *TSimpleServer) processRequests(client TTransport) error {
 			return nil
 		}
 
-		ok, err := processor.Process(defaultCtx, inputProtocol, outputProtocol)
-		if err, ok := err.(TTransportException); ok && err.TypeId() == END_OF_FILE {
-			return nil
-		} else if err != nil {
+		ctx := SetResponseHelper(
+			defaultCtx,
+			TResponseHelper{
+				THeaderResponseHelper: NewTHeaderResponseHelper(outputProtocol),
+			},
+		)
+		if headerProtocol != nil {
+			// We need to call ReadFrame here, otherwise we won't
+			// get any headers on the AddReadTHeaderToContext call.
+			//
+			// ReadFrame is safe to be called multiple times so it
+			// won't break when it's called again later when we
+			// actually start to read the message.
+			if err := headerProtocol.ReadFrame(); err != nil {
+				return err
+			}
+			ctx = AddReadTHeaderToContext(ctx, headerProtocol.GetReadHeaders())
+			ctx = SetWriteHeaderList(ctx, p.forwardHeaders)
+		}
+
+		ok, err := processor.Process(ctx, inputProtocol, outputProtocol)
+		if _, ok := err.(TTransportException); ok && err != nil {
 			return err
 		}
 		if err, ok := err.(TApplicationException); ok && err.TypeId() == UNKNOWN_METHOD {

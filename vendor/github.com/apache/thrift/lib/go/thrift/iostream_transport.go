@@ -21,6 +21,7 @@ package thrift
 
 import (
 	"bufio"
+	"context"
 	"io"
 )
 
@@ -138,7 +139,7 @@ func (p *StreamTransport) Close() error {
 }
 
 // Flushes the underlying output stream if not null.
-func (p *StreamTransport) Flush() error {
+func (p *StreamTransport) Flush(ctx context.Context) error {
 	if p.Writer == nil {
 		return NewTTransportException(NOT_OPEN, "Cannot flush null outputStream")
 	}
@@ -209,5 +210,5 @@ func (p *StreamTransport) WriteString(s string) (n int, err error) {
 
 func (p *StreamTransport) RemainingBytes() (num_bytes uint64) {
 	const maxSize = ^uint64(0)
-	return maxSize // the thruth is, we just don't know unless framed is used
+	return maxSize // the truth is, we just don't know unless framed is used
 }

@@ -21,8 +21,8 @@ package thrift
 
 import (
 	"compress/zlib"
+	"context"
 	"io"
-	"log"
 )
 
 // TZlibTransportFactory is a factory for TZlibTransport instances
@@ -66,7 +66,6 @@ func NewTZlibTransportFactoryWithFactory(level int, factory TTransportFactory) *
 func NewTZlibTransport(trans TTransport, level int) (*TZlibTransport, error) {
 	w, err := zlib.NewWriterLevel(trans, level)
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
 
@@ -91,11 +90,11 @@ func (z *TZlibTransport) Close() error {
 }
 
 // Flush flushes the writer and its underlying transport.
-func (z *TZlibTransport) Flush() error {
+func (z *TZlibTransport) Flush(ctx context.Context) error {
 	if err := z.writer.Flush(); err != nil {
 		return err
 	}
-	return z.transport.Flush()
+	return z.transport.Flush(ctx)
 }
 
 // IsOpen returns true if the transport is open

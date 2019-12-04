@@ -530,6 +530,7 @@ func handleConfigsReloaded(
 	}
 
 	state.DockerPruneSettings = event.DockerPruneSettings
+	state.CloudPorts = event.CloudPorts
 
 	newDefOrder := make([]model.ManifestName, len(manifests))
 	for i, m := range manifests {

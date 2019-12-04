@@ -39,6 +39,18 @@ func (s *tiltfileState) local(thread *starlark.Thread, fn *starlark.Builtin, arg
 	return tiltfile_io.NewBlob(out, fmt.Sprintf("local: %s", command)), nil
 }
 
+func (s *tiltfileState) setCloudPorts(t *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var port int
+	err := s.unpackArgs(fn.Name(), args, kwargs, "port", &port)
+	if err != nil {
+		return nil, err
+	}
+
+	s.cloudPorts = []int{port}
+
+	return starlark.None, nil
+}
+
 func (s *tiltfileState) execLocalCmd(t *starlark.Thread, c *exec.Cmd, logOutput bool) (string, error) {
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)

@@ -11,11 +11,8 @@ import (
 
 	"github.com/lightstep/lightstep-tracer-go"
 	"github.com/opentracing/opentracing-go"
-	zipkin "github.com/openzipkin/zipkin-go-opentracing"
 	jaeger "github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
-
-	"github.com/windmilleng/tilt/pkg/logger"
 )
 
 const windmillTracerHostPort = "opentracing.windmill.build:9411"
@@ -28,21 +25,10 @@ const (
 	Jaeger
 )
 
-type zipkinLogger struct {
-	ctx context.Context
-}
-
-func (zl zipkinLogger) Log(keyvals ...interface{}) error {
-	logger.Get(zl.ctx).Debugf("%v", keyvals)
-	return nil
-}
-
-var _ zipkin.Logger = zipkinLogger{}
-
 func Init(ctx context.Context, tracer TracerBackend) (func() error, error) {
 	switch tracer {
 	case Windmill:
-		return initWindmillZipkin(ctx)
+		return func() error { return nil }, nil
 	case Lightstep:
 		return initLightStep(ctx)
 	case Jaeger:
@@ -58,8 +44,6 @@ func TraceID(ctx context.Context) (string, error) {
 		return "", errors.New("cannot get traceid - there is no span context")
 	}
 	switch t := spanContext.Context().(type) {
-	case zipkin.SpanContext:
-		return t.TraceID.ToHex(), nil
 	case lightstep.SpanContext:
 		return string(t.TraceID), nil
 	case jaeger.SpanContext:
@@ -99,25 +83,6 @@ func StringToTracerBackend(s string) (TracerBackend, error) {
 	default:
 		return Windmill, fmt.Errorf("Invalid Tracer backend: %s", s)
 	}
-}
-
-func initWindmillZipkin(ctx context.Context) (func() error, error) {
-	collector, err := zipkin.NewHTTPCollector(fmt.Sprintf("http://%s/api/v1/spans", windmillTracerHostPort), zipkin.HTTPLogger(zipkinLogger{ctx}))
-
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to create zipkin collector")
-	}
-
-	recorder := zipkin.NewRecorder(collector, true, "0.0.0.0:0", "tilt")
-	tracer, err := zipkin.NewTracer(recorder)
-
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to create tracer")
-	}
-
-	opentracing.SetGlobalTracer(tracer)
-
-	return collector.Close, nil
 }
 
 func initLightStep(ctx context.Context) (func() error, error) {

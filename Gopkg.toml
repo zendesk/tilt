@@ -114,3 +114,7 @@
 [[constraint]]
   branch = "master"
   name = "github.com/looplab/tarjan"
+
+[[override]]
+  branch = "master"
+  name = "github.com/apache/thrift"

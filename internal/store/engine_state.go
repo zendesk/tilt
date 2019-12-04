@@ -84,6 +84,7 @@ type EngineState struct {
 	CloudAddress string
 	Token        token.Token
 	TeamName     string
+	CloudPorts   []int
 
 	TiltCloudUsername                           string
 	TokenKnownUnregistered                      bool // to distinguish whether an empty TiltCloudUsername means "we haven't checked" or "we checked and the token isn't registered"
