@@ -21,6 +21,7 @@ import (
 	"github.com/windmilleng/tilt/internal/docker"
 	"github.com/windmilleng/tilt/internal/dockerfile"
 	"github.com/windmilleng/tilt/internal/ignore"
+	"github.com/windmilleng/tilt/internal/tracer"
 	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
 )
@@ -59,8 +60,8 @@ func NewDockerImageBuilder(dCli docker.Client, extraLabels dockerfile.Labels) *d
 
 func (d *dockerImageBuilder) BuildImage(ctx context.Context, ps *PipelineState, ref reference.Named, df dockerfile.Dockerfile, buildPath string, filter model.PathMatcher,
 	buildArgs map[string]string, targetStage model.DockerBuildTarget) (reference.NamedTagged, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "dib-BuildImage")
-	defer span.Finish()
+	ctx, span := tracer.Tracer().Start(ctx, "dib-BuildImage")
+	defer span.End()
 
 	paths := []PathMapping{
 		{

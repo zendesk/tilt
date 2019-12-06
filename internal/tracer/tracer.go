@@ -14,6 +14,8 @@ import (
 	zipkin "github.com/openzipkin/zipkin-go-opentracing"
 	jaeger "github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/api/trace"
 
 	"github.com/windmilleng/tilt/pkg/logger"
 )
@@ -147,4 +149,8 @@ func initJaeger(ctx context.Context) (func() error, error) {
 	}
 	closer, err := cfg.InitGlobalTracer("tilt")
 	return closer.Close, err
+}
+
+func Tracer() trace.Tracer {
+	return global.TraceProvider().Tracer("tilt.dev")
 }

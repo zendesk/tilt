@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"go.opentelemetry.io/otel/api/global"
+
 	"github.com/windmilleng/tilt/internal/container"
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/store"
-
 	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
 )
@@ -55,6 +56,8 @@ func NewCompositeBuildAndDeployer(builders BuildOrder) *CompositeBuildAndDeploye
 }
 
 func (composite *CompositeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RStore, specs []model.TargetSpec, currentState store.BuildStateSet) (store.BuildResultSet, error) {
+	ctx, span := global.TraceProvider().Tracer("tilt").Start(ctx, "BuildAndDeploy")
+	defer span.End()
 	var lastErr, lastUnexpectedErr error
 	logger.Get(ctx).Debugf("Building with BuildOrder: %s", composite.builders.String())
 	for i, builder := range composite.builders {
