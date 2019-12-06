@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/windmilleng/wmclient/pkg/analytics"
-
-	"github.com/windmilleng/tilt/internal/k8s"
+	export "go.opentelemetry.io/otel/sdk/export/trace"
 
 	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
 	"github.com/windmilleng/tilt/internal/container"
 	"github.com/windmilleng/tilt/internal/dockercompose"
+	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/hud/view"
 	"github.com/windmilleng/tilt/internal/ospath"
 	"github.com/windmilleng/tilt/internal/token"
@@ -92,6 +92,9 @@ type EngineState struct {
 	WaitingForTiltCloudUsernamePostRegistration bool
 
 	DockerPruneSettings model.DockerPruneSettings
+
+	TelemetryScript string
+	PendingSpans []*export.SpanData
 }
 
 // Merge analytics opt-in status from different sources.

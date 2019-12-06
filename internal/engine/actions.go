@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/windmilleng/wmclient/pkg/analytics"
+	export "go.opentelemetry.io/otel/sdk/export/trace"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 
@@ -103,3 +104,9 @@ type UIDUpdateAction struct {
 }
 
 func (UIDUpdateAction) Action() {}
+
+type SpanAction struct {
+	data *export.SpanData
+}
+
+func (SpanAction) Action() {}
