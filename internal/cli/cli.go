@@ -11,11 +11,13 @@ import (
 
 	"github.com/windmilleng/tilt/internal/analytics"
 	"github.com/windmilleng/tilt/internal/output"
-	"github.com/windmilleng/tilt/internal/tracer"
+	"github.com/windmilleng/tilt/pkg/logger"
 
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/exporter/trace/stdout"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/windmilleng/tilt/pkg/logger"
 )
 
 var debug bool
@@ -88,14 +90,17 @@ func preCommand(ctx context.Context, a *analytics.TiltAnalytics) (context.Contex
 	initKlog(l.Writer(logger.InfoLvl))
 
 	if trace {
-		backend, err := tracer.StringToTracerBackend(traceType)
+		// TODO(dmiller) make an in memory exporter? File exporter?
+		exporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
 		if err != nil {
-			log.Printf("Warning: invalid tracer backend: %v", err)
+			log.Fatal(err)
 		}
-		cleanup, err = tracer.Init(ctx, backend)
+		tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+			sdktrace.WithSyncer(exporter))
 		if err != nil {
-			log.Printf("Warning: unable to initialize tracer: %s", err)
+			log.Fatal(err)
 		}
+		global.SetTraceProvider(tp)
 	}
 
 	// SIGNAL TRAPPING
