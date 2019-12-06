@@ -9,6 +9,8 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/windmilleng/tilt/pkg/logger"
+
 	"github.com/lightstep/lightstep-tracer-go"
 	"github.com/opentracing/opentracing-go"
 	zipkin "github.com/openzipkin/zipkin-go-opentracing"
@@ -16,8 +18,8 @@ import (
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
-
-	"github.com/windmilleng/tilt/pkg/logger"
+	"go.opentelemetry.io/otel/exporter/trace/stdout"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 const windmillTracerHostPort = "opentracing.windmill.build:9411"
@@ -41,17 +43,18 @@ func (zl zipkinLogger) Log(keyvals ...interface{}) error {
 
 var _ zipkin.Logger = zipkinLogger{}
 
-func Init(ctx context.Context, tracer TracerBackend) (func() error, error) {
-	switch tracer {
-	case Windmill:
-		return initWindmillZipkin(ctx)
-	case Lightstep:
-		return initLightStep(ctx)
-	case Jaeger:
-		return initJaeger(ctx)
-	default:
-		return nil, fmt.Errorf("Init: Invalid Tracer backend: %d", tracer)
+func Init(ctx context.Context, tracer TracerBackend) {
+	// TODO(dmiller) make an in memory exporter? File exporter?
+	exporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
+	if err != nil {
+		log.Fatal(err)
 	}
+	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+		sdktrace.WithSyncer(exporter))
+	if err != nil {
+		log.Fatal(err)
+	}
+	global.SetTraceProvider(tp)
 }
 
 func TraceID(ctx context.Context) (string, error) {

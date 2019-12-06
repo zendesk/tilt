@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
@@ -46,16 +45,7 @@ func (sc *SyncletCmd) run() {
 		context.Background(),
 		logger.NewLogger(logLevel(sc.verbose, sc.debug), os.Stdout))
 
-	closer, err := tracer.Init(ctx, tracer.Windmill)
-	if err != nil {
-		log.Fatalf("error initializing tracer: %v", err)
-	}
-	defer func() {
-		err := closer()
-		if err != nil {
-			log.Fatalf("error closing tracer: %v", err)
-		}
-	}()
+	tracer.Init(ctx, tracer.Windmill)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", sc.port)
 	log.Printf("Running synclet listening on %s", addr)
@@ -64,11 +54,7 @@ func (sc *SyncletCmd) run() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	// TODO(matt) figure out how to reconcile this with opt-in tracing
-	t := opentracing.GlobalTracer()
-
 	opts := options.MaxMsgServer()
-	opts = append(opts, options.TracingInterceptorsServer(t)...)
 
 	serv := grpc.NewServer(opts...)
 
