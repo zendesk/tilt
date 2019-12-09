@@ -25,6 +25,23 @@ func TestNoTelScriptTimeIsUpShouldDeleteFile(t *testing.T) {
 	f.assertTelemetryFileIsEmpty()
 }
 
+func TestNoTelScriptTimeIsNotUpShouldNotDeleteFile(t *testing.T) {
+	f := newTCFixture(t)
+	t1 := time.Now()
+	f.clock.now = t1
+	tc := f.newTelemetryController()
+	ctx := context.Background()
+
+	f.writeToAnalyticsFile("hello world")
+	st, _ := store.NewStoreForTesting()
+	st2 := st.LockMutableStateForTesting()
+	st2.LastTelemetryScriptRun = t1
+	st.UnlockMutableState()
+	tc.OnChange(ctx, st)
+
+	f.assertTelemetryFileEquals("hello world")
+}
+
 type tcFixture struct {
 	t *testing.T
 	temp *tempdir.TempDirFixture
@@ -65,4 +82,13 @@ func (tcf *tcFixture) assertTelemetryFileIsEmpty() {
 	}
 
 	assert.Empty(tcf.t, fileContents)
+}
+
+func (tcf *tcFixture) assertTelemetryFileEquals(contents string) {
+	fileContents, err := tcf.dir.ReadFile(AnalyticsFilename)
+	if err != nil {
+		tcf.t.Fatal(err)
+	}
+
+	assert.Equal(tcf.t, contents, fileContents)
 }
