@@ -92,6 +92,9 @@ type EngineState struct {
 	WaitingForTiltCloudUsernamePostRegistration bool
 
 	DockerPruneSettings model.DockerPruneSettings
+
+	TelemetryScriptPath string
+	LastTelemetryScriptRun time.Time
 }
 
 // Merge analytics opt-in status from different sources.
