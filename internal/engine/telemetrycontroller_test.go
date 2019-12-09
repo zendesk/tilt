@@ -14,25 +14,55 @@ import (
 )
 
 func TestNoTelScriptTimeIsUpShouldDeleteFile(t *testing.T) {
-	temp := tempdir.NewTempDirFixture(t)
-	t1 := fakeClock{now: time.Unix(1551202573, 0)}
-	dir := dirs.NewWindmillDirAt(temp.Path())
-	err := dir.WriteFile("analytics", "hello world")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lock := &sync.Mutex{}
-	st, _ := store.NewStoreForTesting()
+	f := newTCFixture(t)
+	tc := f.newTelemetryController()
 	ctx := context.Background()
 
-	tc := NewTelemetryController(lock, t1, dir)
-
+	f.writeToAnalyticsFile("hello world")
+	st, _ := store.NewStoreForTesting()
 	tc.OnChange(ctx, st)
 
-	fileContents, err := dir.ReadFile("analytics")
+	f.assertTelemetryFileIsEmpty()
+}
+
+type tcFixture struct {
+	t *testing.T
+	temp *tempdir.TempDirFixture
+	dir *dirs.WindmillDir
+	lock *sync.Mutex
+	clock fakeClock
+}
+
+func newTCFixture(t *testing.T) *tcFixture {
+	temp := tempdir.NewTempDirFixture(t)
+	dir := dirs.NewWindmillDirAt(temp.Path())
+	lock := &sync.Mutex{}
+
+	return &tcFixture{
+		t: t,
+		temp: temp,
+		dir: dir,
+		lock: lock,
+		clock: fakeClock{now: time.Unix(1551202573, 0)},
+	}
+}
+
+func (tcf *tcFixture) newTelemetryController() *TelemetryController {
+	return NewTelemetryController(tcf.lock, tcf.clock, tcf.dir)
+}
+
+func (tcf *tcFixture) writeToAnalyticsFile(contents string) {
+	err := tcf.dir.WriteFile(AnalyticsFilename, contents)
 	if err != nil {
-		t.Fatal(err)
+		tcf.t.Fatal(err)
+	}
+}
+
+func (tcf *tcFixture) assertTelemetryFileIsEmpty() {
+	fileContents, err := tcf.dir.ReadFile(AnalyticsFilename)
+	if err != nil {
+		tcf.t.Fatal(err)
 	}
 
-	assert.Empty(t, fileContents)
+	assert.Empty(tcf.t, fileContents)
 }
