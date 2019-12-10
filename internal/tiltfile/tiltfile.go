@@ -45,6 +45,7 @@ type TiltfileLoadResult struct {
 	TiltIgnoreContents  string
 	FeatureFlags        map[string]bool
 	TeamName            string
+	TelemetryCmd        model.Cmd
 	Secrets             model.SecretSet
 	Error               error
 	DockerPruneSettings model.DockerPruneSettings

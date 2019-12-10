@@ -3807,6 +3807,15 @@ set_team('jets')
 	f.loadErrString("team_name set multiple times", "'sharks'", "'jets'")
 }
 
+func TestSetTelemetryCmd(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+	f.file("Tiltfile", "experimental_telemetry_cmd('foo.py')")
+	f.load()
+
+	f.assertTelemetryCmd("foo.py")
+}
+
 func TestK8SContextAcceptance(t *testing.T) {
 	for _, test := range []struct {
 		name                    string

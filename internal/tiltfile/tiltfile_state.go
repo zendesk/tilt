@@ -89,7 +89,8 @@ type tiltfileState struct {
 	// for error reporting in case it's called twice
 	triggerModeCallPosition syntax.Position
 
-	teamName string
+	teamName     string
+	telemetryCmd model.Cmd
 
 	logger            logger.Logger
 	warnings          []string
@@ -278,8 +279,9 @@ const (
 	disableSnapshotsN = "disable_snapshots"
 
 	// other functions
-	failN    = "fail"
-	setTeamN = "set_team"
+	failN            = "fail"
+	setTeamN         = "set_team"
+	telemetryScriptN = "experimental_telemetry_script"
 )
 
 type triggerMode int
