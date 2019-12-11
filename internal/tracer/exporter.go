@@ -28,15 +28,14 @@ type exporter struct {
 	needsFlush bool
 }
 
-// TODO(dbentley): write tests for this
-func newExporter(ctx context.Context, dir *dirs.WindmillDir) (*exporter, error) {
+func newExporter(ctx context.Context, dir *dirs.WindmillDir) *exporter {
 	r := &exporter{
 		dir:        dir,
 		spanDataCh: make(chan *exporttrace.SpanData),
 		stopCh:     make(chan struct{}),
 	}
 	go r.loop(ctx)
-	return r, nil
+	return r
 }
 
 const OutgoingFilename = "usage/outgoing.json"
@@ -49,7 +48,7 @@ func (e *exporter) loop(ctx context.Context) {
 		case sd := <-e.spanDataCh:
 			e.queue = append(e.queue, sd)
 			if timerCh == nil {
-				timerCh = time.NewTimer(5 * time.Second).C
+				timerCh = time.After(5 * time.Second)
 			}
 		case <-e.stopCh:
 			e.stopCh = nil
