@@ -3807,13 +3807,30 @@ set_team('jets')
 	f.loadErrString("team_name set multiple times", "'sharks'", "'jets'")
 }
 
-func TestSetTelemetryCmd(t *testing.T) {
+func TestTelemetryCmd(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
-	f.file("Tiltfile", "experimental_telemetry_cmd('foo.py')")
+	f.file("Tiltfile", "experimental_telemetry_cmd('foo.sh')")
 	f.load()
 
-	f.assertTelemetryCmd("foo.py")
+	f.assertTelemetryCmd("foo.sh")
+}
+
+func TestTelemetryCmdEmpty(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+	f.file("Tiltfile", "experimental_telemetry_cmd('')")
+	f.loadErrString("cmd cannot be empty")
+}
+
+func TestTelemetryCmdMultiple(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+	f.file("Tiltfile", `
+experimental_telemetry_cmd('foo.sh')
+experimental_telemetry_cmd('bar.sh')
+`)
+	f.loadErrString("experimental_telemetry_cmd called multiple times; already set to foo.sh")
 }
 
 func TestK8SContextAcceptance(t *testing.T) {
@@ -4827,6 +4844,14 @@ func (f *fixture) entities(y string) []k8s.K8sEntity {
 
 func (f *fixture) assertFeature(key string, enabled bool) {
 	assert.Equal(f.t, enabled, f.loadResult.FeatureFlags[key])
+}
+
+func (f *fixture) assertTelemetryCmd(c string) {
+	cmd := model.ToShellCmd(c)
+	if !sliceutils.StringSliceEquals(cmd.Argv, f.loadResult.TelemetryCmd.Argv) {
+		f.t.Fatalf("expected Telemetry Command %v, got %v",
+			cmd, f.loadResult.TelemetryCmd)
+	}
 }
 
 type secretHelper struct {

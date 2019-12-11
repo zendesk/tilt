@@ -279,9 +279,9 @@ const (
 	disableSnapshotsN = "disable_snapshots"
 
 	// other functions
-	failN            = "fail"
-	setTeamN         = "set_team"
-	telemetryScriptN = "experimental_telemetry_script"
+	failN         = "fail"
+	setTeamN      = "set_team"
+	telemetryCmdN = "experimental_telemetry_cmd"
 )
 
 type triggerMode int
@@ -452,6 +452,7 @@ func (s *tiltfileState) OnStart(e *starkit.Environment) error {
 		{disableFeatureN, s.disableFeature},
 		{disableSnapshotsN, s.disableSnapshots},
 		{setTeamN, s.setTeam},
+		{telemetryCmdN, s.setTelemetryCmd},
 	} {
 		err := e.AddBuiltin(b.name, b.builtin)
 		if err != nil {
@@ -1232,6 +1233,26 @@ func (s *tiltfileState) setTeam(thread *starlark.Thread, fn *starlark.Builtin, a
 	}
 
 	s.teamName = teamName
+
+	return starlark.None, nil
+}
+
+func (s *tiltfileState) setTelemetryCmd(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var cmd string
+	err := s.unpackArgs(fn.Name(), args, kwargs, "cmd", &cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cmd) == 0 {
+		return nil, fmt.Errorf("cmd cannot be empty")
+	}
+
+	if len(s.telemetryCmd.Argv) > 0 {
+		return nil, fmt.Errorf("%v called multiple times; already set to %v", fn.Name(), s.telemetryCmd)
+	}
+
+	s.telemetryCmd = model.ToShellCmd(cmd)
 
 	return starlark.None, nil
 }

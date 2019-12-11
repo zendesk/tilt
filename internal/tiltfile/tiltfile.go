@@ -173,6 +173,7 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, args []stri
 	tlr.Error = err
 	tlr.Manifests = manifests
 	tlr.TeamName = s.teamName
+	tlr.TelemetryCmd = s.telemetryCmd
 
 	vs, _ := version.GetState(result)
 	tlr.VersionSettings = vs
