@@ -1,31 +1,42 @@
 package config
 
 import (
+	"fmt"
+	"path/filepath"
+
 	"github.com/pkg/errors"
 	"go.starlark.net/starlark"
 
+	"github.com/windmilleng/tilt/internal/tiltfile/io"
 	"github.com/windmilleng/tilt/internal/tiltfile/starkit"
 	"github.com/windmilleng/tilt/pkg/model"
 )
 
+const UserConfigFileName = "tilt_config.json"
+
 type Settings struct {
 	enabledResources []model.ManifestName
-	argDef           ArgsDef
+	configDef        ConfigDef
 
-	flagsParsed bool
+	configParseCalled bool
+	userConfigState   model.UserConfigState
+
+	// if parse has been called, the directory containing the Tiltfile that called it
+	seenWorkingDirectory string
 }
 
 type Extension struct {
-	cmdLineArgs []string
+	UserConfigState model.UserConfigState
 }
 
-func NewExtension(args []string) *Extension {
-	return &Extension{cmdLineArgs: args}
+func NewExtension(userConfigState model.UserConfigState) *Extension {
+	return &Extension{UserConfigState: userConfigState}
 }
 
 func (e *Extension) NewState() interface{} {
 	return Settings{
-		argDef: ArgsDef{args: make(map[string]argDef)},
+		configDef:       ConfigDef{configSettings: make(map[string]configSetting)},
+		userConfigState: e.UserConfigState,
 	}
 }
 
@@ -52,7 +63,7 @@ func (e *Extension) OnStart(env *starkit.Environment) error {
 	}{
 		{"config.set_enabled_resources", setEnabledResources},
 		{"config.parse", e.parse},
-		{"config.define_string_list", argDefinitionBuiltin(func() argValue {
+		{"config.define_string_list", configSettingDefinitionBuiltin(func() configValue {
 			return &stringList{}
 		})},
 	} {
@@ -71,9 +82,19 @@ func (e *Extension) parse(thread *starlark.Thread, fn *starlark.Builtin, args st
 		return starlark.None, err
 	}
 
-	err = starkit.SetState(thread, func(settings Settings) Settings {
-		settings.flagsParsed = true
-		return settings
+	wd := starkit.AbsWorkingDir(thread)
+
+	err = starkit.SetState(thread, func(settings Settings) (Settings, error) {
+		if settings.seenWorkingDirectory != "" && settings.seenWorkingDirectory != wd {
+			return settings, fmt.Errorf(
+				"%s can only be called from one Tiltfile working directory per run. It was called from %s and %s",
+				fn.Name(),
+				settings.seenWorkingDirectory,
+				wd)
+		}
+		settings.seenWorkingDirectory = wd
+		settings.configParseCalled = true
+		return settings, nil
 	})
 	if err != nil {
 		return starlark.None, err
@@ -88,9 +109,20 @@ func (e *Extension) parse(thread *starlark.Thread, fn *starlark.Builtin, args st
 		return starlark.None, err
 	}
 
-	ret, out, err := settings.argDef.parse(e.cmdLineArgs)
+	userConfigPath := filepath.Join(wd, UserConfigFileName)
+
+	err = io.RecordReadFile(thread, userConfigPath)
+	if err != nil {
+		return starlark.None, err
+	}
+
+	ret, out, err := settings.configDef.parse(userConfigPath, e.UserConfigState.Args)
 	if out != "" {
 		thread.Print(thread, out)
 	}
-	return ret, err
+	if err != nil {
+		return starlark.None, err
+	}
+
+	return ret, nil
 }

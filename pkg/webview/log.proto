@@ -6,10 +6,18 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/windmilleng/tilt/pkg/webview";
 
+enum LogLevel {
+  NONE = 0;
+  INFO = 1;
+  VERBOSE = 2;
+  DEBUG = 3;
+}
+
 message LogSegment {
   string span_id = 1;
   google.protobuf.Timestamp time = 2;
   string text = 3;
+  LogLevel level = 4;
 }
 
 message LogSpan {
@@ -19,4 +27,17 @@ message LogSpan {
 message LogList {
   map<string, LogSpan> spans = 1;
   repeated LogSegment segments = 2;
+
+  // from_checkpoint and to_checkpoint express an interval on the
+  // central log-store, with an inclusive start and an exclusive end
+  //
+  // [from_checkpoint, to_checkpoint)
+  //
+  // An interval of [0, 0) means that the server isn't using
+  // the incremental load protocol.
+  //
+  // An interval of [-1, -1) means that the server doesn't have new logs
+  // to send down.
+  int32 from_checkpoint = 3;
+  int32 to_checkpoint = 4;
 }

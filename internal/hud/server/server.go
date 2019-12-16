@@ -85,6 +85,7 @@ func ProvideHeadsUpServer(
 	r.HandleFunc("/api/snapshot/{snapshot_id}", s.SnapshotJSON)
 	r.HandleFunc("/ws/view", s.ViewWebsocket)
 	r.HandleFunc("/api/user_started_tilt_cloud_registration", s.userStartedTiltCloudRegistration)
+	r.HandleFunc("/api/set_tiltfile_args", s.HandleSetTiltfileArgs).Methods("POST")
 
 	r.PathPrefix("/").Handler(s.cookieWrapper(assetServer))
 
@@ -114,7 +115,7 @@ func (s *HeadsUpServer) Router() http.Handler {
 
 func (s *HeadsUpServer) ViewJSON(w http.ResponseWriter, req *http.Request) {
 	state := s.store.RLockState()
-	view, err := webview.StateToProtoView(state)
+	view, err := webview.StateToProtoView(state, 0)
 	s.store.RUnlockState()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error converting view to proto: %v", err), http.StatusInternalServerError)
@@ -144,7 +145,7 @@ func (s *HeadsUpServer) DumpEngineJSON(w http.ResponseWriter, req *http.Request)
 
 func (s *HeadsUpServer) SnapshotJSON(w http.ResponseWriter, req *http.Request) {
 	state := s.store.RLockState()
-	view, err := webview.StateToProtoView(state)
+	view, err := webview.StateToProtoView(state, 0)
 	s.store.RUnlockState()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error converting view to proto: %v", err), http.StatusInternalServerError)
@@ -211,6 +212,16 @@ func (s *HeadsUpServer) HandleAnalytics(w http.ResponseWriter, req *http.Request
 
 		s.a.Incr(p.Name, p.Tags)
 	}
+}
+
+func (s *HeadsUpServer) HandleSetTiltfileArgs(w http.ResponseWriter, req *http.Request) {
+	var args []string
+	err := jsoniter.NewDecoder(req.Body).Decode(&args)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error parsing JSON payload: %v", err), http.StatusBadRequest)
+	}
+
+	s.store.Dispatch(SetTiltfileArgsAction{args})
 }
 
 func (s *HeadsUpServer) DispatchAction(w http.ResponseWriter, req *http.Request) {

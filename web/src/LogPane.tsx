@@ -1,15 +1,19 @@
-import React, { Component } from "react"
+import React, { Component, PureComponent } from "react"
 import { ReactComponent as LogoWordmarkSvg } from "./assets/svg/logo-wordmark-gray.svg"
 import AnsiLine from "./AnsiLine"
 import "./LogPane.scss"
 import ReactDOM from "react-dom"
-import { SnapshotHighlight } from "./types"
+import { LogLine, SnapshotHighlight } from "./types"
+import { sourcePrefix } from "./logs"
+import color from "./color"
 import findLogLineID from "./findLogLine"
+import styled from "styled-components"
 
 const WHEEL_DEBOUNCE_MS = 250
 
 type LogPaneProps = {
-  log: string
+  logLines: LogLine[]
+  showManifestPrefix: boolean
   message?: string
   handleSetHighlight: (highlight: SnapshotHighlight) => void
   handleClearHighlight: () => void
@@ -23,9 +27,68 @@ type LogPaneState = {
   lastWheelEventTimeMs: number
 }
 
+type LogLineComponentProps = {
+  text: string
+  manifestName: string
+  lineId: number
+  shouldHighlight: boolean
+  showManifestPrefix: boolean
+}
+
+let LogLinePrefixRoot = styled.span`
+  user-select: none;
+  width: 6em;
+  display: inline-block;
+  border-right: 1px solid ${color.grayLightest};
+  padding-right: 16px;
+  margin-right: 16px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  color: ${color.grayLight};
+  flex-shrink: 0;
+
+  &::selection {
+    background-color: transparent;
+  }
+`
+
+let LogLinePrefix = React.memo((props: { name: string }) => {
+  return <LogLinePrefixRoot>{props.name}</LogLinePrefixRoot>
+})
+
+class LogLineComponent extends PureComponent<LogLineComponentProps> {
+  private ref: React.RefObject<HTMLSpanElement> = React.createRef()
+
+  scrollIntoView() {
+    if (this.ref.current) {
+      this.ref.current.scrollIntoView()
+    }
+  }
+
+  render() {
+    let props = this.props
+    let prefix = null
+    let text = props.text
+    if (props.showManifestPrefix) {
+      prefix = <LogLinePrefix name={props.manifestName} />
+    }
+    return (
+      <span
+        ref={this.ref}
+        data-lineid={props.lineId}
+        className={`logLine ${props.shouldHighlight ? "highlighted" : ""}`}
+      >
+        {prefix}
+        <AnsiLine line={text} className={"logLine-content"} />
+      </span>
+    )
+  }
+}
+
 class LogPane extends Component<LogPaneProps, LogPaneState> {
-  highlightRef: React.RefObject<HTMLDivElement>
-  private lastElement: HTMLDivElement | null = null
+  highlightRef: React.RefObject<LogLineComponent> = React.createRef()
+  private lastElement: React.RefObject<HTMLParagraphElement> = React.createRef()
   private rafID: number | null = null
 
   constructor(props: LogPaneProps) {
@@ -39,7 +102,6 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     this.refreshAutoScroll = this.refreshAutoScroll.bind(this)
     this.handleWheel = this.handleWheel.bind(this)
     this.handleSelectionChange = this.handleSelectionChange.bind(this)
-    this.highlightRef = React.createRef()
   }
 
   componentDidMount() {
@@ -49,8 +111,8 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       this.highlightRef.current
     ) {
       this.highlightRef.current.scrollIntoView()
-    } else if (this.lastElement !== null) {
-      this.lastElement.scrollIntoView()
+    } else if (this.lastElement.current?.scrollIntoView) {
+      this.lastElement.current.scrollIntoView()
     }
 
     if (!this.props.isSnapshot) {
@@ -68,8 +130,8 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     if (!this.state.autoscroll) {
       return
     }
-    if (this.lastElement) {
-      this.lastElement.scrollIntoView()
+    if (this.lastElement.current?.scrollIntoView) {
+      this.lastElement.current.scrollIntoView()
     }
   }
 
@@ -157,7 +219,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
   // This forces a layout, so should be used sparingly.
   computeAutoScroll() {
     // Always auto-scroll when we're recovering from a loading screen.
-    if (!this.props.log || !this.lastElement) {
+    if (!this.props.logLines?.length || !this.lastElement.current) {
       return true
     }
 
@@ -167,15 +229,16 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     }
 
     let lastElInView =
-      this.lastElement.getBoundingClientRect().bottom < window.innerHeight
+      this.lastElement.current.getBoundingClientRect().bottom <
+      window.innerHeight
     return lastElInView
   }
 
   render() {
     let classes = `LogPane`
 
-    let log = this.props.log
-    if (!log || log.length === 0) {
+    let lines = this.props.logLines
+    if (!lines || lines.length === 0) {
       return (
         <section className={classes}>
           <section className="Pane-empty-message">
@@ -186,8 +249,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       )
     }
 
-    let logLines: Array<React.ReactElement> = []
-    let lines = log.split("\n")
+    let logLineEls: Array<React.ReactElement> = []
 
     let sawBeginning = false
     let sawEnd = false
@@ -197,8 +259,10 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       const key = "logLine" + i
 
       let shouldHighlight = false
+      let maybeHighlightRef = null
       if (highlight) {
         if (highlight.beginningLogID === i.toString()) {
+          maybeHighlightRef = this.highlightRef
           sawBeginning = true
         }
         if (highlight.endingLogID === i.toString()) {
@@ -211,31 +275,26 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       }
 
       let el = (
-        <span
-          ref={i === 0 ? this.highlightRef : null}
+        <LogLineComponent
+          ref={maybeHighlightRef}
           key={key}
-          data-lineid={i}
-          className={`logLine ${shouldHighlight ? "highlighted" : ""}`}
-        >
-          <AnsiLine line={l} />
-        </span>
+          text={l.text}
+          manifestName={l.manifestName}
+          lineId={i}
+          showManifestPrefix={this.props.showManifestPrefix}
+          shouldHighlight={shouldHighlight}
+        />
       )
-      logLines.push(el)
+      logLineEls.push(el)
     }
 
-    logLines.push(
-      <p
-        key="logEnd"
-        className="logEnd"
-        ref={el => {
-          this.lastElement = el
-        }}
-      >
+    logLineEls.push(
+      <p key="logEnd" className="logEnd" ref={this.lastElement}>
         &#9608;
       </p>
     )
 
-    return <section className={classes}>{logLines}</section>
+    return <section className={classes}>{logLineEls}</section>
   }
 }
 

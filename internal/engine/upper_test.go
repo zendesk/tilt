@@ -299,7 +299,9 @@ func TestUpper_Up(t *testing.T) {
 
 	state := f.upper.store.RLockState()
 	defer f.upper.store.RUnlockState()
-	lines := strings.Split(state.ManifestTargets[manifest.Name].Status().LastBuild().Log.String(), "\n")
+
+	buildRecord := state.ManifestTargets[manifest.Name].Status().LastBuild()
+	lines := strings.Split(state.LogStore.SpanLog(buildRecord.SpanID), "\n")
 	assertLineMatches(t, lines, regexp.MustCompile("fake built .*foobar"))
 }
 
@@ -1145,7 +1147,7 @@ func TestDisabledHudUpdated(t *testing.T) {
 
 	// Log something new, make sure it's reflected in the # processed bytes
 	msg := []byte("hello world!\n")
-	f.store.Dispatch(store.NewGlobalLogEvent(msg))
+	f.store.Dispatch(store.NewGlobalLogEvent(logger.InfoLvl, msg))
 	time.Sleep(5 * time.Millisecond)
 
 	checkpointDiff := f.disabledHud().ProcessedLogs - oldCheckpoint
@@ -1264,8 +1266,8 @@ func TestPodEventOrdering(t *testing.T) {
 			}
 
 			f.upper.store.Dispatch(runtimelog.PodLogAction{
-				PodID:    k8s.PodID(podBNow.PodID()),
-				LogEvent: store.NewLogEvent("fe", []byte("pod b log\n")),
+				PodID:    podBNow.PodID(),
+				LogEvent: store.NewLogEvent("fe", runtimelog.SpanIDForPod(podBNow.PodID()), logger.InfoLvl, []byte("pod b log\n")),
 			})
 
 			f.WaitUntilManifestState("pod log seen", "fe", func(ms store.ManifestState) bool {
@@ -1393,12 +1395,12 @@ func TestPodUnexpectedContainerStartsImageBuild(t *testing.T) {
 		ms, _ := st.ManifestState(manifest.Name)
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name && ms.HasPendingFileChanges()
 	})
-	f.store.Dispatch(BuildStartedAction{
+	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
 		StartTime:    time.Now(),
 	})
 
-	f.store.Dispatch(BuildCompleteAction{
+	f.store.Dispatch(buildcontrol.BuildCompleteAction{
 		Result: liveUpdateResultSet(manifest, "theOriginalContainer"),
 	})
 
@@ -1437,7 +1439,7 @@ func TestPodUnexpectedContainerStartsImageBuildOutOfOrderEvents(t *testing.T) {
 		ms, _ := st.ManifestState(manifest.Name)
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name && ms.HasPendingFileChanges()
 	})
-	f.store.Dispatch(BuildStartedAction{
+	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
 		StartTime:    time.Now(),
 	})
@@ -1448,7 +1450,7 @@ func TestPodUnexpectedContainerStartsImageBuildOutOfOrderEvents(t *testing.T) {
 
 	// ...and finish the build. Even though this action comes in AFTER the pod
 	// event w/ unexpected container,  we should still be able to detect the mismatch.
-	f.store.Dispatch(BuildCompleteAction{
+	f.store.Dispatch(buildcontrol.BuildCompleteAction{
 		Result: liveUpdateResultSet(manifest, "theOriginalContainer"),
 	})
 
@@ -1478,7 +1480,7 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name && ms.HasPendingFileChanges()
 	})
 
-	f.store.Dispatch(BuildStartedAction{
+	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
 		StartTime:    time.Now(),
 	})
@@ -1490,7 +1492,7 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 		WithCreationTime(podStartTime).
 		WithDeploymentUID(ancestorUID).
 		WithTemplateSpecHash(ptsh)
-	f.store.Dispatch(BuildCompleteAction{
+	f.store.Dispatch(buildcontrol.BuildCompleteAction{
 		Result: deployResultSet(manifest, ancestorUID, []k8s.PodTemplateSpecHash{ptsh}),
 	})
 
@@ -1504,7 +1506,7 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 	f.WaitUntil("waiting for builds to be ready", func(st store.EngineState) bool {
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name
 	})
-	f.store.Dispatch(BuildStartedAction{
+	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
 		StartTime:    time.Now(),
 	})
@@ -1513,7 +1515,7 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 	pb = pb.WithContainerID("funny-container-id")
 	f.store.Dispatch(k8swatch.NewPodChangeAction(pb.Build(), manifest.Name, ancestorUID))
 
-	f.store.Dispatch(BuildCompleteAction{
+	f.store.Dispatch(buildcontrol.BuildCompleteAction{
 		Result: liveUpdateResultSet(manifest, "normal-container-id"),
 	})
 
@@ -1968,10 +1970,12 @@ func TestUpperPodLogInCrashLoopThirdInstanceStillUp(t *testing.T) {
 	// the third instance is still up, so we want to show the log from the last crashed pod plus the log from the current pod
 	f.withState(func(es store.EngineState) {
 		ms, _ := es.ManifestState(name)
-		assert.Equal(t, "third string\n", ms.MostRecentPod().Log().String())
+		pod := ms.MostRecentPod()
+		assert.Equal(t, "third string\n", pod.Log().String())
 		assert.Contains(t, es.LogStore.ManifestLog(name), "second string\n")
 		assert.Contains(t, es.LogStore.ManifestLog(name), "third string\n")
 		assert.Equal(t, ms.CrashLog.String(), "second string\n")
+		assert.Contains(t, es.LogStore.SpanLog(pod.SpanID), "third string\n")
 	})
 
 	err := f.Stop()
@@ -2490,6 +2494,10 @@ func TestDockerComposeRecordsBuildLogs(t *testing.T) {
 	// recorded in global log
 	f.withState(func(st store.EngineState) {
 		assert.Contains(t, st.LogStore.String(), expected)
+
+		ms, _ := st.ManifestState(m.ManifestName())
+		spanID := ms.LastBuild().SpanID
+		assert.Contains(t, st.LogStore.SpanLog(spanID), expected)
 	})
 
 	// recorded on manifest state
@@ -2616,7 +2624,10 @@ func TestEmptyTiltfile(t *testing.T) {
 		assert.Contains(t, st.TiltfileState.LastBuild().Error.Error(), "No resources found. Check out ")
 		assertContainsOnce(t, st.LogStore.String(), "No resources found. Check out ")
 		assertContainsOnce(t, st.LogStore.ManifestLog(store.TiltfileManifestName), "No resources found. Check out ")
-		assertContainsOnce(t, st.TiltfileState.LastBuild().Log.String(), "No resources found. Check out ")
+
+		buildRecord := st.TiltfileState.LastBuild()
+		assertContainsOnce(t, buildRecord.Log.String(), "No resources found. Check out ")
+		assertContainsOnce(t, st.LogStore.SpanLog(buildRecord.SpanID), "No resources found. Check out ")
 	})
 }
 
@@ -2634,7 +2645,7 @@ func TestUpperStart(t *testing.T) {
 	})
 
 	f.withState(func(state store.EngineState) {
-		require.Equal(t, []string{"foo", "bar"}, state.UserArgs)
+		require.Equal(t, []string{"foo", "bar"}, state.UserConfigState.Args)
 		require.Equal(t, f.JoinPath("Tiltfile"), state.TiltfilePath)
 		require.Equal(t, tok, state.Token)
 		require.Equal(t, analytics.OptIn, state.AnalyticsEffectiveOpt())
@@ -2809,13 +2820,13 @@ func TestBuildLogAction(t *testing.T) {
 	manifest := f.newManifest("alert-injester")
 	f.Start([]model.Manifest{manifest}, true)
 
-	f.store.Dispatch(BuildStartedAction{
+	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
 		StartTime:    time.Now(),
 	})
 
-	f.store.Dispatch(BuildLogAction{
-		LogEvent: store.NewLogEvent(manifest.Name, []byte(`a
+	f.store.Dispatch(buildcontrol.BuildLogAction{
+		LogEvent: store.NewLogEvent(manifest.Name, SpanIDForBuildLog(1), logger.InfoLvl, []byte(`a
 bc
 def
 ghij`)),
@@ -3092,6 +3103,7 @@ func TestHasEverBeenReadyDC(t *testing.T) {
 
 func TestVersionSettingsStoredOnState(t *testing.T) {
 	f := newTestFixture(t)
+	defer f.TearDown()
 
 	f.Start([]model.Manifest{}, true)
 
@@ -3102,6 +3114,41 @@ func TestVersionSettingsStoredOnState(t *testing.T) {
 
 	f.WaitUntil("CheckVersionUpdates is set to false", func(state store.EngineState) bool {
 		return state.VersionSettings.CheckUpdates == false
+	})
+}
+
+func TestConfigArgsChangeCausesTiltfileRerun(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.TearDown()
+
+	f.WriteFile("Tiltfile", `
+print('hello')
+config.define_string_list('foo')
+cfg = config.parse()
+print('foo=', cfg['foo'])`)
+
+	opt := func(ia InitAction) InitAction {
+		ia.UserArgs = []string{"--foo", "bar"}
+		return ia
+	}
+
+	f.loadAndStart(opt)
+
+	f.WaitUntil("first tiltfile build finishes", func(state store.EngineState) bool {
+		return len(state.TiltfileState.BuildHistory) == 1
+	})
+
+	f.withState(func(state store.EngineState) {
+		require.Contains(t, state.TiltfileState.LastBuild().Log.String(), `foo= ["bar"]`)
+	})
+	f.store.Dispatch(server.SetTiltfileArgsAction{Args: []string{"--foo", "baz", "--foo", "quu"}})
+
+	f.WaitUntil("second tiltfile build finishes", func(state store.EngineState) bool {
+		return len(state.TiltfileState.BuildHistory) == 2
+	})
+
+	f.withState(func(state store.EngineState) {
+		require.Contains(t, state.TiltfileState.LastBuild().Log.String(), `foo= ["baz", "quu"]`)
 	})
 }
 
@@ -3556,13 +3603,15 @@ func (f *testFixture) startPod(pod *v1.Pod, manifestName model.ManifestName) {
 }
 
 func (f *testFixture) podLog(pod *v1.Pod, manifestName model.ManifestName, s string) {
+	podID := k8s.PodID(pod.Name)
 	f.upper.store.Dispatch(runtimelog.PodLogAction{
-		PodID:    k8s.PodID(pod.Name),
-		LogEvent: store.NewLogEvent(manifestName, []byte(s+"\n")),
+		PodID:    podID,
+		LogEvent: store.NewLogEvent(manifestName, runtimelog.SpanIDForPod(podID), logger.InfoLvl, []byte(s+"\n")),
 	})
 
-	f.WaitUntilManifestState("pod log seen", manifestName, func(ms store.ManifestState) bool {
-		return strings.Contains(ms.MostRecentPod().CurrentLog.String(), s)
+	f.WaitUntil("pod log seen", func(es store.EngineState) bool {
+		ms, _ := es.ManifestState(manifestName)
+		return strings.Contains(es.LogStore.SpanLog(ms.MostRecentPod().SpanID), s)
 	})
 }
 
@@ -3664,11 +3713,14 @@ func (f *testFixture) assertAllBuildsConsumed() {
 	}
 }
 
-func (f *testFixture) loadAndStart() {
+func (f *testFixture) loadAndStart(initOptions ...initOption) {
 	ia := InitAction{
 		WatchFiles:   true,
 		TiltfilePath: f.JoinPath("Tiltfile"),
 		HUDEnabled:   true,
+	}
+	for _, opt := range initOptions {
+		ia = opt(ia)
 	}
 	f.Init(ia)
 }
@@ -3733,7 +3785,7 @@ func (f *testFixture) setupDCFixture() (redis, server model.Manifest) {
 
 	f.dcc.ServicesOutput = "redis\nserver\n"
 
-	tlr := f.tfl.Load(f.ctx, f.JoinPath("Tiltfile"), nil)
+	tlr := f.tfl.Load(f.ctx, f.JoinPath("Tiltfile"), model.UserConfigState{})
 	if tlr.Error != nil {
 		f.T().Fatal(tlr.Error)
 	}

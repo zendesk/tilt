@@ -8,7 +8,17 @@ import {
   PodStatusErrorType,
   WarningErrorType,
 } from "./alerts"
-import { Resource, K8sResourceInfo, TriggerMode } from "./types"
+import { TriggerMode } from "./types"
+import LogStore from "./LogStore"
+
+type Resource = Proto.webviewResource
+type K8sResourceInfo = Proto.webviewK8sResourceInfo
+
+let logStore = new LogStore()
+
+beforeEach(() => {
+  logStore = new LogStore()
+})
 
 describe("getResourceAlerts", () => {
   it("K8Resource: shows that a pod status of error is an alert", () => {
@@ -17,8 +27,8 @@ describe("getResourceAlerts", () => {
     rInfo.podStatus = "Error"
     rInfo.podStatusMessage = "I'm a pod in Error"
 
-    let actual = getResourceAlerts(r)
-    let expectedAlerts: Array<Alert> = [
+    let actual = getResourceAlerts(r, logStore)
+    let expectedAlerts: Alert[] = [
       {
         alertType: PodStatusErrorType,
         msg: "I'm a pod in Error",
@@ -35,11 +45,11 @@ describe("getResourceAlerts", () => {
     let rInfo = r.k8sResourceInfo
     if (!rInfo) throw new Error("missing k8s info")
     rInfo.podRestarts = 1
-    let actual = getResourceAlerts(r).map(a => {
+    let actual = getResourceAlerts(r, logStore).map(a => {
       delete a.dismissHandler
       return a
     })
-    let expectedAlerts: Array<Alert> = [
+    let expectedAlerts: Alert[] = [
       {
         alertType: PodRestartErrorType,
         msg: "",
@@ -55,16 +65,18 @@ describe("getResourceAlerts", () => {
     let r: Resource = k8sResource()
     r.buildHistory = [
       {
-        log: "Build error log",
         finishTime: "10:00AM",
         error: "build failed",
+        spanId: "build:1",
       },
-      {
-        log: "Build error 2",
-      },
+      {},
     ]
-    let actual = getResourceAlerts(r)
-    let expectedAlerts: Array<Alert> = [
+    logStore.append({
+      spans: { "build:1": r.name },
+      segments: [{ text: "Build error log", spanId: "build:1" }],
+    })
+    let actual = getResourceAlerts(r, logStore)
+    let expectedAlerts: Alert[] = [
       {
         alertType: BuildFailedErrorType,
         msg: "Build error log",
@@ -81,22 +93,18 @@ describe("getResourceAlerts", () => {
     r.crashLog = "Hello I am a crash log"
     r.buildHistory = [
       {
-        log: "Hello I am a log",
         isCrashRebuild: true,
-        error: null,
       },
       {
-        log: "Hello I am a log 2 ",
         isCrashRebuild: true,
-        error: null,
       },
     ]
     let rInfo = r.k8sResourceInfo
     if (!rInfo) throw new Error("missing k8s info")
     rInfo.podCreationTime = "10:00AM"
 
-    let actual = getResourceAlerts(r)
-    let expectedAlerts: Array<Alert> = [
+    let actual = getResourceAlerts(r, logStore)
+    let expectedAlerts: Alert[] = [
       {
         alertType: CrashRebuildErrorType,
         msg: "Hello I am a crash log",
@@ -112,18 +120,16 @@ describe("getResourceAlerts", () => {
     let r: Resource = k8sResource()
     r.buildHistory = [
       {
-        log: "Hello I'm a log",
         warnings: ["Hi i'm a warning"],
-        error: null,
         finishTime: "10:00am",
       },
       {
-        log: "Hello I'm a log2",
         warnings: ["This warning shouldn't show up", "Or this one"],
       },
     ]
-    let actual = getResourceAlerts(r)
-    let expectedAlerts: Array<Alert> = [
+
+    let actual = getResourceAlerts(r, logStore)
+    let expectedAlerts: Alert[] = [
       {
         alertType: WarningErrorType,
         msg: "Hi i'm a warning",
@@ -146,19 +152,22 @@ describe("getResourceAlerts", () => {
     r.buildHistory = [
       // triggers build failed alert
       {
-        log: "Build error log",
         finishTime: "10:00AM",
         error: "build failed",
+        spanId: "build:1",
       },
-      {
-        log: "Build error 2",
-      },
+      {},
     ]
-    let actual = getResourceAlerts(r).map(a => {
+    logStore.append({
+      spans: { "build:1": r.name },
+      segments: [{ text: "Build error log", spanId: "build:1" }],
+    })
+
+    let actual = getResourceAlerts(r, logStore).map(a => {
       delete a.dismissHandler
       return a
     })
-    let expectedAlerts: Array<Alert> = [
+    let expectedAlerts: Alert[] = [
       {
         alertType: PodRestartErrorType,
         msg: "I'm a pod that crashed",
@@ -182,15 +191,19 @@ describe("getResourceAlerts", () => {
     r.crashLog = "Hello I am a crash log"
     r.buildHistory = [
       {
-        log: "Build failed log",
         isCrashRebuild: true,
         warnings: ["Hi I am a warning"],
         finishTime: "10:00am",
         error: "build failed",
+        spanId: "build:1",
       },
     ]
-    let actual = getResourceAlerts(r)
-    let expectedAlerts: Array<Alert> = [
+    logStore.append({
+      spans: { "build:1": r.name },
+      segments: [{ text: "Build failed log", spanId: "build:1" }],
+    })
+    let actual = getResourceAlerts(r, logStore)
+    let expectedAlerts: Alert[] = [
       {
         alertType: CrashRebuildErrorType,
         msg: "Hello I am a crash log",
@@ -221,7 +234,6 @@ describe("getResourceAlerts", () => {
     let rInfo = r.k8sResourceInfo
     if (!rInfo) throw new Error("missing k8s info")
     rInfo.podRestarts = 1
-    r.alerts = getResourceAlerts(r)
     let actualNum = numberOfAlerts(r)
     let expectedNum = 1
 
@@ -230,22 +242,19 @@ describe("getResourceAlerts", () => {
 })
 
 //DC Resource Tests
-it("DC Resource: should show a warning alert using the first build history ", () => {
+it("DC Resource: should show a warning alert using the first build history", () => {
   let r: Resource = dcResource()
   r.buildHistory = [
     {
-      log: "Hello I'm a log",
       warnings: ["Hi i'm a warning"],
-      error: null,
       finishTime: "10:00am",
     },
     {
-      log: "Hello I'm a log2",
       warnings: ["This warning shouldn't show up", "Or this one"],
     },
   ]
-  let actual = getResourceAlerts(r)
-  let expectedAlerts: Array<Alert> = [
+  let actual = getResourceAlerts(r, logStore)
+  let expectedAlerts: Alert[] = [
     {
       alertType: WarningErrorType,
       msg: "Hi i'm a warning",
@@ -258,22 +267,19 @@ it("DC Resource: should show a warning alert using the first build history ", ()
 })
 
 //DC Resource Tests
-it("DC resource: should show a warning alert using the first build history ", () => {
+it("DC resource: should show a warning alert using the first build history", () => {
   let r: Resource = dcResource()
   r.buildHistory = [
     {
-      log: "Hello I'm a log",
       warnings: ["Hi i'm a warning"],
-      error: null,
       finishTime: "10:00am",
     },
     {
-      log: "Hello I'm a log2",
       warnings: ["This warning shouldn't show up", "Or this one"],
     },
   ]
-  let actual = getResourceAlerts(r)
-  let expectedAlerts: Array<Alert> = [
+  let actual = getResourceAlerts(r, logStore)
+  let expectedAlerts: Alert[] = [
     {
       alertType: WarningErrorType,
       msg: "Hi i'm a warning",
@@ -289,17 +295,20 @@ it("DC Resource has build failed alert using first build history info ", () => {
   let r: Resource = dcResource()
   r.buildHistory = [
     {
-      log: "Hi you're build failed :'(",
+      spanId: "build:1",
       error: "theres an error !!!!",
       finishTime: "10:00am",
     },
     {
-      log: "Hello I'm a log2",
       warnings: ["This warning shouldn't show up", "Or this one"],
     },
   ]
-  let actual = getResourceAlerts(r)
-  let expectedAlerts: Array<Alert> = [
+  logStore.append({
+    spans: { "build:1": r.name },
+    segments: [{ text: "Hi you're build failed :'(", spanId: "build:1" }],
+  })
+  let actual = getResourceAlerts(r, logStore)
+  let expectedAlerts: Alert[] = [
     {
       alertType: BuildFailedErrorType,
       msg: "Hi you're build failed :'(",
@@ -315,33 +324,41 @@ it("renders a build error for both a K8s resource and DC resource ", () => {
   let dcresource: Resource = dcResource()
   dcresource.buildHistory = [
     {
-      log: "Hi your build failed :'(",
       error: "theres an error !!!!",
       finishTime: "10:00am",
+      spanId: "build:1",
     },
     {
-      log: "Hello I'm a log2",
       warnings: ["This warning shouldn't show up", "Or this one"],
     },
   ]
   let k8sresource: Resource = k8sResource()
   k8sresource.buildHistory = [
     {
-      log: "Hi this (k8s) resource failed too :)",
       error: "theres an error !!!!",
       finishTime: "10:00am",
+      spanId: "build:2",
     },
     {
-      log: "Hello I'm a log2",
       warnings: ["This warning shouldn't show up", "Or this one"],
     },
   ]
+  logStore.append({
+    spans: {
+      "build:1": { manifestName: dcresource.name },
+      "build:2": { manifestName: k8sresource.name },
+    },
+    segments: [
+      { text: "Hi your build failed :'(", spanId: "build:1" },
+      { text: "Hi this (k8s) resource failed too :)", spanId: "build:2" },
+    ],
+  })
 
-  let dcAlerts = getResourceAlerts(dcresource)
-  let k8sAlerts = getResourceAlerts(k8sresource)
+  let dcAlerts = getResourceAlerts(dcresource, logStore)
+  let k8sAlerts = getResourceAlerts(k8sresource, logStore)
 
   let actual = dcAlerts.concat(k8sAlerts)
-  let expectedAlerts: Array<Alert> = [
+  let expectedAlerts: Alert[] = [
     {
       alertType: BuildFailedErrorType,
       msg: "Hi your build failed :'(",
@@ -363,10 +380,8 @@ it("renders a build error for both a K8s resource and DC resource ", () => {
 function k8sResource(): Resource {
   return {
     name: "snack",
-    combinedLog: "",
     buildHistory: [],
     crashLog: "",
-    currentBuild: 0,
     directoriesWatched: [],
     endpoints: [],
     podID: "podID",
@@ -383,12 +398,10 @@ function k8sResource(): Resource {
       podStatus: "",
       podStatusMessage: "",
       podRestarts: 0,
-      podLog: "",
     },
     runtimeStatus: "",
     triggerMode: TriggerMode.TriggerModeAuto,
     hasPendingChanges: true,
-    alerts: [],
     facets: [],
     queued: false,
   }
@@ -403,22 +416,14 @@ function dcResource(): Resource {
     triggerMode: 0,
     buildHistory: [
       {
-        edits: null,
-        error: null,
-        warnings: null,
         startTime: "2019-08-07T11:43:32.422237-04:00",
         finishTime: "2019-08-07T11:43:37.568626-04:00",
-        log: "",
         isCrashRebuild: false,
       },
     ],
     currentBuild: {
-      edits: null,
-      error: null,
-      warnings: null,
       startTime: "0001-01-01T00:00:00Z",
       finishTime: "0001-01-01T00:00:00Z",
-      log: "",
       isCrashRebuild: false,
     },
     pendingBuildReason: 0,
@@ -431,14 +436,11 @@ function dcResource(): Resource {
       configPaths: [""],
       containerStatus: "OK",
       containerID: "",
-      log: "",
       startTime: "2019-08-07T11:43:36.900841-04:00",
     },
     runtimeStatus: "ok",
     isTiltfile: false,
-    combinedLog: "",
     crashLog: "",
-    alerts: [],
     facets: [],
     queued: false,
   }

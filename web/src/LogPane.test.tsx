@@ -3,6 +3,7 @@ import ReactDOM from "react-dom"
 import LogPane from "./LogPane"
 import renderer from "react-test-renderer"
 import { mount } from "enzyme"
+import { logLinesFromString } from "./logs"
 
 const fakeHandleSetHighlight = () => {}
 const fakeHandleClearHighlight = () => {}
@@ -343,7 +344,8 @@ it("renders without crashing", () => {
   Element.prototype.scrollIntoView = jest.fn()
   ReactDOM.render(
     <LogPane
-      log="hello\nworld\nfoo"
+      logLines={logLinesFromString("hello\nworld\nfoo")}
+      showManifestPrefix={false}
       message="world"
       handleSetHighlight={fakeHandleSetHighlight}
       handleClearHighlight={fakeHandleClearHighlight}
@@ -361,7 +363,8 @@ it("renders logs", () => {
   const tree = renderer
     .create(
       <LogPane
-        log={log}
+        logLines={logLinesFromString(log)}
+        showManifestPrefix={false}
         handleSetHighlight={fakeHandleSetHighlight}
         handleClearHighlight={fakeHandleClearHighlight}
         highlight={null}
@@ -378,7 +381,8 @@ it("renders logs with leading whitespace and ANSI codes", () => {
   const tree = renderer
     .create(
       <LogPane
-        log={longLog}
+        logLines={logLinesFromString(longLog)}
+        showManifestPrefix={false}
         handleSetHighlight={fakeHandleSetHighlight}
         handleClearHighlight={fakeHandleClearHighlight}
         highlight={null}
@@ -394,24 +398,27 @@ it("renders logs with leading whitespace and ANSI codes", () => {
 it("renders highlighted lines", () => {
   const log = "hello\nworld\nfoo\nbar"
   const highlight = {
-    beginningLogID: "logLine2",
-    endingLogID: "logLine3",
+    beginningLogID: "2",
+    endingLogID: "3",
     text: "foo\nbar",
   }
-  const tree = renderer
-    .create(
-      <LogPane
-        log={log}
-        handleSetHighlight={fakeHandleSetHighlight}
-        handleClearHighlight={fakeHandleClearHighlight}
-        highlight={highlight}
-        modalIsOpen={false}
-        isSnapshot={false}
-      />
-    )
-    .toJSON()
+  let el = (
+    <LogPane
+      logLines={logLinesFromString(log)}
+      showManifestPrefix={false}
+      handleSetHighlight={fakeHandleSetHighlight}
+      handleClearHighlight={fakeHandleClearHighlight}
+      highlight={highlight}
+      modalIsOpen={false}
+      isSnapshot={false}
+    />
+  )
+  const tree = renderer.create(el).toJSON()
 
   expect(tree).toMatchSnapshot()
+
+  let component = mount(el)
+  expect(component.find(".logLine.highlighted")).toHaveLength(2)
 })
 
 it("scrolls to highlighted lines in snapshot", () => {
@@ -419,13 +426,14 @@ it("scrolls to highlighted lines in snapshot", () => {
   Element.prototype.scrollIntoView = fakeScrollIntoView
 
   const highlight = {
-    beginningLogID: "logLine2",
-    endingLogID: "logLine3",
+    beginningLogID: "2",
+    endingLogID: "3",
     text: "foo\nbar",
   }
   const wrapper = mount<LogPane>(
     <LogPane
-      log={longLog}
+      logLines={logLinesFromString(longLog)}
+      showManifestPrefix={false}
       handleSetHighlight={fakeHandleSetHighlight}
       handleClearHighlight={fakeHandleClearHighlight}
       highlight={highlight}
@@ -437,6 +445,9 @@ it("scrolls to highlighted lines in snapshot", () => {
   expect(wrapper.instance().highlightRef.current).not.toBeNull()
   expect(fakeScrollIntoView.mock.instances).toHaveLength(1)
   expect(fakeScrollIntoView.mock.instances[0]).toBeInstanceOf(HTMLSpanElement)
+  expect(fakeScrollIntoView.mock.instances[0].innerHTML).toContain(
+    '[Tiltfile] Running `"whoami"`'
+  )
   expect(fakeScrollIntoView).toBeCalledTimes(1)
 })
 
@@ -445,13 +456,14 @@ it("does not scroll to highlighted lines if not snapshot", () => {
   Element.prototype.scrollIntoView = fakeScrollIntoView
 
   const highlight = {
-    beginningLogID: "logLine2",
-    endingLogID: "logLine3",
+    beginningLogID: "2",
+    endingLogID: "3",
     text: "foo\nbar",
   }
   const wrapper = mount<LogPane>(
     <LogPane
-      log={longLog}
+      logLines={logLinesFromString(longLog)}
+      showManifestPrefix={false}
       handleSetHighlight={fakeHandleSetHighlight}
       handleClearHighlight={fakeHandleClearHighlight}
       highlight={highlight}
@@ -474,13 +486,14 @@ it("doesn't set selection event handler if snapshot", () => {
   globalAny.addEventListener = fakeAddEventListener
 
   const highlight = {
-    beginningLogID: "logLine2",
-    endingLogID: "logLine3",
+    beginningLogID: "2",
+    endingLogID: "3",
     text: "foo\nbar",
   }
   const wrapper = mount<LogPane>(
     <LogPane
-      log={longLog}
+      logLines={logLinesFromString(longLog)}
+      showManifestPrefix={false}
       handleSetHighlight={fakeHandleSetHighlight}
       handleClearHighlight={fakeHandleClearHighlight}
       highlight={highlight}

@@ -10,9 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/windmilleng/tilt/internal/engine/configs"
 	"github.com/windmilleng/tilt/internal/k8s"
 	"github.com/windmilleng/tilt/internal/k8s/testyaml"
 	"github.com/windmilleng/tilt/internal/store"
+	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
 	proto_webview "github.com/windmilleng/tilt/pkg/webview"
 )
@@ -20,7 +22,7 @@ import (
 var fooManifest = model.Manifest{Name: "foo"}.WithDeployTarget(model.K8sTarget{})
 
 func stateToProtoView(t *testing.T, s store.EngineState) *proto_webview.View {
-	v, err := StateToProtoView(s)
+	v, err := StateToProtoView(s, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,14 +90,15 @@ func TestStateToViewUnresourcedYAMLManifest(t *testing.T) {
 
 func TestStateToViewTiltfileLog(t *testing.T) {
 	es := newState([]model.Manifest{})
+	spanID := configs.SpanIDForLoadCount(1)
 	es.LogStore.Append(
-		store.NewLogEvent(store.TiltfileManifestName, []byte("hello")),
+		store.NewLogEvent(store.TiltfileManifestName, spanID, logger.InfoLvl, []byte("hello")),
 		nil)
 	v := stateToProtoView(t, *es)
 	r, ok := findResource("(Tiltfile)", v)
 	require.True(t, ok, "no resource named (Tiltfile) found")
 	assert.Equal(t, "hello", string(v.LogList.Segments[0].Text))
-	assert.Equal(t, r.Name, string(v.LogList.Spans[r.Name].ManifestName))
+	assert.Equal(t, r.Name, string(v.LogList.Spans[string(spanID)].ManifestName))
 }
 
 func TestRelativeTiltfilePath(t *testing.T) {

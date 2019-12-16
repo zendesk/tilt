@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
 )
 
@@ -15,6 +16,25 @@ func TestLog_AppendUnderLimit(t *testing.T) {
 	l.Append(newGlobalTestLogEvent("foo"), nil)
 	l.Append(newGlobalTestLogEvent("bar"), nil)
 	assert.Equal(t, "foobar", l.String())
+}
+
+func TestAppendDifferentLevels(t *testing.T) {
+	l := NewLogStore()
+	l.Append(newGlobalLevelTestLogEvent("foo", logger.InfoLvl), nil)
+	l.Append(newGlobalLevelTestLogEvent("bar", logger.DebugLvl), nil)
+	l.Append(newGlobalLevelTestLogEvent("baz", logger.InfoLvl), nil)
+	assert.Equal(t, "foo\nbar\nbaz", l.String())
+}
+
+func TestAppendDifferentLevelsMultiLines(t *testing.T) {
+	l := NewLogStore()
+	l.Append(newGlobalTestLogEvent("hello ... "), nil)
+	l.Append(newGlobalLevelTestLogEvent("foobar", logger.DebugLvl), nil)
+	l.Append(newGlobalTestLogEvent("world\nnext line of global log"), nil)
+	assert.Equal(t, "hello ... \nfoobar\nworld\nnext line of global log", l.String())
+
+	l.recomputeDerivedValues()
+	assert.Equal(t, "hello ... \nfoobar\nworld\nnext line of global log", l.String())
 }
 
 func TestLog_AppendOverLimit(t *testing.T) {
@@ -204,4 +224,35 @@ func TestManifestLogContinuation(t *testing.T) {
 	assert.Equal(t, "3478", l.ManifestLog("fe"))
 	assert.Equal(t, "ab", l.ManifestLog("back"))
 	assert.Equal(t, "1\n2\nfe          ┊ 3478\n5\n6\nback        ┊ ab\n5\n6\n", l.String())
+}
+
+func TestLogIncremental(t *testing.T) {
+	l := NewLogStore()
+	l.Append(newGlobalTestLogEvent("line1\n"), nil)
+	l.Append(newGlobalTestLogEvent("line2\n"), nil)
+	l.Append(newGlobalTestLogEvent("line3\n"), nil)
+
+	list, err := l.ToLogList(0)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(list.Segments))
+	assert.Equal(t, int32(0), list.FromCheckpoint)
+	assert.Equal(t, int32(3), list.ToCheckpoint)
+
+	list, err = l.ToLogList(1)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(list.Segments))
+	assert.Equal(t, int32(1), list.FromCheckpoint)
+	assert.Equal(t, int32(3), list.ToCheckpoint)
+
+	list, err = l.ToLogList(3)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(list.Segments))
+	assert.Equal(t, int32(-1), list.FromCheckpoint)
+	assert.Equal(t, int32(-1), list.ToCheckpoint)
+
+	list, err = l.ToLogList(10)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(list.Segments))
+	assert.Equal(t, int32(-1), list.FromCheckpoint)
+	assert.Equal(t, int32(-1), list.ToCheckpoint)
 }

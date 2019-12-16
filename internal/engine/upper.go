@@ -16,6 +16,7 @@ import (
 	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
 	"github.com/windmilleng/tilt/internal/container"
 	"github.com/windmilleng/tilt/internal/dockercompose"
+	"github.com/windmilleng/tilt/internal/engine/buildcontrol"
 	"github.com/windmilleng/tilt/internal/engine/configs"
 	"github.com/windmilleng/tilt/internal/engine/k8swatch"
 	"github.com/windmilleng/tilt/internal/engine/runtimelog"
@@ -171,11 +172,11 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleK8sEvent(ctx, state, action)
 	case runtimelog.PodLogAction:
 		handlePodLogAction(state, action)
-	case BuildLogAction:
+	case buildcontrol.BuildLogAction:
 		handleBuildLogAction(state, action)
-	case BuildCompleteAction:
+	case buildcontrol.BuildCompleteAction:
 		err = handleBuildCompleted(ctx, state, action)
-	case BuildStartedAction:
+	case buildcontrol.BuildStartedAction:
 		handleBuildStarted(ctx, state, action)
 	case configs.ConfigsReloadStartedAction:
 		handleConfigsReloadStarted(ctx, state, action)
@@ -207,6 +208,8 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleUserStartedTiltCloudRegistrationAction(state)
 	case store.PanicAction:
 		handlePanicAction(state, action)
+	case server.SetTiltfileArgsAction:
+		handleSetTiltfileArgsAction(state, action)
 	case store.LogEvent:
 		// handled as a LogAction, do nothing
 
@@ -221,7 +224,7 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 
 var UpperReducer = store.Reducer(upperReducerFn)
 
-func handleBuildStarted(ctx context.Context, state *store.EngineState, action BuildStartedAction) {
+func handleBuildStarted(ctx context.Context, state *store.EngineState, action buildcontrol.BuildStartedAction) {
 	mn := action.ManifestName
 	ms, ok := state.ManifestState(mn)
 	if !ok {
@@ -232,6 +235,7 @@ func handleBuildStarted(ctx context.Context, state *store.EngineState, action Bu
 		Edits:     append([]string{}, action.FilesChanged...),
 		StartTime: action.StartTime,
 		Reason:    action.Reason,
+		SpanID:    action.SpanID,
 	}
 	ms.ConfigFilesThatCausedChange = []string{}
 	ms.CurrentBuild = bs
@@ -255,11 +259,12 @@ func handleBuildStarted(ctx context.Context, state *store.EngineState, action Bu
 	removeFromTriggerQueue(state, mn)
 }
 
-func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, cb BuildCompleteAction) error {
+func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, cb buildcontrol.BuildCompleteAction) error {
 	defer func() {
 		engineState.CurrentlyBuilding = ""
 	}()
 
+	buildCount := engineState.BuildControllerActionCount
 	engineState.CompletedBuildCount++
 	engineState.BuildControllerActionCount++
 
@@ -272,8 +277,9 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	if err != nil {
 		p := logger.Red(logger.Get(ctx)).Sprintf("Build Failed:")
 		s := fmt.Sprintf("%s %v", p, err)
-		a := BuildLogAction{
-			LogEvent: store.NewLogEvent(mt.Manifest.Name, []byte(s)),
+		a := buildcontrol.BuildLogAction{
+			// TODO(nick): logger.ErrorLvl?
+			LogEvent: store.NewLogEvent(mt.Manifest.Name, SpanIDForBuildLog(buildCount), logger.InfoLvl, []byte(s)),
 		}
 		handleLogAction(engineState, a)
 		handleBuildLogAction(engineState, a)
@@ -295,7 +301,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	}
 
 	if err != nil {
-		if isFatalError(err) {
+		if buildcontrol.IsFatalError(err) {
 			return err
 		} else if !engineState.WatchFiles {
 			return errors.Wrap(err, "Build Failed")
@@ -462,6 +468,7 @@ func handleConfigsReloadStarted(
 		StartTime: event.StartTime,
 		Reason:    model.BuildReasonFlagConfig,
 		Edits:     filesChanged,
+		SpanID:    event.SpanID,
 	}
 
 	state.TiltfileState.CurrentBuild = status
@@ -573,7 +580,7 @@ func handleConfigsReloaded(
 	}
 }
 
-func handleBuildLogAction(state *store.EngineState, action BuildLogAction) {
+func handleBuildLogAction(state *store.EngineState, action buildcontrol.BuildLogAction) {
 	manifestName := action.ManifestName()
 	ms, ok := state.ManifestState(manifestName)
 	if !ok || state.CurrentlyBuilding != manifestName {
@@ -633,7 +640,7 @@ func handleInitAction(ctx context.Context, engineState *store.EngineState, actio
 	engineState.TiltStartTime = action.StartTime
 	engineState.TiltfilePath = action.TiltfilePath
 	engineState.ConfigFiles = action.ConfigFiles
-	engineState.UserArgs = action.UserArgs
+	engineState.UserConfigState.Args = action.UserArgs
 	engineState.AnalyticsUserOpt = action.AnalyticsUserOpt
 	engineState.WatchFiles = action.WatchFiles
 	engineState.CloudAddress = action.CloudAddress
@@ -658,10 +665,14 @@ func handlePanicAction(state *store.EngineState, action store.PanicAction) {
 	state.PanicExited = action.Err
 }
 
+func handleSetTiltfileArgsAction(state *store.EngineState, action server.SetTiltfileArgsAction) {
+	state.UserConfigState = state.UserConfigState.WithArgs(action.Args)
+}
+
 func handleDockerComposeEvent(ctx context.Context, engineState *store.EngineState, action DockerComposeEventAction) {
 	evt := action.Event
-	mn := evt.Service
-	ms, ok := engineState.ManifestState(model.ManifestName(mn))
+	mn := model.ManifestName(evt.Service)
+	ms, ok := engineState.ManifestState(mn)
 	if !ok {
 		// No corresponding manifest, nothing to do
 		return
@@ -674,7 +685,8 @@ func handleDockerComposeEvent(ctx context.Context, engineState *store.EngineStat
 
 	state, _ := ms.RuntimeState.(dockercompose.State)
 
-	state = state.WithContainerID(container.ID(evt.ID))
+	state = state.WithContainerID(container.ID(evt.ID)).
+		WithSpanID(runtimelog.SpanIDForDCService(mn))
 
 	// For now, just guess at state.
 	status := evt.GuessStatus()

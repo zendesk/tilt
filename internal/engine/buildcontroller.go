@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/windmilleng/tilt/internal/store"
 	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/windmilleng/tilt/pkg/model/logstore"
 )
 
 type BuildController struct {
@@ -26,6 +28,7 @@ type buildEntry struct {
 	filesChanged  []string
 	buildReason   model.BuildReason
 	firstBuild    bool
+	buildCount    int
 }
 
 func NewBuildController(b BuildAndDeployer) *BuildController {
@@ -66,6 +69,7 @@ func (c *BuildController) needsBuild(ctx context.Context, st store.RStore) (buil
 		buildReason:   buildReason,
 		buildStateSet: buildStateSet,
 		filesChanged:  append(ms.ConfigFilesThatCausedChange, buildStateSet.FilesChanged()...),
+		buildCount:    c.lastActionCount,
 	}, true
 }
 
@@ -87,19 +91,21 @@ func (c *BuildController) OnChange(ctx context.Context, st store.RStore) {
 		actionWriter := BuildLogActionWriter{
 			store:        st,
 			manifestName: entry.name,
+			buildCount:   entry.buildCount,
 		}
-		ctx := logger.WithLogger(ctx, logger.NewLogger(logger.Get(ctx).Level(), actionWriter))
+		ctx := logger.CtxWithLogHandler(ctx, actionWriter)
 
-		st.Dispatch(BuildStartedAction{
+		st.Dispatch(buildcontrol.BuildStartedAction{
 			ManifestName: entry.name,
 			StartTime:    time.Now(),
 			FilesChanged: entry.filesChanged,
 			Reason:       entry.buildReason,
+			SpanID:       SpanIDForBuildLog(entry.buildCount),
 		})
 		c.logBuildEntry(ctx, entry)
 
 		result, err := c.buildAndDeploy(ctx, st, entry)
-		st.Dispatch(NewBuildCompleteAction(result, err))
+		st.Dispatch(buildcontrol.NewBuildCompleteAction(result, err))
 	}()
 }
 
@@ -152,13 +158,18 @@ func (c *BuildController) logBuildEntry(ctx context.Context, entry buildEntry) {
 type BuildLogActionWriter struct {
 	store        store.RStore
 	manifestName model.ManifestName
+	buildCount   int
 }
 
-func (w BuildLogActionWriter) Write(p []byte) (n int, err error) {
-	w.store.Dispatch(BuildLogAction{
-		LogEvent: store.NewLogEvent(w.manifestName, p),
+func (w BuildLogActionWriter) Write(level logger.Level, p []byte) error {
+	w.store.Dispatch(buildcontrol.BuildLogAction{
+		LogEvent: store.NewLogEvent(w.manifestName, SpanIDForBuildLog(w.buildCount), level, p),
 	})
-	return len(p), nil
+	return nil
+}
+
+func SpanIDForBuildLog(buildCount int) logstore.SpanID {
+	return logstore.SpanID(fmt.Sprintf("build:%d", buildCount))
 }
 
 // Extract target specs from a manifest for BuildAndDeploy.

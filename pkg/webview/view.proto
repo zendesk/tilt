@@ -14,8 +14,14 @@ message BuildRecord {
   repeated string warnings = 3;
   google.protobuf.Timestamp start_time = 4;
   google.protobuf.Timestamp finish_time  = 5;
-  string log = 6;
+
+  reserved "log";
+  reserved 6;
+
   bool is_crash_rebuild = 7;
+
+  // The span id for this build record's logs in the main logstore.
+  string span_id = 8;
 }
 
 message K8sResourceInfo {
@@ -26,15 +32,28 @@ message K8sResourceInfo {
   string pod_status_message = 5;
   bool all_containers_ready = 6;
   int32 pod_restarts = 7;
-  string pod_log = 8;
+
+  // pod logs are now in the log store
+  reserved "pod_log";
+  reserved 8;
+
+  // The span id for this pod's logs in the main logstore
+  string span_id = 9;
 }
 
 message DCResourceInfo {
   repeated string config_paths = 1;
   string container_status = 2;
   string containerID = 3;
-  string log = 4;
+
+  // service logs are now in the log store
+  reserved "log";
+  reserved 4;
+
   google.protobuf.Timestamp start_time = 5;
+
+  // The span id for this docker-compose service's logs in the main logstore
+  string span_id = 6;
 }
 
 message YAMLResourceInfo {
@@ -42,18 +61,6 @@ message YAMLResourceInfo {
 }
 
 message LocalResourceInfo {}
-
-message Alert {
-  string alert_type = 1;
-  string header = 2;
-  string message = 3;
-  // TODO(dmiller): this should be a timestamp, but sometimes incorrectly formatted times get set here
-  // like when there's a Pod that has PodStatusError.
-  // We should figure out how those times are being set, and fix them to parse as protobuf.Timestamp
-  // correctly
-  string timestamp = 4;
-  string resource_name = 5;
-}
 
 message Facet {
   string name = 1;
@@ -81,9 +88,18 @@ message Resource {
   string runtime_status = 18;
   bool is_tiltfile = 19;
   bool show_build_status = 20;
-  string combined_log = 21;
+
+  // Resource logs are now stored in the log store.
+  reserved "combined_log";
+  reserved 21;
+
   string crash_log = 22;
-  repeated Alert alerts = 23;
+
+  // Alerts are currently client-side only, and not
+  // sent in the payload.
+  reserved "alerts";
+  reserved 23;
+
   repeated Facet facets = 24;
   bool queued = 25;
 }
@@ -122,6 +138,10 @@ message View {
   string fatal_error = 11;
 
   LogList log_list = 13;
+
+  // Allows us to synchronize on a running Tilt intance,
+  // so we can tell when Tilt restarted.
+  google.protobuf.Timestamp tilt_start_time = 14;
 }
 
 message GetViewRequest {}
@@ -144,6 +164,23 @@ message UploadSnapshotResponse {
   string url = 1;
 }
 
+// The webclient needs to notify the server what logs it has,
+// so the server knows what to send.
+//
+// The socket protocol doesn't have any concept of a StatusCode
+// to confirm that the receiver got the message, so we need to send this
+// in a separate message.
+message AckWebsocketRequest {
+  // The to_checkpoint on the received LogList
+  int32 to_checkpoint = 1;
+
+  // Allows us to synchronize on a running Tilt intance,
+  // so we can tell when we're talking to the same Tilt.
+  google.protobuf.Timestamp tilt_start_time = 2;
+}
+
+message AckWebsocketResponse {}
+
 // These services need to be here for the generated TS to be generated
 service ViewService {
   rpc GetView(GetViewRequest) returns (View) {
@@ -155,6 +192,16 @@ service ViewService {
   rpc UploadSnapshot(Snapshot) returns (UploadSnapshotResponse) {
     option (google.api.http) = {
       post: "/api/snapshot/new"
+      body: "*"
+    };
+  }
+}
+
+// This is a fake service, so that we do codegen for the websocket protocol messages.
+service WebsocketService {
+  rpc AckWebsocket(AckWebsocketRequest) returns (AckWebsocketResponse) {
+    option (google.api.http) = {
+     post: "/websocket/ack"
       body: "*"
     };
   }

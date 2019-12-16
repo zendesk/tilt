@@ -1,13 +1,9 @@
-import { getResourceAlerts } from "./alerts"
-import {
-  K8sResourceInfo,
-  SocketState,
-  WebView,
-  Snapshot,
-  Resource,
-} from "./types"
+import { SocketState, Snapshot } from "./types"
 import HudState from "./HudState"
 import PathBuilder from "./PathBuilder"
+
+type Resource = Proto.webviewResource
+type K8sResourceInfo = Proto.webviewK8sResourceInfo
 
 interface HudInt {
   setAppState: <K extends keyof HudState>(state: Pick<HudState, K>) => void
@@ -47,6 +43,8 @@ class AppController {
   createNewSocket() {
     this.tryConnectCount++
     this.socket = new WebSocket(this.url)
+    let socket = this.socket
+
     this.socket.addEventListener("close", this.onSocketClose.bind(this))
     this.socket.addEventListener("message", event => {
       if (!this.liveSocket) {
@@ -55,33 +53,22 @@ class AppController {
       this.liveSocket = true
       this.tryConnectCount = 0
 
-      let data: WebView = JSON.parse(event.data)
+      let data: Proto.webviewView = JSON.parse(event.data)
+      let toCheckpoint = data.logList?.toCheckpoint
+      if (toCheckpoint && toCheckpoint > 0) {
+        let tiltStartTime = data.tiltStartTime
+        let response: Proto.webviewAckWebsocketRequest = {
+          toCheckpoint,
+          tiltStartTime,
+        }
+        socket.send(JSON.stringify(response))
+      }
 
-      data.resources = this.setDefaultResourceInfo(data.resources)
       // @ts-ignore
       this.component.setAppState({
         view: data,
         socketState: SocketState.Active,
       })
-    })
-  }
-
-  setDefaultResourceInfo(resources: Array<Resource>): Array<Resource> {
-    return resources.map(r => {
-      if (!r.k8sResourceInfo && !r.dcResourceInfo) {
-        let ri: K8sResourceInfo = {
-          podName: "",
-          podCreationTime: "",
-          podUpdateStartTime: "",
-          podStatus: "",
-          podStatusMessage: "",
-          podRestarts: 0,
-          podLog: "",
-        }
-        r.k8sResourceInfo = ri
-      }
-      r.alerts = getResourceAlerts(r)
-      return r
     })
   }
 
@@ -137,9 +124,6 @@ class AppController {
       .then(resp => resp.json())
       .then((data: Snapshot) => {
         data.view = data.view || {}
-
-        let resources = (data.view && data.view.resources) || []
-        data.view.resources = this.setDefaultResourceInfo(resources)
 
         this.component.setAppState({
           view: data.view,

@@ -8,6 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/windmilleng/tilt/internal/k8s"
+	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
 	"github.com/windmilleng/tilt/pkg/model/logstore"
 )
@@ -29,14 +30,20 @@ type LogAction interface {
 
 type LogEvent struct {
 	mn        model.ManifestName
+	spanID    logstore.SpanID
 	timestamp time.Time
 	msg       []byte
+	level     logger.Level
 }
 
 func (LogEvent) Action() {}
 
 func (le LogEvent) ManifestName() model.ManifestName {
 	return le.mn
+}
+
+func (le LogEvent) Level() logger.Level {
+	return le.level
 }
 
 func (le LogEvent) Time() time.Time {
@@ -48,20 +55,24 @@ func (le LogEvent) Message() []byte {
 }
 
 func (le LogEvent) SpanID() logstore.SpanID {
-	return ""
+	return le.spanID
 }
 
-func NewLogEvent(mn model.ManifestName, b []byte) LogEvent {
+func NewLogEvent(mn model.ManifestName, spanID logstore.SpanID, level logger.Level, b []byte) LogEvent {
 	return LogEvent{
 		mn:        mn,
+		spanID:    spanID,
+		level:     level,
 		timestamp: time.Now(),
 		msg:       append([]byte{}, b...),
 	}
 }
 
-func NewGlobalLogEvent(b []byte) LogEvent {
+func NewGlobalLogEvent(level logger.Level, b []byte) LogEvent {
 	return LogEvent{
 		mn:        "",
+		spanID:    "",
+		level:     level,
 		timestamp: time.Now(),
 		msg:       append([]byte{}, b...),
 	}
@@ -84,6 +95,8 @@ func (kEvt K8sEventAction) ToLogAction(mn model.ManifestName) LogAction {
 
 	return LogEvent{
 		mn:        mn,
+		spanID:    logstore.SpanID(fmt.Sprintf("events:%s", mn)),
+		level:     logger.InfoLvl,
 		timestamp: kEvt.Event.LastTimestamp.Time,
 		msg:       []byte(msg),
 	}

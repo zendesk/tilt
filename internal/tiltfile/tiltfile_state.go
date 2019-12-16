@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/windmilleng/tilt/internal/tiltfile/starlarkstruct"
+
 	"github.com/docker/distribution/reference"
 	"github.com/looplab/tarjan"
 	"github.com/pkg/errors"
@@ -145,7 +147,7 @@ func (s *tiltfileState) print(_ *starlark.Thread, msg string) {
 //
 // TODO(nick): Eventually this will just return a starkit.Model, which will contain
 // all the mutable state collected by execution.
-func (s *tiltfileState) loadManifests(absFilename string, args []string) ([]model.Manifest, starkit.Model, error) {
+func (s *tiltfileState) loadManifests(absFilename string, userConfigState model.UserConfigState) ([]model.Manifest, starkit.Model, error) {
 	s.logger.Infof("Beginning Tiltfile execution")
 	result, err := starkit.ExecFile(absFilename,
 		s,
@@ -157,7 +159,8 @@ func (s *tiltfileState) loadManifests(absFilename string, args []string) ([]mode
 		dockerprune.NewExtension(),
 		analytics.NewExtension(),
 		version.NewExtension(),
-		config.NewExtension(args),
+		config.NewExtension(userConfigState),
+		starlarkstruct.NewExtension(),
 	)
 	if err != nil {
 		return nil, result, starkit.UnpackBacktrace(err)
@@ -206,8 +209,8 @@ to your Tiltfile. Otherwise, switch k8s contexts and restart Tilt.`, kubeContext
 	}
 	manifests = append(manifests, localManifests...)
 
-	flagsState, _ := config.GetState(result)
-	manifests, err = flagsState.EnabledResources(args, manifests)
+	configSettings, _ := config.GetState(result)
+	manifests, err = configSettings.EnabledResources(manifests)
 	if err != nil {
 		return nil, starkit.Model{}, err
 	}
