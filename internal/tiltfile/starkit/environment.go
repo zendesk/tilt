@@ -35,6 +35,7 @@ type Environment struct {
 	print          func(thread *starlark.Thread, msg string)
 	extensions     []Extension
 	fakeFileSystem map[string]string
+	loadHelpers    []LoadHelper
 }
 
 func newEnvironment(extensions ...Extension) *Environment {
@@ -110,8 +111,12 @@ func (e *Environment) SetFakeFileSystem(files map[string]string) {
 	e.fakeFileSystem = files
 }
 
+func (e *Environment) AddLoadHelper(h LoadHelper) {
+	e.loadHelpers = append(e.loadHelpers, h)
+}
+
 func (e *Environment) start(path string) (Model, error) {
-	path, err := filepath.Abs(path)
+	path, err := filepath.Abs(path) // call Abs here because it's the root of the stack
 	if err != nil {
 		return Model{}, errors.Wrap(err, "environment#start")
 	}
@@ -146,31 +151,58 @@ func (e *Environment) start(path string) (Model, error) {
 }
 
 func (e *Environment) load(t *starlark.Thread, path string) (starlark.StringDict, error) {
-	return e.exec(t, AbsPath(t, path))
+	return e.exec(t, path)
 }
 
 func (e *Environment) exec(t *starlark.Thread, path string) (starlark.StringDict, error) {
-	// If the path isn't absolute, the loadCache won't work correctly.
-	if !filepath.IsAbs(path) {
-		return starlark.StringDict{}, fmt.Errorf("internal error: path must be absolute")
+	localPath, err := e.getPath(t, path)
+	if err != nil {
+		e.loadCache[localPath] = loadCacheEntry{
+			status:  loadStatusDone,
+			exports: starlark.StringDict{},
+			err:     err,
+		}
 	}
 
-	entry := e.loadCache[path]
-	status := entry.status
-	if status == loadStatusExecuting {
-		return starlark.StringDict{}, fmt.Errorf("Circular load: %s", path)
-	} else if status == loadStatusDone {
+	entry := e.loadCache[localPath]
+	switch entry.status {
+	case loadStatusExecuting:
+		return starlark.StringDict{}, fmt.Errorf("Circular load: %s", localPath)
+	case loadStatusDone:
 		return entry.exports, entry.err
 	}
 
-	e.loadCache[path] = loadCacheEntry{
+	e.loadCache[localPath] = loadCacheEntry{
 		status: loadStatusExecuting,
 	}
 
+	exports, err := e.doLoad(t, path, localPath)
+	e.loadCache[localPath] = loadCacheEntry{
+		status:  loadStatusDone,
+		exports: exports,
+		err:     err,
+	}
+	return exports, err
+}
+
+func (e *Environment) getPath(t *starlark.Thread, path string) (string, error) {
+	for _, h := range e.loadHelpers {
+		newPath, err := h.LocalPath(t, path)
+		if err != nil {
+			return "", err
+		}
+		if newPath != "" {
+			return newPath, nil
+		}
+	}
+	return AbsPath(t, path), nil
+}
+
+func (e *Environment) doLoad(t *starlark.Thread, path string, localPath string) (starlark.StringDict, error) {
 	for _, ext := range e.extensions {
 		onExecExt, ok := ext.(OnExecExtension)
 		if ok {
-			err := onExecExt.OnExec(t, path)
+			err := onExecExt.OnExec(t, localPath)
 			if err != nil {
 				return starlark.StringDict{}, err
 			}
@@ -179,20 +211,14 @@ func (e *Environment) exec(t *starlark.Thread, path string) (starlark.StringDict
 
 	var contentBytes interface{} = nil
 	if e.fakeFileSystem != nil {
-		contents, ok := e.fakeFileSystem[path]
+		contents, ok := e.fakeFileSystem[localPath]
 		if !ok {
-			return starlark.StringDict{}, fmt.Errorf("Not in fake file system: %s", path)
+			return starlark.StringDict{}, fmt.Errorf("Not in fake file system: %s", localPath)
 		}
 		contentBytes = []byte(contents)
 	}
 
-	exports, err := starlark.ExecFile(t, path, contentBytes, e.predeclared)
-	e.loadCache[path] = loadCacheEntry{
-		status:  loadStatusDone,
-		exports: exports,
-		err:     err,
-	}
-	return exports, err
+	return starlark.ExecFile(t, localPath, contentBytes, e.predeclared)
 }
 
 type ArgUnpacker func(fnName string, args starlark.Tuple, kwargs []starlark.Tuple, pairs ...interface{}) error

@@ -1,0 +1,5 @@
+package extension
+
+type Resolve interface {
+	
+}
