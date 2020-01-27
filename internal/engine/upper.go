@@ -530,6 +530,7 @@ func handleConfigsReloaded(
 		return
 	}
 
+	state.CLIManifests = event.CLIManifests
 	state.DockerPruneSettings = event.DockerPruneSettings
 
 	newDefOrder := make([]model.ManifestName, len(manifests))

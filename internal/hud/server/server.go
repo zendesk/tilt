@@ -77,6 +77,8 @@ func ProvideHeadsUpServer(
 
 	r.HandleFunc("/api/view", s.ViewJSON)
 	r.HandleFunc("/api/dump/engine", s.DumpEngineJSON)
+	r.HandleFunc("/api/get/pod", s.GetPod)
+	r.HandleFunc("/api/get/cli", s.GetCLI)
 	r.HandleFunc("/api/analytics", s.HandleAnalytics)
 	r.HandleFunc("/api/analytics_opt", s.HandleAnalyticsOpt)
 	r.HandleFunc("/api/trigger", s.HandleTrigger)
@@ -129,6 +131,60 @@ func (s *HeadsUpServer) ViewJSON(w http.ResponseWriter, req *http.Request) {
 	err = jsEncoder.NewEncoder(w).Encode(view)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error rendering view payload: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (s *HeadsUpServer) GetPod(w http.ResponseWriter, req *http.Request) {
+	resourceID := req.FormValue("resource_id")
+
+	podID, err := s.resourceIDToPod(resourceID)
+	if err != nil {
+		// TODO(dbentley): should probably return a 404 in more circumstances, like the resource doesn't exist or pod isn't ready
+		http.Error(w, fmt.Sprintf("Error getting pod ID for resource %s: %v", resourceID, err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	err = json.NewEncoder(w).Encode(map[string]string{"pod_id": podID})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error rendering get pod payload: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (s *HeadsUpServer) resourceIDToPod(resourceID string) (string, error) {
+	state := s.store.RLockState()
+	defer s.store.RUnlockState()
+	ms, ok := state.ManifestState(model.ManifestName(resourceID))
+	if !ok {
+		return "", fmt.Errorf("no such resource %q", resourceID)
+	}
+	if !ms.IsK8s() {
+		return "", fmt.Errorf("resource %q is not a Kubernetes resource", resourceID)
+	}
+	podID := ms.MostRecentPod().PodID
+	if podID == "" {
+		return "", fmt.Errorf("resource %q has no ready pods", resourceID)
+	}
+	return string(podID), nil
+}
+
+func (s *HeadsUpServer) GetCLI(w http.ResponseWriter, req *http.Request) {
+	resourceID := req.FormValue("resource_id")
+
+	state := s.store.RLockState()
+	cmd, ok := state.CLIManifests[model.ManifestName(resourceID)]
+	s.store.RUnlockState()
+	if !ok {
+		http.Error(w, fmt.Sprintf("no cli_resource for %q", resourceID), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	err := json.NewEncoder(w).Encode(map[string]string{"cmd": cmd})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error rendering get pod payload: %v", err), http.StatusInternalServerError)
 	}
 }
 

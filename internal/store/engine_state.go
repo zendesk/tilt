@@ -35,6 +35,12 @@ type EngineState struct {
 	CurrentlyBuilding map[model.ManifestName]bool
 	WatchFiles        bool
 
+	// We store CLI Manifests in the same namespace as manifests to prevent confusion.
+	// But they aren't full Manifests: we don't run them in Tilt, and don't want them showing up
+	// in the UI. This choice gives us the most flexibility to combine them in some way
+	// in the future, but without having to maintain them as full manifests now.
+	CLIManifests map[model.ManifestName]string
+
 	// For synchronizing BuildController -- wait until engine records all builds started
 	// so far before starting another build
 	StartedBuildCount int

@@ -46,11 +46,12 @@ func Execute() {
 	addCommand(rootCmd, &downCmd{})
 	addCommand(rootCmd, &versionCmd{})
 	addCommand(rootCmd, &dockerPruneCmd{})
-	addCommand(rootCmd, newArgsCmd())
 
 	rootCmd.AddCommand(analytics.NewCommand())
 	rootCmd.AddCommand(newKubectlCmd())
 	rootCmd.AddCommand(newDumpCmd())
+	rootCmd.AddCommand(newGetCmd())
+	rootCmd.AddCommand(newRunCmd())
 
 	if len(os.Args) > 2 && os.Args[1] == "kubectl" {
 		// Hack in global flags from kubectl

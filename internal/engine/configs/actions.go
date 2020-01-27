@@ -21,6 +21,7 @@ type ConfigsReloadedAction struct {
 	Manifests          []model.Manifest
 	TiltIgnoreContents string
 	ConfigFiles        []string
+	CLIManifests       map[model.ManifestName]string
 
 	FinishTime           time.Time
 	Err                  error

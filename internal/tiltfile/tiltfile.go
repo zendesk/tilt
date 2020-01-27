@@ -22,9 +22,11 @@ import (
 	"github.com/windmilleng/tilt/internal/ospath"
 	"github.com/windmilleng/tilt/internal/sliceutils"
 	tiltfileanalytics "github.com/windmilleng/tilt/internal/tiltfile/analytics"
+	"github.com/windmilleng/tilt/internal/tiltfile/cli"
 	"github.com/windmilleng/tilt/internal/tiltfile/dockerprune"
 	"github.com/windmilleng/tilt/internal/tiltfile/io"
 	"github.com/windmilleng/tilt/internal/tiltfile/k8scontext"
+	"github.com/windmilleng/tilt/internal/tiltfile/starkit"
 	"github.com/windmilleng/tilt/internal/tiltfile/telemetry"
 	"github.com/windmilleng/tilt/internal/tiltfile/value"
 	"github.com/windmilleng/tilt/internal/tiltfile/version"
@@ -44,6 +46,7 @@ type TiltfileLoadResult struct {
 	Manifests           []model.Manifest
 	ConfigFiles         []string
 	TiltIgnoreContents  string
+	CLIManifests        map[model.ManifestName]string
 	FeatureFlags        map[string]bool
 	TeamName            string
 	TelemetrySettings   model.TelemetrySettings
@@ -163,6 +166,8 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, userConfigS
 	ioState, _ := io.GetState(result)
 	tlr.ConfigFiles = sliceutils.AppendWithoutDupes(ioState.Files, s.postExecReadFiles...)
 
+	tlr.CLIManifests, err = tfl.checkCLIManifests(manifests, result, err)
+
 	dps, _ := dockerprune.GetState(result)
 	tlr.DockerPruneSettings = dps
 
@@ -189,6 +194,33 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, userConfigS
 	tfl.reportTiltfileLoaded(s.builtinCallCounts, s.builtinArgCounts, duration)
 
 	return tlr
+}
+
+func (tfl tiltfileLoader) checkCLIManifests(manifests []model.Manifest, m starkit.Model, prevErr error) (r map[model.ManifestName]string, err error) {
+	defer func() {
+		// don't let CLI collision error overshadow error from loading manifests
+		if prevErr != nil {
+			err = prevErr
+		}
+	}()
+	tmp, err := cli.GetState(m)
+	if err != nil {
+		return nil, err
+	}
+
+	existing := make(map[model.ManifestName]bool)
+	for _, m := range manifests {
+		existing[m.Name] = true
+	}
+
+	r = make(map[model.ManifestName]string)
+	for k, v := range tmp {
+		if existing[model.ManifestName(k)] {
+			return nil, fmt.Errorf("CLI Resource %v conflicts with existing resource", k)
+		}
+		r[model.ManifestName(k)] = v
+	}
+	return r, nil
 }
 
 // .tiltignore sits next to Tiltfile
