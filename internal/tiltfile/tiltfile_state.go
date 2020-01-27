@@ -26,6 +26,7 @@ import (
 	"github.com/windmilleng/tilt/internal/tiltfile/analytics"
 	"github.com/windmilleng/tilt/internal/tiltfile/config"
 	"github.com/windmilleng/tilt/internal/tiltfile/dockerprune"
+	"github.com/windmilleng/tilt/internal/tiltfile/extension"
 	"github.com/windmilleng/tilt/internal/tiltfile/git"
 	"github.com/windmilleng/tilt/internal/tiltfile/include"
 	"github.com/windmilleng/tilt/internal/tiltfile/io"
@@ -168,6 +169,11 @@ func (s *tiltfileState) loadManifests(absFilename string, userConfigState model.
 		starlarkstruct.NewExtension(),
 		telemetry.NewExtension(),
 		updatesettings.NewExtension(),
+		extension.NewExtension(
+			s.ctx,
+			extension.NewGithubFetcher(),
+			extension.NewLocalStore(filepath.Dir(absFilename)),
+		),
 	)
 	if err != nil {
 		return nil, result, starkit.UnpackBacktrace(err)

@@ -19,7 +19,7 @@ type Store interface {
 type ModuleContents struct {
 	Name             string
 	TiltfileContents string
-	// Should also have things like the source, versio, date fetched, etc.
+	// Should also have things like the source, version, date fetched, etc.
 }
 
 type LocalStore struct {
