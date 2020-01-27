@@ -22,7 +22,6 @@ import (
 	"github.com/windmilleng/tilt/internal/engine/configs"
 	"github.com/windmilleng/tilt/internal/engine/k8swatch"
 	"github.com/windmilleng/tilt/internal/engine/runtimelog"
-	"github.com/windmilleng/tilt/internal/engine/telemetry"
 	"github.com/windmilleng/tilt/internal/hud"
 	"github.com/windmilleng/tilt/internal/hud/server"
 	"github.com/windmilleng/tilt/internal/k8s"
@@ -109,11 +108,6 @@ func (u Upper) Start(
 		return err
 	}
 
-	var manifestNames []model.ManifestName
-	for _, arg := range args {
-		manifestNames = append(manifestNames, model.ManifestName(arg))
-	}
-
 	configFiles := []string{absTfPath}
 
 	return u.Init(ctx, InitAction{
@@ -148,11 +142,6 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 
 	if state.FatalError != nil {
 		return
-	}
-
-	logAction, isLogAction := action.(store.LogAction)
-	if isLogAction {
-		handleLogAction(state, logAction)
 	}
 
 	var err error
@@ -207,13 +196,8 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleSetTiltfileArgsAction(state, action)
 	case local.LocalServeStatusAction:
 		handleLocalServeStatusAction(ctx, state, action)
-	case store.LogEvent:
-	case telemetry.LogAction:
-	case buildcontrol.BuildLogAction:
-	case configs.TiltfileLogAction:
-	case runtimelog.PodLogAction:
-	case runtimelog.DockerComposeLogAction:
-	// handled as a LogAction, do nothing
+	case store.LogAction:
+		handleLogAction(state, action)
 
 	default:
 		err = fmt.Errorf("unrecognized action: %T", action)
@@ -285,10 +269,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	err := cb.Error
 	if err != nil {
 		s := fmt.Sprintf("Build Failed: %v", err)
-		a := buildcontrol.BuildLogAction{
-			LogEvent: store.NewLogEvent(mt.Manifest.Name, cb.SpanID, logger.ErrorLvl, []byte(s)),
-		}
-		handleLogAction(engineState, a)
+		handleLogAction(engineState, store.NewLogAction(mt.Manifest.Name, cb.SpanID, logger.ErrorLvl, nil, []byte(s)))
 	}
 
 	ms := mt.State
@@ -473,7 +454,7 @@ func handleConfigsReloadStarted(
 	event configs.ConfigsReloadStartedAction,
 ) {
 	filesChanged := []string{}
-	for f, _ := range event.FilesChanged {
+	for f := range event.FilesChanged {
 		filesChanged = append(filesChanged, f)
 	}
 	status := model.BuildRecord{

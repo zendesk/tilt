@@ -274,6 +274,22 @@ k8s_yaml(yaml)
 	assert.Contains(t, f.out.String(), " → kind: Deployment")
 }
 
+func TestLocalQuiet(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+
+	f.setupFoo()
+
+	f.file("Tiltfile", `
+local('echo foobar', quiet=True)
+`)
+
+	f.load()
+
+	assert.Contains(t, f.out.String(), "local: echo foobar")
+	assert.NotContains(t, f.out.String(), " → foobar")
+}
+
 func TestReadFile(t *testing.T) {
 	f := newFixture(t)
 	defer f.TearDown()
@@ -3800,9 +3816,7 @@ k8s_yaml('resource.yaml')
 	m := f.assertNextManifestUnresourced("doggos", "doggos")
 
 	displayNames := []string{}
-	for _, name := range m.K8sTarget().DisplayNames {
-		displayNames = append(displayNames, name)
-	}
+	displayNames = append(displayNames, m.K8sTarget().DisplayNames...)
 	assert.Equal(t, []string{"doggos:service:default::0", "doggos:service:default::1"}, displayNames)
 }
 
@@ -4440,7 +4454,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	// Collect the warnings
-	l := logger.NewFuncLogger(false, logger.DebugLvl, func(level logger.Level, msg []byte) error {
+	l := logger.NewFuncLogger(false, logger.DebugLvl, func(level logger.Level, fields logger.Fields, msg []byte) error {
 		if level == logger.WarnLvl {
 			r.warnings = append(r.warnings, string(msg))
 		}

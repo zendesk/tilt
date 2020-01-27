@@ -42,7 +42,7 @@ describe("LogStore", () => {
     })
 
     expect(logLinesToString(logs.allLog(), true)).toEqual("foo")
-    expect(logs.lineCache.length).toEqual(1)
+    expect(logs.lineCache[0].text).toEqual("foo")
     expect(logs.allLog()[0]).toStrictEqual(logs.allLog()[0])
 
     logs.append({
@@ -53,7 +53,7 @@ describe("LogStore", () => {
     })
 
     expect(logLinesToString(logs.allLog(), true)).toEqual("foobar")
-    expect(logs.lineCache.length).toEqual(1)
+    expect(logs.lineCache[0].text).toEqual("foobar")
   })
 
   it("handles changing levels", () => {
@@ -177,6 +177,36 @@ describe("LogStore", () => {
     })
     expect(logLinesToString(logs.allLog(), true)).toEqual(
       "line1\nline2\nline3\nline4\nline5"
+    )
+  })
+
+  it("handles progressLogs", () => {
+    let logs = new LogStore()
+    logs.append({
+      spans: { "": {} },
+      segments: [
+        { text: "layer 1: Pending\n", fields: { progressID: "layer 1" } },
+        { text: "layer 2: Pending\n", fields: { progressID: "layer 2" } },
+        { text: "layer 3: Pending\n", fields: { progressID: "layer 3" } },
+      ],
+      fromCheckpoint: 0,
+      toCheckpoint: 2,
+    })
+
+    expect(logLinesToString(logs.allLog(), true)).toEqual(
+      "layer 1: Pending\nlayer 2: Pending\nlayer 3: Pending"
+    )
+
+    logs.append({
+      segments: [
+        { text: "layer 2: Finished\n", fields: { progressID: "layer 2" } },
+      ],
+      fromCheckpoint: 2,
+      toCheckpoint: 3,
+    })
+
+    expect(logLinesToString(logs.allLog(), true)).toEqual(
+      "layer 1: Pending\nlayer 2: Finished\nlayer 3: Pending"
     )
   })
 })

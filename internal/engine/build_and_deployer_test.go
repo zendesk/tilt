@@ -132,7 +132,7 @@ func TestSyncletNamespaceGKE(t *testing.T) {
 
 	changed := f.WriteFile("a.txt", "a")
 	bs := resultToStateSet(result, []string{changed}, cInfo)
-	result, err = f.bd.BuildAndDeploy(f.ctx, f.st, buildTargets(manifest), bs)
+	_, err = f.bd.BuildAndDeploy(f.ctx, f.st, buildTargets(manifest), bs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestNoFallbackForDontFallBackError(t *testing.T) {
 	targets := buildTargets(manifest)
 	_, err := f.bd.BuildAndDeploy(f.ctx, f.st, targets, bs)
 	if err == nil {
-		t.Errorf("Expected this error to fail fallback tester and propogate back up")
+		t.Errorf("Expected this error to fail fallback tester and propagate back up")
 	}
 
 	if f.docker.BuildCount != 0 {

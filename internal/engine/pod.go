@@ -257,7 +257,7 @@ func checkForContainerCrash(ctx context.Context, state *store.EngineState, mt *s
 	ms.NeedsRebuildFromCrash = true
 	ms.LiveUpdatedContainerIDs = container.NewIDSet()
 	msg := fmt.Sprintf("Detected a container change for %s. We could be running stale code. Rebuilding and deploying a new image.", ms.Name)
-	le := store.NewLogEvent(ms.Name, ms.LastBuild().SpanID, logger.WarnLvl, []byte(msg+"\n"))
+	le := store.NewLogAction(ms.Name, ms.LastBuild().SpanID, logger.WarnLvl, nil, []byte(msg+"\n"))
 	handleLogAction(state, le)
 }
 
@@ -285,6 +285,10 @@ func prunePods(ms *store.ManifestState) {
 		}
 
 		// found nothing to delete, break out
+		// NOTE(dmiller): above comment is probably erroneous, but disabling this check because I'm not sure if this is safe to change
+		// original static analysis error:
+		// SA4004: the surrounding loop is unconditionally terminated (staticcheck)
+		//nolint:staticcheck
 		return
 	}
 }

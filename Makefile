@@ -1,6 +1,5 @@
 .PHONY: all proto install lint test test-go check-js test-js integration wire-check wire ensure check-go goimports proto-webview proto-webview-ts vendor
 
-check-go: lint errcheck verify_goimports wire-check test-go
 all: check-go check-js test-js
 
 # There are 2 Go bugs that cause problems on CI:
@@ -48,8 +47,7 @@ synclet-dev: synclet-cache
 
 build-synclet-and-install: synclet-dev install-dev
 
-lint:
-	go vet -mod vendor -all -printfuncs=Verbosef,Infof,Debugf,PrintColorf ./...
+lint: golangci-lint
 
 build:
 	go test -mod vendor -p $(GO_PARALLEL_JOBS) -timeout 60s ./... -run nonsenseregex
@@ -70,8 +68,6 @@ else
 		gotestsum --format standard-quiet --junitfile test-results/unit-tests.xml -- ./internal/tiltfile -mod vendor -p $(GO_PARALLEL_JOBS) -timeout 80s -run "(?i)(.*)Helm(.*)"
 endif
 
-
-
 test: test-go test-js
 
 # skip some tests that are slow and not always relevant
@@ -83,7 +79,7 @@ ifneq ($(CIRCLECI),true)
 		go test -mod vendor -v -count 1 -p $(GO_PARALLEL_JOBS) -tags 'integration' -timeout 700s ./integration
 else
 		mkdir -p test-results
-		gotestsum --format standard-verbose --junitfile test-results/unit-tests.xml -- ./integration -mod vendor -count 1 -p $(GO_PARALLEL_JOBS) -tags 'integration' -timeout 700s
+		gotestsum --format standard-quiet --junitfile test-results/unit-tests.xml -- ./integration -mod vendor -count 1 -p $(GO_PARALLEL_JOBS) -tags 'integration' -timeout 700s
 endif
 
 # Run the integration tests on kind
@@ -105,23 +101,24 @@ build-js:
 
 test-js:
 	cd web && yarn install
+ifneq ($(CIRCLECI),true)
 	cd web && CI=true yarn test
+else
+	cd web && CI=true yarn ci
+endif
 
 goimports:
 	goimports -w -l $(GOIMPORTS_LOCAL_ARG) $$(go list -f {{.Dir}} ./...)
 
-verify_goimports:
-	# any files printed here need to be formatted by running `make goimports`
-	bash -c 'diff <(goimports -l $(GOIMPORTS_LOCAL_ARG) $$(go list -mod=vendor -f {{.Dir}} ./...)) <(echo -n)'
-
 benchmark:
 	go test -mod vendor -run=XXX -bench=. ./...
 
-errcheck:
+golangci-lint:
 ifneq ($(CIRCLECI),true)
-	golangci-lint run
+	golangci-lint run -v
 else
-	golangci-lint run	 --out-format junit-xml
+	mkdir -p test-results
+	golangci-lint run -v --out-format junit-xml > test-results/lint.xml
 endif
 
 wire:
@@ -182,9 +179,3 @@ ensure: vendor
 
 vendor:
 	go mod vendor
-	# Patch client-go with our fixes to the informers.
-	# https://github.com/windmilleng/tilt/issues/2702
-	cp scripts/patch/cache/controller.go.patch vendor/k8s.io/client-go/tools/cache/controller.go
-	cp scripts/patch/cache/patch.go.patch vendor/k8s.io/client-go/tools/cache/patch.go
-	cp scripts/patch/cache/shared_informer.go.patch vendor/k8s.io/client-go/tools/cache/shared_informer.go
-	cp scripts/patch/cache/reflector.go.patch vendor/k8s.io/client-go/tools/cache/reflector.go

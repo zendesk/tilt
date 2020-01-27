@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -29,7 +28,7 @@ import (
 var _ BuildAndDeployer = &ImageBuildAndDeployer{}
 
 type KINDPusher interface {
-	PushToKIND(ctx context.Context, ref reference.NamedTagged, w io.Writer) error
+	PushToKIND(ctx context.Context, ref reference.NamedTagged) error
 }
 
 type cmdKINDPusher struct {
@@ -37,7 +36,7 @@ type cmdKINDPusher struct {
 	clusterName k8s.ClusterName
 }
 
-func (p *cmdKINDPusher) PushToKIND(ctx context.Context, ref reference.NamedTagged, w io.Writer) error {
+func (p *cmdKINDPusher) PushToKIND(ctx context.Context, ref reference.NamedTagged) error {
 	// In Kind5, --name specifies the name of the cluster in the kubeconfig.
 	// In Kind6, the -name parameter is prefixed with 'kind-' before being written to/read from the kubeconfig
 	kindName := string(p.clusterName)
@@ -46,6 +45,7 @@ func (p *cmdKINDPusher) PushToKIND(ctx context.Context, ref reference.NamedTagge
 	}
 
 	cmd := exec.CommandContext(ctx, "kind", "load", "docker-image", ref.String(), "--name", kindName)
+	w := logger.NewMutexWriter(logger.Get(ctx).Writer(logger.InfoLvl))
 	cmd.Stdout = w
 	cmd.Stderr = w
 
@@ -125,7 +125,7 @@ func (ibd *ImageBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.R
 		ibd.analytics.Timer("build.image", time.Since(startTime), tags)
 	}()
 
-	q, err := NewImageTargetQueue(ctx, iTargets, stateSet, ibd.ib.ImageExists)
+	q, err := buildcontrol.NewImageTargetQueue(ctx, iTargets, stateSet, ibd.ib.ImageExists)
 	if err != nil {
 		return store.BuildResultSet{}, err
 	}
@@ -169,7 +169,7 @@ func (ibd *ImageBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.R
 
 	// (If we pass an empty list of refs here (as we will do if only deploying
 	// yaml), we just don't inject any image refs into the yaml, nbd.
-	brs, err := ibd.deploy(ctx, st, ps, iTargetMap, kTarget, q.results, anyLiveUpdate)
+	brs, err := ibd.deploy(ctx, st, ps, iTargetMap, kTarget, q.Results(), anyLiveUpdate)
 	return brs, buildcontrol.WrapDontFallBackError(err)
 }
 
@@ -192,15 +192,13 @@ func (ibd *ImageBuildAndDeployer) push(ctx context.Context, ref reference.NamedT
 	var err error
 	if ibd.env == k8s.EnvKIND5 || ibd.env == k8s.EnvKIND6 {
 		ps.Printf(ctx, "Pushing to KIND")
-		err := ibd.kp.PushToKIND(ctx, ref, ps.Writer(ctx))
+		err := ibd.kp.PushToKIND(ps.AttachLogger(ctx), ref)
 		if err != nil {
 			return nil, fmt.Errorf("Error pushing to KIND: %v", err)
 		}
 	} else {
 		ps.Printf(ctx, "Pushing with Docker client")
-		writer := ps.Writer(ctx)
-		ctx = logger.WithLogger(ctx, logger.NewLogger(logger.InfoLvl, writer))
-		ref, err = ibd.ib.PushImage(ctx, ref, writer)
+		ref, err = ibd.ib.PushImage(ps.AttachLogger(ctx), ref)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +220,8 @@ func (ibd *ImageBuildAndDeployer) deploy(ctx context.Context, st store.RStore, p
 		return nil, err
 	}
 
-	ctx, l := ibd.indentLogger(ctx)
+	ctx = ibd.indentLogger(ctx)
+	l := logger.Get(ctx)
 
 	l.Infof("Applying via kubectl:")
 	for _, displayName := range kTarget.DisplayNames {
@@ -254,11 +253,10 @@ func (ibd *ImageBuildAndDeployer) deploy(ctx context.Context, st store.RStore, p
 	return results, nil
 }
 
-func (ibd *ImageBuildAndDeployer) indentLogger(ctx context.Context) (context.Context, logger.Logger) {
+func (ibd *ImageBuildAndDeployer) indentLogger(ctx context.Context) context.Context {
 	l := logger.Get(ctx)
-	writer := logger.NewPrefixedWriter(logger.Blue(l).Sprint("  │ "), l.Writer(logger.InfoLvl))
-	l = logger.NewLogger(logger.InfoLvl, writer)
-	return logger.WithLogger(ctx, l), l
+	newL := logger.NewPrefixedLogger(logger.Blue(l).Sprint("  │ "), l)
+	return logger.WithLogger(ctx, newL)
 }
 
 func (ibd *ImageBuildAndDeployer) createEntitiesToDeploy(ctx context.Context,

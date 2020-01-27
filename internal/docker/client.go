@@ -457,7 +457,8 @@ func (c *Cli) ImageBuild(ctx context.Context, buildContext io.Reader, options Bu
 				fmt.Errorf("Docker SSH secrets only work on Buildkit, but Buildkit has been disabled")
 		}
 
-		oneTimeSession, err := c.startBuildkitSession(ctx, identity.NewID(), options.SSHSpecs)
+		var err error
+		oneTimeSession, err = c.startBuildkitSession(ctx, identity.NewID(), options.SSHSpecs)
 		if err != nil {
 			return types.ImageBuildResponse{}, errors.Wrapf(err, "ImageBuild")
 		}
@@ -474,6 +475,7 @@ func (c *Cli) ImageBuild(ctx context.Context, buildContext io.Reader, options Bu
 	opts.Dockerfile = options.Dockerfile
 	opts.Tags = options.Tags
 	opts.Target = options.Target
+	opts.NetworkMode = options.Network
 
 	opts.Labels = BuiltByTiltLabel // label all images as built by us
 

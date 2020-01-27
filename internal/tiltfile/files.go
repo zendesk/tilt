@@ -25,13 +25,17 @@ const localLogPrefix = " → "
 
 func (s *tiltfileState) local(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var command string
-	err := s.unpackArgs(fn.Name(), args, kwargs, "command", &command)
+	quiet := false
+	err := s.unpackArgs(fn.Name(), args, kwargs,
+		"command", &command,
+		"quiet?", &quiet,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	s.logger.Infof("local: %s", command)
-	out, err := s.execLocalCmd(thread, exec.Command("sh", "-c", command), true)
+	out, err := s.execLocalCmd(thread, exec.Command("sh", "-c", command), !quiet)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +53,7 @@ func (s *tiltfileState) execLocalCmd(t *starlark.Thread, c *exec.Cmd, logOutput 
 	c.Stderr = stderr
 
 	if logOutput {
-		logOutput := NewMutexWriter(logger.NewPrefixedWriter(localLogPrefix, s.logger.Writer(logger.InfoLvl)))
+		logOutput := logger.NewMutexWriter(logger.NewPrefixedLogger(localLogPrefix, s.logger).Writer(logger.InfoLvl))
 		c.Stdout = io.MultiWriter(stdout, logOutput)
 		c.Stderr = io.MultiWriter(stderr, logOutput)
 	}
@@ -150,6 +154,17 @@ func (s *tiltfileState) helm(thread *starlark.Thread, fn *starlark.Builtin, args
 		return nil, fmt.Errorf("Could not read Helm chart directory %q: %v", localPath, err)
 	} else if !info.IsDir() {
 		return nil, fmt.Errorf("helm() may only be called on directories with Chart.yaml: %q", localPath)
+	}
+
+	deps, err := localSubchartDependenciesFromPath(localPath)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range deps {
+		err = tiltfile_io.RecordReadFile(thread, starkit.AbsPath(thread, d))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	version, err := getHelmVersion()

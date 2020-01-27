@@ -38,7 +38,6 @@ type fixture struct {
 	cancel        func()
 	dir           string
 	logs          *bufsync.ThreadSafeBuffer
-	cmds          []*exec.Cmd
 	originalFiles map[string]string
 	tilt          *TiltDriver
 	activeTiltUp  *TiltUpResponse
@@ -74,6 +73,10 @@ func newFixture(t *testing.T, dir string) *fixture {
 	}
 
 	return f
+}
+
+func (f *fixture) testDirPath(s string) string {
+	return filepath.Join(f.dir, s)
 }
 
 func (f *fixture) installTilt() {
@@ -180,7 +183,7 @@ func (f *fixture) TiltWatchExec() {
 }
 
 func (f *fixture) ReplaceContents(fileBaseName, original, replacement string) {
-	file := filepath.Join(f.dir, fileBaseName)
+	file := f.testDirPath(fileBaseName)
 	contentsBytes, err := ioutil.ReadFile(file)
 	if err != nil {
 		f.t.Fatal(err)

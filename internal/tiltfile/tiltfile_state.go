@@ -95,8 +95,7 @@ type tiltfileState struct {
 	// for error reporting in case it's called twice
 	triggerModeCallPosition syntax.Position
 
-	teamName     string
-	telemetryCmd model.Cmd
+	teamName string
 
 	logger                           logger.Logger
 	warnedDeprecatedResourceAssembly bool
@@ -228,9 +227,8 @@ to your Tiltfile. Otherwise, switch k8s contexts and restart Tilt.`, kubeContext
 		return nil, starkit.Model{}, err
 	}
 
-	yamlManifest := model.Manifest{}
 	if len(unresourced) > 0 {
-		yamlManifest, err = k8s.NewK8sOnlyManifest(model.UnresourcedYAMLManifestName, unresourced)
+		yamlManifest, err := k8s.NewK8sOnlyManifest(model.UnresourcedYAMLManifestName, unresourced)
 		if err != nil {
 			return nil, starkit.Model{}, err
 		}
@@ -1020,9 +1018,7 @@ func (s *tiltfileState) validateLiveUpdate(iTarget model.ImageTarget, g model.Ta
 			return nil
 		}
 
-		for _, dep := range current.Dependencies() {
-			watchedPaths = append(watchedPaths, dep)
-		}
+		watchedPaths = append(watchedPaths, current.Dependencies()...)
 		return nil
 	})
 	if err != nil {
@@ -1097,6 +1093,7 @@ func (s *tiltfileState) imgTargetsForDependencyIDsHelper(ids []model.TargetID, c
 				LiveUpdate:  lu,
 				TargetStage: model.DockerBuildTarget(image.targetStage),
 				SSHSpecs:    image.sshSpecs,
+				Network:     image.network,
 			})
 		case CustomBuild:
 			r := model.CustomBuild{

@@ -9,44 +9,12 @@ import { LogLine } from "./types"
 // Firestore doesn't properly handle maps with keys equal to the empty string, so
 // we normalize all empty span ids to '_' client-side.
 const defaultSpanId = "_"
+const fieldNameProgressId = "progressID"
 
 type LogSpan = {
   manifestName: string
-  lastSegmentIndex: number
-  firstSegmentIndex: number
-  lastGlobalLineIndex: number
-}
-
-class LogSegment {
-  spanId: string
-  time: string
-  text: string
-  level: string
-  anchor: boolean
-  continuesLine: boolean
-  globalLineIndex: number
-
-  constructor(seg: Proto.webviewLogSegment) {
-    this.spanId = seg.spanId || defaultSpanId
-    this.time = seg.time ?? ""
-    this.text = seg.text ?? ""
-    this.level = seg.level ?? "INFO"
-    this.anchor = seg.anchor ?? false
-    this.continuesLine = false
-    this.globalLineIndex = -1
-  }
-
-  startsLine() {
-    return !this.continuesLine
-  }
-
-  isComplete() {
-    return this.text[this.text.length - 1] == "\n"
-  }
-
-  canContinueLine(seg: LogSegment) {
-    return this.level == seg.level && this.spanId == seg.spanId
-  }
+  firstLineIndex: number
+  lastLineIndex: number
 }
 
 type LogWarning = {
@@ -55,12 +23,55 @@ type LogWarning = {
   text: string
 }
 
+class StoredLine {
+  spanId: string
+  time: string
+  text: string
+  level: string
+  anchor: boolean
+  fields: { [key: string]: string } | null
+
+  constructor(seg: Proto.webviewLogSegment) {
+    this.spanId = seg.spanId || defaultSpanId
+    this.time = seg.time ?? ""
+    this.text = seg.text ?? ""
+    this.level = seg.level ?? "INFO"
+    this.anchor = seg.anchor ?? false
+    this.fields = (seg.fields as { [key: string]: string }) ?? null
+  }
+
+  field(key: string) {
+    if (!this.fields) {
+      return ""
+    }
+    return this.fields[key] ?? ""
+  }
+
+  isComplete() {
+    return this.text[this.text.length - 1] == "\n"
+  }
+
+  canContinueLine(other: StoredLine) {
+    return this.level == other.level && this.spanId == other.spanId
+  }
+}
+
 class LogStore {
-  spans: { [key: string]: LogSpan }
-  segments: LogSegment[]
-  lineCache: LogLine[]
+  // Track which segments we've received from the server.
   checkpoint: number
-  lastGlobalLineIndex: number
+
+  spans: { [key: string]: LogSpan }
+
+  // These are held in-memory so we can send them on snapshot, but
+  // aren't used in rendering.
+  segments: Proto.webviewLogSegment[]
+
+  // As segments are appended, we fold them into our internal line-by-line model
+  // for rendering.
+  lines: StoredLine[]
+
+  // A cache of the react data model
+  lineCache: { [key: number]: LogLine }
 
   // We index all the warnings up-front by span id.
   warningIndex: { [key: string]: LogWarning[] }
@@ -68,10 +79,10 @@ class LogStore {
   constructor() {
     this.spans = {}
     this.segments = []
+    this.lines = []
     this.checkpoint = 0
     this.warningIndex = {}
-    this.lineCache = []
-    this.lastGlobalLineIndex = -1
+    this.lineCache = {}
   }
 
   warnings(spanId: string): LogWarning[] {
@@ -121,28 +132,23 @@ class LogStore {
     for (let key in newSpans) {
       let spanId = key || defaultSpanId
       let existingSpan = this.spans[spanId]
-      if (
-        existingSpan &&
-        existingSpan.lastGlobalLineIndex != -1 &&
-        this.lineCache.length >= existingSpan.lastGlobalLineIndex
-      ) {
-        // Truncate the log line cache so that we regenerate the line.
-        this.lineCache.length = existingSpan.lastGlobalLineIndex
-      }
-
       if (!existingSpan) {
         this.spans[spanId] = {
           manifestName: newSpans[key].manifestName ?? "",
-          firstSegmentIndex: -1,
-          lastSegmentIndex: -1,
-          lastGlobalLineIndex: -1,
+          firstLineIndex: -1,
+          lastLineIndex: -1,
         }
       }
     }
 
-    newSegments.forEach(segment => {
-      let newSegment = new LogSegment(segment)
-      let span = this.spans[newSegment.spanId]
+    newSegments.forEach(newSegment => {
+      // workaround firestore bug. see comments on defaultSpanId.
+      newSegment.spanId = newSegment.spanId || defaultSpanId
+      this.segments.push(newSegment)
+
+      let candidate = new StoredLine(newSegment)
+      let spanId = candidate.spanId
+      let span = this.spans[spanId]
       if (!span) {
         // If we don't have the span for this log, we can't meaningfully print it,
         // so just drop it. This means that there's a bug on the server, and
@@ -150,29 +156,65 @@ class LogStore {
         return
       }
       let isStartingNewLine = false
-      if (span.lastSegmentIndex == -1) {
+      if (span.lastLineIndex == -1) {
         isStartingNewLine = true
       } else {
-        let seg = this.segments[span.lastSegmentIndex]
-        if (seg.isComplete() || !seg.canContinueLine(newSegment)) {
+        let line = this.lines[span.lastLineIndex]
+        if (this.maybeOverwriteLine(candidate, span)) {
+          return
+        } else if (line.isComplete() || !line.canContinueLine(candidate)) {
           isStartingNewLine = true
+        } else {
+          line.text += candidate.text
+          delete this.lineCache[span.lastLineIndex]
+          return
         }
       }
 
-      if (span.firstSegmentIndex == -1) {
-        span.firstSegmentIndex = this.segments.length
+      if (span.firstLineIndex == -1) {
+        span.firstLineIndex = this.lines.length
       }
-      span.lastSegmentIndex = this.segments.length
 
       if (isStartingNewLine) {
-        this.lastGlobalLineIndex++
-        newSegment.globalLineIndex = this.lastGlobalLineIndex
-        span.lastGlobalLineIndex = this.lastGlobalLineIndex
+        span.lastLineIndex = this.lines.length
+        this.lines.push(candidate)
+      }
+    })
+  }
+
+  // If this line has a progress id, see if we can overwrite a previous line.
+  // Return true if we were able to overwrite the line successfully.
+  private maybeOverwriteLine(candidate: StoredLine, span: LogSpan): boolean {
+    let progressId = candidate.field(fieldNameProgressId)
+    if (!progressId) {
+      return false
+    }
+
+    // Iterate backwards and figure out which line to overwrite.
+    for (let i = span.lastLineIndex - 1; i >= span.firstLineIndex; i--) {
+      let cur = this.lines[i]
+      if (cur.spanId != candidate.spanId) {
+        // skip lines from other spans
+        // TODO(nick): maybe we should track if spans are interleaved, and rearrange the
+        // lines to make more sense?
+        continue
       }
 
-      newSegment.continuesLine = !isStartingNewLine
-      this.segments.push(newSegment)
-    })
+      // If we're outside the "progress" zone, we couldn't find it.
+      let curProgressId = cur.field(fieldNameProgressId)
+      if (!curProgressId) {
+        return false
+      }
+
+      if (progressId != curProgressId) {
+        continue
+      }
+
+      cur.text = candidate.text
+      delete this.lineCache[i]
+      return true
+    }
+    return false
   }
 
   allLog(): LogLine[] {
@@ -224,7 +266,7 @@ class LogStore {
     // This can have some O(n^2) perf characteristics in the worst case, but
     // for normal inputs should be fine.
     let startIndex = 0
-    let lastIndex = this.segments.length - 1
+    let lastIndex = this.lines.length - 1
     let isFilteredLog =
       Object.keys(spansToLog).length != Object.keys(this.spans).length
     if (isFilteredLog) {
@@ -234,12 +276,12 @@ class LogStore {
         let span = spansToLog[spanId]
         if (
           earliestStartIndex == -1 ||
-          span.firstSegmentIndex < earliestStartIndex
+          span.firstLineIndex < earliestStartIndex
         ) {
-          earliestStartIndex = span.firstSegmentIndex
+          earliestStartIndex = span.firstLineIndex
         }
-        if (latestEndIndex == -1 || span.lastSegmentIndex > latestEndIndex) {
-          latestEndIndex = span.lastSegmentIndex
+        if (latestEndIndex == -1 || span.lastLineIndex > latestEndIndex) {
+          latestEndIndex = span.lastLineIndex
         }
       }
 
@@ -253,76 +295,32 @@ class LogStore {
 
     let currentLine = {}
     for (let i = startIndex; i <= lastIndex; i++) {
-      let segment = this.segments[i]
-      if (!segment.startsLine()) {
-        continue
-      }
-
-      let spanId = segment.spanId
+      let storedLine = this.lines[i]
+      let spanId = storedLine.spanId
       let span = spansToLog[spanId]
       if (!span) {
         continue
       }
 
-      let line = this.lineCache[segment.globalLineIndex]
+      let line = this.lineCache[i]
       if (!line) {
-        line = this.createLogLineHelper(i, segment, span)
-        this.lineCache[segment.globalLineIndex] = line
+        let text = storedLine.text
+        // strip off the newline
+        if (text[text.length - 1] == "\n") {
+          text = text.substring(0, text.length - 1)
+        }
+        line = {
+          text: text,
+          level: storedLine.level,
+          manifestName: span.manifestName,
+        }
+        this.lineCache[i] = line
       }
+
       result.push(line)
     }
 
     return result
-  }
-
-  private createLogLineHelper(
-    i: number,
-    segment: LogSegment,
-    span: LogSpan
-  ): LogLine {
-    let spanId = segment.spanId
-    let currentLine = {
-      manifestName: span.manifestName,
-      text: segment.text,
-      level: segment.level,
-    }
-
-    // If this segment is complete, we can return right now.
-    if (segment.isComplete()) {
-      // strip off the newline
-      currentLine.text = currentLine.text.substring(
-        0,
-        currentLine.text.length - 1
-      )
-      return currentLine
-    }
-
-    // Otherwise, if this segment is not complete, run ahead and complete the rest of the line.
-    for (
-      let currentIndex = i + 1;
-      currentIndex <= span.lastSegmentIndex;
-      currentIndex++
-    ) {
-      let currentSeg = this.segments[currentIndex]
-      if (currentSeg.spanId != spanId) {
-        continue
-      }
-
-      if (!currentSeg.canContinueLine(segment)) {
-        break
-      }
-
-      currentLine.text += currentSeg.text
-      if (currentSeg.isComplete()) {
-        // strip off the newline
-        currentLine.text = currentLine.text.substring(
-          0,
-          currentLine.text.length - 1
-        )
-        break
-      }
-    }
-    return currentLine
   }
 }
 

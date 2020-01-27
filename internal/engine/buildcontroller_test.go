@@ -86,7 +86,7 @@ func TestBuildControllerTooManyPodsForDockerBuildNoErrorMessage(t *testing.T) {
 	manifest := NewSanchoDockerBuildManifest(f)
 	f.Start([]model.Manifest{manifest}, true)
 
-	// intial build
+	// initial build
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
 	assert.Equal(t, []string{}, call.oneState().FilesChanged())
@@ -650,7 +650,7 @@ func TestBuildQueueOrdering(t *testing.T) {
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest3"})
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest4"})
 
-	for i, _ := range manifests {
+	for i := range manifests {
 		expName := fmt.Sprintf("manifest%d", i+1)
 		call := f.nextCall()
 		imgID := call.firstImgTarg().ID().String()
@@ -709,7 +709,7 @@ func TestBuildQueueAndAutobuildOrdering(t *testing.T) {
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest3"})
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest4"})
 
-	for i, _ := range manifests {
+	for i := range manifests {
 		call := f.nextCall()
 		assert.True(t, strings.HasSuffix(call.firstImgTarg().ID().String(), fmt.Sprintf("manifest%d", i+1)))
 

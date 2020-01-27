@@ -151,7 +151,7 @@ func (c buildAndDeployCall) oneState() store.BuildState {
 	for _, v := range c.state {
 		return v
 	}
-	panic("space/time has unravelled, sorry")
+	panic("space/time has unraveled, sorry")
 }
 
 type fakeBuildAndDeployer struct {
@@ -366,6 +366,7 @@ func TestUpper_UpK8sEntityOrdering(t *testing.T) {
 	defer f.TearDown()
 
 	postgresEntities, err := k8s.ParseYAMLFromString(testyaml.PostgresYAML)
+	require.NoError(t, err)
 	yaml, err := k8s.SerializeSpecYAML(postgresEntities[:3]) // only take entities that don't belong to a workload
 	require.NoError(t, err)
 	f.WriteFile("Tiltfile", `k8s_yaml('postgres.yaml')`)
@@ -1203,7 +1204,7 @@ func TestDisabledHudUpdated(t *testing.T) {
 
 	// Log something new, make sure it's reflected in the # processed bytes
 	msg := []byte("hello world!\n")
-	f.store.Dispatch(store.NewGlobalLogEvent(logger.InfoLvl, msg))
+	f.store.Dispatch(store.NewGlobalLogAction(logger.InfoLvl, msg))
 	time.Sleep(5 * time.Millisecond)
 
 	checkpointDiff := f.disabledHud().ProcessedLogs - oldCheckpoint
@@ -1321,10 +1322,8 @@ func TestPodEventOrdering(t *testing.T) {
 				f.store.Dispatch(k8swatch.NewPodChangeAction(pb.Build(), manifest.Name, pb.DeploymentUID()))
 			}
 
-			f.upper.store.Dispatch(runtimelog.PodLogAction{
-				PodID:    podBNow.PodID(),
-				LogEvent: store.NewLogEvent("fe", runtimelog.SpanIDForPod(podBNow.PodID()), logger.InfoLvl, []byte("pod b log\n")),
-			})
+			f.upper.store.Dispatch(
+				store.NewLogAction("fe", runtimelog.SpanIDForPod(podBNow.PodID()), logger.InfoLvl, nil, []byte("pod b log\n")))
 
 			f.WaitUntil("pod log seen", func(state store.EngineState) bool {
 				ms, _ := state.ManifestState("fe")
@@ -2866,12 +2865,10 @@ func TestBuildLogAction(t *testing.T) {
 		SpanID:       SpanIDForBuildLog(1),
 	})
 
-	f.store.Dispatch(buildcontrol.BuildLogAction{
-		LogEvent: store.NewLogEvent(manifest.Name, SpanIDForBuildLog(1), logger.InfoLvl, []byte(`a
+	f.store.Dispatch(store.NewLogAction(manifest.Name, SpanIDForBuildLog(1), logger.InfoLvl, nil, []byte(`a
 bc
 def
-ghij`)),
-	})
+ghij`)))
 
 	f.WaitUntil("log appears", func(es store.EngineState) bool {
 		ms, _ := es.ManifestState("alert-injester")
@@ -3222,9 +3219,7 @@ func TestTelemetryLogAction(t *testing.T) {
 
 	f.Start([]model.Manifest{}, true)
 
-	f.store.Dispatch(telemetry.LogAction{
-		LogEvent: store.NewLogEvent(model.TiltfileManifestName, "0", logger.InfoLvl, []byte("testing")),
-	})
+	f.store.Dispatch(store.NewLogAction(model.TiltfileManifestName, "0", logger.InfoLvl, nil, []byte("testing")))
 
 	f.WaitUntil("log is stored", func(state store.EngineState) bool {
 		l := state.LogStore.ManifestLog(store.TiltfileManifestName)
@@ -3791,10 +3786,7 @@ func (f *testFixture) startPod(pod *v1.Pod, manifestName model.ManifestName) {
 
 func (f *testFixture) podLog(pod *v1.Pod, manifestName model.ManifestName, s string) {
 	podID := k8s.PodID(pod.Name)
-	f.upper.store.Dispatch(runtimelog.PodLogAction{
-		PodID:    podID,
-		LogEvent: store.NewLogEvent(manifestName, runtimelog.SpanIDForPod(podID), logger.InfoLvl, []byte(s+"\n")),
-	})
+	f.upper.store.Dispatch(store.NewLogAction(manifestName, runtimelog.SpanIDForPod(podID), logger.InfoLvl, nil, []byte(s+"\n")))
 
 	f.WaitUntil("pod log seen", func(es store.EngineState) bool {
 		ms, _ := es.ManifestState(manifestName)

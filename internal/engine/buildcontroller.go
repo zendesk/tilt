@@ -166,10 +166,8 @@ type BuildLogActionWriter struct {
 	spanID       logstore.SpanID
 }
 
-func (w BuildLogActionWriter) Write(level logger.Level, p []byte) error {
-	w.store.Dispatch(buildcontrol.BuildLogAction{
-		LogEvent: store.NewLogEvent(w.manifestName, w.spanID, level, p),
-	})
+func (w BuildLogActionWriter) Write(level logger.Level, fields logger.Fields, p []byte) error {
+	w.store.Dispatch(store.NewLogAction(w.manifestName, w.spanID, level, fields, p))
 	return nil
 }
 
