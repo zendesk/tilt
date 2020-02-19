@@ -75,6 +75,30 @@ const barberpole = keyframes`
   }
 `
 
+let SidebarHeader = styled.header`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: ${SizeUnit(0.5)};
+  margin-bottom: ${SizeUnit(0.5)};
+`
+let SidebarAccount = styled.button`
+  background-color: transparent;
+  border: 0 none;
+  display: flex;
+  align-items: center;
+`
+let SidebarAccountIcon = styled.div`
+  background-color: ${Color.grayLight};
+  width: ${Width.badge}px;
+  height: ${Width.badge}px;
+  border-radius: ${Width.badge}px;
+`
+let SidebarAccountText = styled.span`
+  color: ${Color.white};
+  margin-right: ${SizeUnit(0.25)};
+`
+
 let SidebarResources = styled.nav`
   flex: 1 0 auto;
   margin-left: ${SizeUnit(0.2)};
@@ -139,7 +163,6 @@ let SidebarItemLink = styled(Link)`
 
 let SidebarItemAll = styled(SidebarItemStyle)`
   text-transform: uppercase;
-  margin-top: ${SizeUnit(0.5)};
   margin-bottom: ${SizeUnit(0.2)};
 `
 
@@ -275,6 +298,13 @@ class Sidebar extends PureComponent<SidebarProps> {
     return (
       <section className={classes.join(" ")}>
         <SidebarResources className="Sidebar-resources">
+          <SidebarHeader>
+            {/*TODO(dan) - Account icon should change once tiltfile_id is set */}
+            <SidebarAccount>
+              <SidebarAccountText>Account</SidebarAccountText>
+              <SidebarAccountIcon>&nbsp;</SidebarAccountIcon>
+            </SidebarAccount>
+          </SidebarHeader>
           <SidebarList>
             {allItem}
             {listItems}
