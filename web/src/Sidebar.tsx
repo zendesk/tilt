@@ -33,7 +33,9 @@ class SidebarItem {
   isTiltfile: boolean
   status: ResourceStatus
   hasEndpoints: boolean
+  hasLiveUpdate: boolean
   lastBuildDur: Date | null
+  lastBuildUpdateTypes: string[]
   lastDeployTime: string
   pendingBuildSince: string
   currentBuildStartTime: string
@@ -54,10 +56,12 @@ class SidebarItem {
     this.isTiltfile = !!res.isTiltfile
     this.status = combinedStatus(res)
     this.hasEndpoints = (res.endpoints || []).length > 0
+    this.hasLiveUpdate = hasLiveUpdate(res) // this feels like it should be res.hasLiveUpdate()?
     this.lastBuildDur =
       lastBuild && lastBuild.startTime && lastBuild.finishTime
         ? timeDiff(lastBuild.startTime, lastBuild.finishTime)
         : null
+    this.lastBuildUpdateTypes = lastBuild && lastBuild.updateTypes ? lastBuild.updateTypes : []
     this.lastDeployTime = res.lastDeployTime ?? ""
     this.pendingBuildSince = res.pendingBuildSince ?? ""
     this.currentBuildStartTime = res.currentBuild?.startTime ?? ""
@@ -67,6 +71,33 @@ class SidebarItem {
     this.queued = !!res.queued
     this.lastBuild = lastBuild
   }
+
+  lastBuildHadLiveUpdate(): boolean{
+    if (!this || !this.lastBuildUpdateTypes || this.lastBuildUpdateTypes.length == 0) {
+      return false
+    }
+
+    for (let i = 0; i < this.lastBuildUpdateTypes.length; i++) {
+      // ~~~ TODO(MAIA): there should be a better way of handling this enum? Or do we just have to hardcode?
+      if (this.lastBuildUpdateTypes[i] === "UPDATE_TYPE_LIVE_UPDATE") {
+        return true
+      }
+    }
+    return false
+  }
+}
+
+function hasLiveUpdate(res: Resource): boolean {
+  if (!res || !res.specs || res.specs.length == 0) {
+    return false
+  }
+
+  for (let i = 0; i < res.specs.length; i++) {
+    if (res.specs[i].hasLiveUpdate) {
+      return true
+    }
+  }
+  return false
 }
 
 const barberpole = keyframes`
@@ -236,18 +267,23 @@ class Sidebar extends PureComponent<SidebarProps> {
       if (isSelected) {
         classes += " isSelected"
       }
+      let liveUpdateClass = ""
+      if (item.hasLiveUpdate) {
+        liveUpdateClass = item.lastBuildHadLiveUpdate() ? "lu-run" : "lu-configured-not-run"
+      }
       return (
         <SidebarItemStyle key={item.name} className={classes}>
           <SidebarItemLink
             className="SidebarItem-link"
             to={pb.path(link)}
-            title={item.name}
+            title={item.hasLiveUpdate ? "⚡️" : "🐢"}
           >
             <SidebarIcon status={item.status} alertCount={item.alertCount} />
             <SidebarItemName>{item.name}</SidebarItemName>
             <SidebarTiming>
+
               <SidebarItemDuration
-                className={hasSuccessfullyDeployed ? "" : "empty"}
+                  className={`${liveUpdateClass} ${hasSuccessfullyDeployed ? "" : "isEmpty"}`}
               >
                 {hasSuccessfullyDeployed ? buildDur : "—"}
               </SidebarItemDuration>
