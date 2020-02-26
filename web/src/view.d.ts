@@ -25,6 +25,7 @@ declare namespace Proto {
      * so we can tell when Tilt restarted.
      */
     tiltStartTime?: string;
+    guide?: webviewGuide;
   }
   export interface webviewVersionSettings {
     checkUpdates?: boolean;
@@ -139,6 +140,10 @@ declare namespace Proto {
     allContainersReady?: boolean;
     podRestarts?: number;
     spanId?: string;
+  }
+  export interface webviewGuide {
+    message?: string;
+    buttons?: string[];
   }
   export interface webviewFacet {
     name?: string;

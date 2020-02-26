@@ -2,22 +2,6 @@ import React, { Component } from "react"
 import "./AnalyticsNudge.scss"
 
 const nudgeTimeoutMs = 15000
-const nudgeElem = (): JSX.Element => {
-  return (
-    <p>
-      Welcome to Tilt! We collect anonymized usage data to help us improve. Is
-      that OK? (
-      <a
-        href="https://docs.tilt.dev/telemetry_faq.html"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Read more
-      </a>
-      )
-    </p>
-  )
-}
 const reqInProgMsg = "Okay, making it so..."
 const successOptInElem = (): JSX.Element => {
   return (
@@ -52,7 +36,7 @@ const errorElem = (respBody: string): JSX.Element => {
 }
 
 type AnalyticsNudgeProps = {
-  needsNudge: boolean
+  guide?: Proto.webviewGuide
 }
 
 type AnalyticsNudgeState = {
@@ -79,11 +63,14 @@ class AnalyticsNudge extends Component<
     }
   }
 
-  shouldShow(): boolean {
-    return (
-      (this.props.needsNudge && !this.state.dismissed) ||
-      (!this.state.dismissed && this.state.requestMade)
-    )
+  guideChoice(choice: string) {
+    let url = `//${window.location.host}/api/guide/choice`
+
+    let payload = { choice: choice }
+    fetch(url, {
+      method: "post",
+      body: JSON.stringify(payload),
+    })
   }
 
   analyticsOpt(optIn: boolean) {
@@ -113,81 +100,25 @@ class AnalyticsNudge extends Component<
     })
   }
 
-  dismiss() {
-    this.setState({ dismissed: true })
-  }
-
   messageElem(): JSX.Element {
-    if (this.state.responseCode) {
-      if (this.state.responseCode === 200) {
-        // Successfully called opt endpt.
-        if (this.state.optIn) {
-          // User opted in
-          return (
-            <>
-              {successOptInElem()}
-              <span>
-                <button
-                  className="AnalyticsNudge-button"
-                  onClick={() => this.dismiss()}
-                >
-                  Dismiss
-                </button>
-              </span>
-            </>
-          )
-        }
-        // User opted out
-        return (
-          <>
-            {successOptOutElem()}
-            <span>
-              <button
-                className="AnalyticsNudge-button"
-                onClick={() => this.dismiss()}
-              >
-                Dismiss
-              </button>
-            </span>
-          </>
-        )
-      } else {
-        return (
-          // Error calling the opt endpt.
-          <>
-            {errorElem(this.state.responseBody)}
-            <span>
-              <button
-                className="AnalyticsNudge-button"
-                onClick={() => this.dismiss()}
-              >
-                Dismiss
-              </button>
-            </span>
-          </>
-        )
-      }
-    }
-
-    if (this.state.requestMade) {
-      // Request in progress
-      return <p>{reqInProgMsg}</p>
-    }
     return (
       <>
-        {nudgeElem()}
+        <p>
+          {this.props.guide?.message}!
+        </p>
+
         <span>
           <button
             className="AnalyticsNudge-button"
-            onClick={() => this.analyticsOpt(false)}
-          >
-            Nope
+      onClick={() => this.guideChoice("one")}
+        >
+        one
           </button>
           <button
             className="AnalyticsNudge-button opt-in"
-            onClick={() => this.analyticsOpt(true)}
-          >
-            I'm in
+      onClick={() => this.guideChoice("two")}
+        >
+        two
           </button>
         </span>
       </>
@@ -195,7 +126,7 @@ class AnalyticsNudge extends Component<
   }
   render() {
     let classes = ["AnalyticsNudge"]
-    if (this.shouldShow()) {
+    if (this.props.guide?.message) {
       classes.push("is-visible")
     }
 

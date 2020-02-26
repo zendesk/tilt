@@ -141,7 +141,11 @@ func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*
 	}
 
 	ret.LogList = logList
-	ret.NeedsAnalyticsNudge = NeedsNudge(s)
+	// ret.NeedsAnalyticsNudge = NeedsNudge(s)
+	ret.Guide = &proto_webview.Guide{
+		Message: "hello world",
+		Buttons: []string{"next", "close"},
+	}
 	ret.RunningTiltBuild = &proto_webview.TiltBuild{
 		Version:   s.TiltBuildInfo.Version,
 		CommitSHA: s.TiltBuildInfo.CommitSHA,

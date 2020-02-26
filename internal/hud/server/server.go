@@ -89,6 +89,7 @@ func ProvideHeadsUpServer(
 	r.HandleFunc("/ws/view", s.ViewWebsocket)
 	r.HandleFunc("/api/user_started_tilt_cloud_registration", s.userStartedTiltCloudRegistration)
 	r.HandleFunc("/api/set_tiltfile_args", s.HandleSetTiltfileArgs).Methods("POST")
+	r.HandleFunc("/api/guide/choice", s.HandleGuideChoice).Methods("POST")
 
 	r.PathPrefix("/").Handler(s.cookieWrapper(assetServer))
 
@@ -190,6 +191,28 @@ func (s *HeadsUpServer) HandleAnalyticsOpt(w http.ResponseWriter, req *http.Requ
 	}
 
 	s.store.Dispatch(store.AnalyticsUserOptAction{Opt: opt})
+}
+
+type guideChoiceRequest struct {
+	Choice string
+}
+
+func (s *HeadsUpServer) HandleGuideChoice(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "must be POST request", http.StatusBadRequest)
+		return
+	}
+
+	var payload guideChoiceRequest
+
+	decoder := json.NewDecoder(req.Body)
+	err := decoder.Decode(&payload)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error parsing JSON payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	s.store.Dispatch(store.GuideChoiceAction{Choice: payload.Choice})
 }
 
 func (s *HeadsUpServer) HandleAnalytics(w http.ResponseWriter, req *http.Request) {

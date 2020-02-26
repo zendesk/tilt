@@ -76,6 +76,9 @@ type EngineState struct {
 	AnalyticsTiltfileOpt   analytics.Opt // Set by the Tiltfile. Overrides the UserOpt.
 	AnalyticsNudgeSurfaced bool          // this flag is set the first time we show the analytics nudge to the user.
 
+	// Guide Info
+	Guide GuideState
+
 	Features map[string]bool
 
 	Secrets model.SecretSet

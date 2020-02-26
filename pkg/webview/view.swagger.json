@@ -186,6 +186,20 @@
         }
       }
     },
+    "webviewGuide": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "buttons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "webviewK8sResourceInfo": {
       "type": "object",
       "properties": {
@@ -582,6 +596,9 @@
           "type": "string",
           "format": "date-time",
           "description": "Allows us to synchronize on a running Tilt intance,\nso we can tell when Tilt restarted."
+        },
+        "guide": {
+          "$ref": "#/definitions/webviewGuide"
         }
       }
     },

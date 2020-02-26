@@ -149,6 +149,11 @@ message TiltBuild {
   bool dev = 4;
 }
 
+message Guide {
+  string message = 1;
+  repeated string buttons = 2;
+}
+
 message VersionSettings {
   bool check_updates = 1;
 }
@@ -180,6 +185,8 @@ message View {
   // Allows us to synchronize on a running Tilt intance,
   // so we can tell when Tilt restarted.
   google.protobuf.Timestamp tilt_start_time = 14;
+
+  Guide guide = 15;
 }
 
 message GetViewRequest {}

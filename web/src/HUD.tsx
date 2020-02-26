@@ -224,6 +224,7 @@ class HUD extends Component<HudProps, HudState> {
     let view = this.state.view
 
     let needsNudge = view?.needsAnalyticsNudge ?? false
+    let guide = view?.guide ?? undefined
     let logStore = this.state.logStore ?? null
     let resources = view?.resources ?? []
     if (!resources?.length) {
@@ -255,7 +256,7 @@ class HUD extends Component<HudProps, HudState> {
 
     return (
       <div className={hudClasses.join(" ")}>
-        <AnalyticsNudge needsNudge={needsNudge} />
+        <AnalyticsNudge guide={guide} />
         <SocketBar state={this.state.socketState} />
         {fatalErrorModal}
         {shareSnapshotModal}
