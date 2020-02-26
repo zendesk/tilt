@@ -1,6 +1,7 @@
 package webview
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -143,8 +144,8 @@ func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*
 	ret.LogList = logList
 	// ret.NeedsAnalyticsNudge = NeedsNudge(s)
 	ret.Guide = &proto_webview.Guide{
-		Message: "hello world",
-		Buttons: []string{"next", "close"},
+		Message: fmt.Sprintf("%s", s.Guide.Message),
+		Buttons: s.Guide.Options,
 	}
 	ret.RunningTiltBuild = &proto_webview.TiltBuild{
 		Version:   s.TiltBuildInfo.Version,

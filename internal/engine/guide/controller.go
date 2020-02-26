@@ -2,17 +2,20 @@ package guide
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/windmilleng/tilt/internal/store"
 )
 
 type Controller struct {
-	seqNo int64
-	count int64
+	seqNo   int64
+	current StateID
 }
 
 func NewController() *Controller {
-	return &Controller{}
+	return &Controller{
+		current: AtStartID,
+	}
 }
 
 func (c *Controller) OnChange(ctx context.Context, st store.RStore) {
@@ -23,21 +26,28 @@ func (c *Controller) OnChange(ctx context.Context, st store.RStore) {
 		return
 	}
 
-	changed := false
-	newState := s.Guide
-
-	if s.Guide.LastClick != "" {
-		changed = true
-		newState.LastClick = ""
-		c.count++
+	// make LastClick an Int
+	choice, err := strconv.Atoi(s.Guide.LastClick)
+	if err != nil {
+		choice = -1
 	}
 
-	if !changed {
+	n := NextState(s, c.current, choice)
+
+	if n == "" {
 		return
 	}
 
-	c.seqNo++
-	newState.Seq = c.seqNo
+	c.current = n
 
-	st.Dispatch(UpdateGuideAction{newState})
+	c.seqNo++
+
+	var r store.GuideState
+	r.Seq = c.seqNo
+	if states[n].Message != nil {
+		r.Message = states[n].Message(s)
+	}
+	r.LastClick = ""
+
+	st.Dispatch(UpdateGuideAction{r})
 }

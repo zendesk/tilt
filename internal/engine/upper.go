@@ -20,6 +20,7 @@ import (
 	"github.com/windmilleng/tilt/internal/dockercompose"
 	"github.com/windmilleng/tilt/internal/engine/buildcontrol"
 	"github.com/windmilleng/tilt/internal/engine/configs"
+	"github.com/windmilleng/tilt/internal/engine/guide"
 	"github.com/windmilleng/tilt/internal/engine/k8swatch"
 	"github.com/windmilleng/tilt/internal/engine/runtimelog"
 	"github.com/windmilleng/tilt/internal/hud"
@@ -200,6 +201,10 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleLocalServeStatusAction(ctx, state, action)
 	case store.LogAction:
 		handleLogAction(state, action)
+	case server.GuideChoiceAction:
+		handleGuideChoiceAction(state, action)
+	case guide.UpdateGuideAction:
+		handleUpdateGuideAction(state, action)
 
 	default:
 		err = fmt.Errorf("unrecognized action: %T", action)
@@ -581,6 +586,14 @@ func handleConfigsReloaded(
 
 func handleLogAction(state *store.EngineState, action store.LogAction) {
 	state.LogStore.Append(action, state.Secrets)
+}
+
+func handleGuideChoiceAction(state *store.EngineState, action server.GuideChoiceAction) {
+	state.Guide.LastClick = action.Choice
+}
+
+func handleUpdateGuideAction(state *store.EngineState, action guide.UpdateGuideAction) {
+	state.Guide = action.Guide
 }
 
 func handleServiceEvent(ctx context.Context, state *store.EngineState, action k8swatch.ServiceChangeAction) {

@@ -212,7 +212,7 @@ func (s *HeadsUpServer) HandleGuideChoice(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	s.store.Dispatch(store.GuideChoiceAction{Choice: payload.Choice})
+	s.store.Dispatch(GuideChoiceAction{Choice: payload.Choice})
 }
 
 func (s *HeadsUpServer) HandleAnalytics(w http.ResponseWriter, req *http.Request) {

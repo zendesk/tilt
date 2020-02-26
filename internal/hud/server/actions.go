@@ -13,3 +13,9 @@ type SetTiltfileArgsAction struct {
 }
 
 func (SetTiltfileArgsAction) Action() {}
+
+type GuideChoiceAction struct {
+	Choice string
+}
+
+func (GuideChoiceAction) Action() {}
