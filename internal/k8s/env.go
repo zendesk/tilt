@@ -63,6 +63,16 @@ func ProvideClusterName(ctx context.Context, config *api.Config) ClusterName {
 	return ClusterName(c.Cluster)
 }
 
+func clientCertificateHasMinikubeInPath(config *api.Config) bool {
+	for _, ai := range config.AuthInfos {
+		if strings.Contains(ai.ClientCertificate, "minikube") {
+			return true
+		}
+	}
+
+	return false
+}
+
 func ProvideEnv(ctx context.Context, config *api.Config) Env {
 	n := config.CurrentContext
 
@@ -75,7 +85,7 @@ func ProvideEnv(ctx context.Context, config *api.Config) Env {
 	}
 
 	cn := c.Cluster
-	if Env(cn) == EnvMinikube {
+	if Env(cn) == EnvMinikube || clientCertificateHasMinikubeInPath(config) {
 		return EnvMinikube
 	} else if cn == "docker-for-desktop-cluster" || cn == "docker-desktop" {
 		return EnvDockerDesktop
