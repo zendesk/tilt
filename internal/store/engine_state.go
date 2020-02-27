@@ -65,7 +65,8 @@ type EngineState struct {
 
 	IsProfiling bool
 
-	TiltfileState ManifestState
+	TiltfileState                        ManifestState
+	UnprintedTiltfileDeprecationWarnings []string
 
 	LatestTiltBuild model.TiltBuild // from GitHub
 	VersionSettings model.VersionSettings

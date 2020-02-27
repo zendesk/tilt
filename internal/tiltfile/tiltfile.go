@@ -54,6 +54,7 @@ type TiltfileLoadResult struct {
 	AnalyticsOpt        wmanalytics.Opt
 	VersionSettings     model.VersionSettings
 	UpdateSettings      model.UpdateSettings
+	DeprecationWarnings []string
 }
 
 func (r TiltfileLoadResult) Orchestrator() model.Orchestrator {
@@ -183,6 +184,7 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, userConfigS
 	tlr.Error = err
 	tlr.Manifests = manifests
 	tlr.TeamName = s.teamName
+	tlr.DeprecationWarnings = s.deprecationWarnings
 
 	vs, _ := version.GetState(result)
 	tlr.VersionSettings = vs

@@ -100,6 +100,8 @@ type tiltfileState struct {
 	logger                           logger.Logger
 	warnedDeprecatedResourceAssembly bool
 	postExecReadFiles                []string
+
+	deprecationWarnings []string
 }
 
 type k8sResourceAssemblyVersionReason int

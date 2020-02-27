@@ -225,7 +225,7 @@ func (s *tiltfileState) filterYaml(thread *starlark.Thread, fn *starlark.Builtin
 
 func (s *tiltfileState) k8sResourceV1(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if !s.warnedDeprecatedResourceAssembly {
-		s.logger.Warnf("%s", deprecatedResourceAssemblyV1Warning)
+		s.deprecationWarnings = append(s.deprecationWarnings, deprecatedResourceAssemblyV1Warning)
 		s.warnedDeprecatedResourceAssembly = true
 	}
 
@@ -883,7 +883,7 @@ func (s *tiltfileState) k8sResourceAssemblyVersionFn(thread *starlark.Thread, fn
 	}
 
 	if version == 1 && !s.warnedDeprecatedResourceAssembly {
-		s.logger.Warnf("%s", deprecatedResourceAssemblyV1Warning)
+		s.deprecationWarnings = append(s.deprecationWarnings, deprecatedResourceAssemblyV1Warning)
 		s.warnedDeprecatedResourceAssembly = true
 	}
 

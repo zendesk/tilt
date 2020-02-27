@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/windmilleng/tilt/internal/engine/local"
-
 	"github.com/davecgh/go-spew/spew"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -22,6 +20,7 @@ import (
 	"github.com/windmilleng/tilt/internal/engine/configs"
 	"github.com/windmilleng/tilt/internal/engine/guide"
 	"github.com/windmilleng/tilt/internal/engine/k8swatch"
+	"github.com/windmilleng/tilt/internal/engine/local"
 	"github.com/windmilleng/tilt/internal/engine/runtimelog"
 	"github.com/windmilleng/tilt/internal/hud"
 	"github.com/windmilleng/tilt/internal/hud/server"
@@ -32,6 +31,7 @@ import (
 	"github.com/windmilleng/tilt/internal/watch"
 	"github.com/windmilleng/tilt/pkg/logger"
 	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/windmilleng/tilt/pkg/model/logstore"
 )
 
 // When we see a file change, wait this long to see if any other files have changed, and bundle all changes together.
@@ -190,7 +190,7 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 	case store.AnalyticsNudgeSurfacedAction:
 		handleAnalyticsNudgeSurfacedAction(ctx, state)
 	case store.TiltCloudUserLookedUpAction:
-		handleTiltCloudUserLookedUpAction(state, action)
+		handleTiltCloudUserLookedUpAction(ctx, state, action)
 	case store.UserStartedTiltCloudRegistrationAction:
 		handleUserStartedTiltCloudRegistrationAction(state)
 	case store.PanicAction:
@@ -509,6 +509,12 @@ func handleConfigsReloaded(
 
 		state.TiltfileState.AddCompletedBuild(b)
 	}
+
+	// intentionally overwriting existing warnings ; if they rerun and then register, we don't want to
+	// show warnings from 10 loads ago if they're no longer being generated
+	state.UnprintedTiltfileDeprecationWarnings = event.DeprecationWarnings
+	maybeFlushDeprecationWarnings(state)
+
 	state.TiltfileState.CurrentBuild = model.BuildRecord{}
 	if event.Err != nil {
 		// When the Tiltfile had an error, we want to differentiate between two cases:
@@ -562,6 +568,7 @@ func handleConfigsReloaded(
 		}
 		state.UpsertManifestTarget(mt)
 	}
+
 	// TODO(dmiller) handle deleting manifests
 	// TODO(maia): update ConfigsManifest with new ConfigFiles/update watches
 	state.ManifestDefinitionOrder = newDefOrder
@@ -742,7 +749,7 @@ func handleAnalyticsNudgeSurfacedAction(ctx context.Context, state *store.Engine
 	}
 }
 
-func handleTiltCloudUserLookedUpAction(state *store.EngineState, action store.TiltCloudUserLookedUpAction) {
+func handleTiltCloudUserLookedUpAction(ctx context.Context, state *store.EngineState, action store.TiltCloudUserLookedUpAction) {
 	if action.IsPostRegistrationLookup {
 		state.WaitingForTiltCloudUsernamePostRegistration = false
 	}
@@ -752,6 +759,27 @@ func handleTiltCloudUserLookedUpAction(state *store.EngineState, action store.Ti
 	} else {
 		state.TokenKnownUnregistered = false
 		state.TiltCloudUsername = action.Username
+	}
+
+	// TODO(dbentley) actually set this from Tilt Cloud
+	// uncomment below to test "don't show deprecation warnings"
+	// state.TeamState = store.TiltCloudTeamStateTeamSpecifiedAndRegistered
+
+	maybeFlushDeprecationWarnings(state)
+}
+
+func maybeFlushDeprecationWarnings(state *store.EngineState) {
+	shouldLogWarnings := state.TeamState == store.TiltCloudTeamStateTeamSpecifiedAndUnregistered ||
+		state.TeamState == store.TiltCloudTeamStateTeamUnspecified ||
+		(state.TeamState == store.TiltCloudTeamStateTeamSpecifiedAndRegistered && state.TeamRole == store.TiltCloudTeamRoleOwner)
+	if shouldLogWarnings {
+		for _, s := range state.UnprintedTiltfileDeprecationWarnings {
+			// NB: all deprecations from multiple loads end up in the same span, and they don't end up in
+			// the Tiltfile's load span.
+			spanID := logstore.SpanID("Tiltfile:deprecations")
+			handleLogAction(state, store.NewLogAction(model.TiltfileManifestName, spanID, logger.InfoLvl, nil, []byte(s)))
+		}
+		state.UnprintedTiltfileDeprecationWarnings = nil
 	}
 }
 
