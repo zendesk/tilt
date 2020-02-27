@@ -86,6 +86,8 @@ type EngineState struct {
 	CloudAddress string
 	Token        token.Token
 	TeamName     string
+	TeamState    TiltCloudTeamState
+	TeamRole     TiltCloudTeamRole
 
 	TiltCloudUsername                           string
 	TokenKnownUnregistered                      bool // to distinguish whether an empty TiltCloudUsername means "we haven't checked" or "we checked and the token isn't registered"
@@ -97,6 +99,28 @@ type EngineState struct {
 
 	UserConfigState model.UserConfigState
 }
+
+type TiltCloudTeamState int
+
+const (
+	// Tiltfile has not been run
+	TiltCloudTeamStateUnknown TiltCloudTeamState = iota
+	// Tiltfile has been run, and does not specify a team id
+	TiltCloudTeamStateTeamUnspecified TiltCloudTeamState = iota
+	// Tiltfile specified a team id, and we don't yet know from Tilt Cloud whether it's registered
+	TiltCloudTeamStateTeamSpecifiedAndUnknown      TiltCloudTeamState = iota
+	TiltCloudTeamStateTeamSpecifiedAndRegistered   TiltCloudTeamState = iota
+	TiltCloudTeamStateTeamSpecifiedAndUnregistered TiltCloudTeamState = iota
+)
+
+type TiltCloudTeamRole int
+
+const (
+	// Role is always unknown unless TeamState is SpecifiedAndRegistered
+	TiltCloudTeamRoleUnknown TiltCloudTeamRole = iota
+	TiltCloudTeamRoleUser    TiltCloudTeamRole = iota
+	TiltCloudTeamRoleOwner   TiltCloudTeamRole = iota
+)
 
 // Merge analytics opt-in status from different sources.
 // The Tiltfile opt-in takes precedence over the user opt-in.
