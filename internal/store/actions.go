@@ -129,6 +129,8 @@ type TiltCloudUserLookedUpAction struct {
 	Found                    bool
 	Username                 string
 	IsPostRegistrationLookup bool
+	TeamState                TiltCloudTeamState
+	Role                     TiltCloudTeamRole
 }
 
 func (TiltCloudUserLookedUpAction) Action() {}

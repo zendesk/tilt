@@ -20,7 +20,7 @@ import (
 const timeoutAfterError = 5 * time.Minute
 
 const TiltTokenHeaderName = "X-Tilt-Token"
-const TiltTeamIDNameHeaderName = "X-Tilt-TeamID"
+const TiltTeamIDHeaderName = "X-Tilt-TeamID"
 
 func NewUsernameManager(client HttpClient) *CloudUsernameManager {
 	return &CloudUsernameManager{client: client}
@@ -43,8 +43,10 @@ type HttpClient interface {
 }
 
 type whoAmIResponse struct {
-	Found    bool
-	Username string
+	Found       bool
+	Username    string
+	TeamClaimed bool
+	TeamRole    string
 }
 
 func (c *CloudUsernameManager) error() {
@@ -56,6 +58,7 @@ func (c *CloudUsernameManager) error() {
 func (c *CloudUsernameManager) CheckUsername(ctx context.Context, st store.RStore, blocking bool) {
 	state := st.RLockState()
 	tok := state.Token
+	teamID := state.TeamName
 	st.RUnlockState()
 
 	c.mu.Lock()
@@ -84,6 +87,7 @@ func (c *CloudUsernameManager) CheckUsername(ctx context.Context, st store.RStor
 		return
 	}
 	req.Header.Set(TiltTokenHeaderName, string(tok))
+	req.Header.Set(TiltTeamIDHeaderName, teamID)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -122,6 +126,8 @@ func (c *CloudUsernameManager) CheckUsername(ctx context.Context, st store.RStor
 		Found:                    r.Found,
 		Username:                 r.Username,
 		IsPostRegistrationLookup: blocking,
+		TeamClaimed:              r.TeamClaimed,
+		TeamRole:                 cleanTeamRole(r.TeamRole),
 	})
 }
 
@@ -129,7 +135,7 @@ func (c *CloudUsernameManager) OnChange(ctx context.Context, st store.RStore) {
 	state := st.RLockState()
 	defer st.RUnlockState()
 
-	if !state.Features[feature.Snapshots] {
+	if !state.Features[feature.Snapshots] && state.TeamName == "" {
 		return
 	}
 

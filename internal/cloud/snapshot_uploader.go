@@ -75,7 +75,7 @@ func (s snapshotUploader) Upload(token token.Token, teamID string, snapshot *pro
 
 	request.Header.Set(TiltTokenHeaderName, token.String())
 	if teamID != "" {
-		request.Header.Set(TiltTeamIDNameHeaderName, teamID)
+		request.Header.Set(TiltTeamIDHeaderName, teamID)
 	}
 
 	response, err := s.client.Do(request)
