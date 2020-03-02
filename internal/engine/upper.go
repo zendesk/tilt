@@ -761,9 +761,8 @@ func handleTiltCloudUserLookedUpAction(ctx context.Context, state *store.EngineS
 		state.TiltCloudUsername = action.Username
 	}
 
-	// TODO(dbentley) actually set this from Tilt Cloud
-	// uncomment below to test "don't show deprecation warnings"
-	// state.TeamState = store.TiltCloudTeamStateTeamSpecifiedAndRegistered
+	state.TeamState = action.TeamState
+	state.TeamRole = action.Role
 
 	maybeFlushDeprecationWarnings(state)
 }
