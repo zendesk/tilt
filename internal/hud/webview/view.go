@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/windmilleng/tilt/internal/store"
+
 	"github.com/windmilleng/tilt/internal/container"
 	"github.com/windmilleng/tilt/internal/dockercompose"
 	"github.com/windmilleng/tilt/pkg/model"
@@ -155,4 +157,34 @@ func ToProtoBuildRecords(brs []model.BuildRecord, logStore *logstore.LogStore) (
 		ret[i] = r
 	}
 	return ret, nil
+}
+
+func teamStateToProto(state store.TiltCloudTeamState) (proto_webview.TiltCloudTeamState, error) {
+	switch state {
+	case store.TiltCloudTeamStateUnknown:
+		return proto_webview.TiltCloudTeamState_TILT_CLOUD_TEAM_STATE_UNKNOWN, nil
+	case store.TiltCloudTeamStateTeamUnspecified:
+		return proto_webview.TiltCloudTeamState_TILT_CLOUD_TEAM_STATE_UNSPECIFIED, nil
+	case store.TiltCloudTeamStateTeamSpecifiedAndUnknown:
+		return proto_webview.TiltCloudTeamState_TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNKNOWN, nil
+	case store.TiltCloudTeamStateTeamSpecifiedAndRegistered:
+		return proto_webview.TiltCloudTeamState_TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_REGISTERED, nil
+	case store.TiltCloudTeamStateTeamSpecifiedAndUnregistered:
+		return proto_webview.TiltCloudTeamState_TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNREGISTERED, nil
+	default:
+		return 0, fmt.Errorf("internal error: tried to convert unknown tilt cloud team state %v", state)
+	}
+}
+
+func teamRoleToProto(role store.TiltCloudTeamRole) (proto_webview.TiltCloudTeamRole, error) {
+	switch role {
+	case store.TiltCloudTeamRoleUnknown:
+		return proto_webview.TiltCloudTeamRole_TILT_CLOUD_TEAM_ROLE_UNKNOWN, nil
+	case store.TiltCloudTeamRoleUser:
+		return proto_webview.TiltCloudTeamRole_TILT_CLOUD_TEAM_ROLE_USER, nil
+	case store.TiltCloudTeamRoleOwner:
+		return proto_webview.TiltCloudTeamRole_TILT_CLOUD_TEAM_ROLE_OWNER, nil
+	default:
+		return 0, fmt.Errorf("internal error: tried to convert unknown tilt cloud team state %v", role)
+	}
 }

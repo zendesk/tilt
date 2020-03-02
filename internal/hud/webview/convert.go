@@ -166,6 +166,14 @@ func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*
 	ret.TiltCloudUsername = s.TiltCloudUsername
 	ret.TiltCloudSchemeHost = cloudurl.URL(s.CloudAddress).String()
 	ret.TiltCloudTeamID = s.TeamName
+	ret.TiltCloudTeamState, err = teamStateToProto(s.TeamState)
+	if err != nil {
+		return nil, err
+	}
+	ret.TiltCloudTeamRole, err = teamRoleToProto(s.TeamRole)
+	if err != nil {
+		return nil, err
+	}
 	if s.FatalError != nil {
 		ret.FatalError = s.FatalError.Error()
 	}

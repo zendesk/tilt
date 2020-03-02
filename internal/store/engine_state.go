@@ -107,11 +107,11 @@ const (
 	// Tiltfile has not been run
 	TiltCloudTeamStateUnknown TiltCloudTeamState = iota
 	// Tiltfile has been run, and does not specify a team id
-	TiltCloudTeamStateTeamUnspecified TiltCloudTeamState = iota
+	TiltCloudTeamStateTeamUnspecified
 	// Tiltfile specified a team id, and we don't yet know from Tilt Cloud whether it's registered
-	TiltCloudTeamStateTeamSpecifiedAndUnknown      TiltCloudTeamState = iota
-	TiltCloudTeamStateTeamSpecifiedAndRegistered   TiltCloudTeamState = iota
-	TiltCloudTeamStateTeamSpecifiedAndUnregistered TiltCloudTeamState = iota
+	TiltCloudTeamStateTeamSpecifiedAndUnknown
+	TiltCloudTeamStateTeamSpecifiedAndRegistered
+	TiltCloudTeamStateTeamSpecifiedAndUnregistered
 )
 
 type TiltCloudTeamRole int

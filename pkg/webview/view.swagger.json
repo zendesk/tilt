@@ -510,6 +510,26 @@
         }
       }
     },
+    "webviewTiltCloudTeamRole": {
+      "type": "string",
+      "enum": [
+        "TILT_CLOUD_TEAM_ROLE_UNKNOWN",
+        "TILT_CLOUD_TEAM_ROLE_USER",
+        "TILT_CLOUD_TEAM_ROLE_OWNER"
+      ],
+      "default": "TILT_CLOUD_TEAM_ROLE_UNKNOWN"
+    },
+    "webviewTiltCloudTeamState": {
+      "type": "string",
+      "enum": [
+        "TILT_CLOUD_TEAM_STATE_UNKNOWN",
+        "TILT_CLOUD_TEAM_STATE_UNSPECIFIED",
+        "TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNKNOWN",
+        "TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_REGISTERED",
+        "TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNREGISTERED"
+      ],
+      "default": "TILT_CLOUD_TEAM_STATE_UNKNOWN"
+    },
     "webviewUpdateType": {
       "type": "string",
       "enum": [
@@ -585,6 +605,12 @@
         },
         "tilt_cloud_teamID": {
           "type": "string"
+        },
+        "tilt_cloud_team_state": {
+          "$ref": "#/definitions/webviewTiltCloudTeamState"
+        },
+        "tilt_cloud_team_role": {
+          "$ref": "#/definitions/webviewTiltCloudTeamRole"
         },
         "fatal_error": {
           "type": "string"

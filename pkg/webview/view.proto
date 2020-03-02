@@ -158,6 +158,20 @@ message VersionSettings {
   bool check_updates = 1;
 }
 
+enum TiltCloudTeamState {
+  TILT_CLOUD_TEAM_STATE_UNKNOWN = 0;
+  TILT_CLOUD_TEAM_STATE_UNSPECIFIED = 1;
+  TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNKNOWN = 2;
+  TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_REGISTERED = 3;
+  TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNREGISTERED = 4;
+}
+
+enum TiltCloudTeamRole {
+  TILT_CLOUD_TEAM_ROLE_UNKNOWN = 0;
+  TILT_CLOUD_TEAM_ROLE_USER = 1;
+  TILT_CLOUD_TEAM_ROLE_OWNER = 2;
+}
+
 message View {
   string log = 1;
   repeated Resource resources = 2;
@@ -177,6 +191,8 @@ message View {
   string tilt_cloud_username = 8;
   string tilt_cloud_schemeHost = 9;
   string tilt_cloud_teamID = 10;
+  TiltCloudTeamState tilt_cloud_team_state = 16;
+  TiltCloudTeamRole tilt_cloud_team_role = 17;
 
   string fatal_error = 11;
 
