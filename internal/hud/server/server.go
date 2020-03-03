@@ -281,6 +281,10 @@ func (s *HeadsUpServer) HandleTrigger(w http.ResponseWriter, req *http.Request) 
 func SendToTriggerQueue(st store.RStore, name string) error {
 	mName := model.ManifestName(name)
 
+	// if mName == "(Tiltfile)" {
+	//     st.Dispatch(requestConfigReload)
+	// }
+
 	state := st.RLockState()
 	_, ok := state.Manifest(mName)
 	st.RUnlockState()

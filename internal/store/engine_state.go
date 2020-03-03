@@ -60,6 +60,7 @@ type EngineState struct {
 	ConfigFiles              []string
 	TiltIgnoreContents       string
 	PendingConfigFileChanges map[string]time.Time
+	// ConfigReloadRequested    bool
 
 	TriggerQueue []model.ManifestName
 

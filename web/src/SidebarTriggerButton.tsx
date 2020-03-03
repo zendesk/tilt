@@ -72,18 +72,6 @@ export default class SidebarTriggerButton extends PureComponent<
 > {
   render() {
     let props = this.props
-    if (props.isTiltfile) {
-      // can't force update the Tiltfile
-      return (
-        <SidebarTriggerButtonStyle
-          className={`SidebarTriggerButton ${
-            props.isSelected ? "isSelected" : ""
-          }`}
-          disabled
-          title={TriggerButtonTooltip.CannotTriggerTiltfile}
-        />
-      )
-    }
 
     let isManualTriggerMode = props.triggerMode !== TriggerMode.TriggerModeAuto
 

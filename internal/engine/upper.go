@@ -577,6 +577,7 @@ func handleConfigsReloaded(
 			delete(state.PendingConfigFileChanges, file)
 		}
 	}
+	// state.ConfigReloadRequested = false
 }
 
 func handleLogAction(state *store.EngineState, action store.LogAction) {

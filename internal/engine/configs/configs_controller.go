@@ -51,6 +51,10 @@ func (cc *ConfigsController) shouldBuild(state store.EngineState) bool {
 		return false
 	}
 
+	// if state.ConfigReloadRequested {
+	// 	return true
+	// }
+
 	lastStartTime := state.TiltfileState.LastBuild().StartTime
 
 	for _, changeTime := range state.PendingConfigFileChanges {
