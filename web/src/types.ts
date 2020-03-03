@@ -69,3 +69,18 @@ export type LogLine = {
   level: string
   buildEvent?: string
 }
+
+// TODO(matt) it seems like we should be able to get these generated from the protobuf schema?
+export enum TiltCloudTeamState {
+  Unknown = "TILT_CLOUD_TEAM_STATE_UNKNOWN",
+  Unspecified = "TILT_CLOUD_TEAM_STATE_UNSPECIFIED",
+  SpecifiedAndUnknown = "TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNKNOWN",
+  SpecifiedAndRegistered = "TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_REGISTERED",
+  SpecifiedAndUnregistered = "TILT_CLOUD_TEAM_STATE_SPECIFIED_AND_UNREGISTERED",
+}
+
+export enum TiltCloudRole {
+  Unknown = "TILT_CLOUD_ROLE_UNKNOWN",
+  User = "TILT_CLOUD_ROLE_USER",
+  Owner = "TILT_CLOUD_ROLE_OWNER",
+}

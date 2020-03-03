@@ -20,7 +20,7 @@ import {
   ResourceView,
   ShowFatalErrorModal,
   SnapshotHighlight,
-  SocketState,
+  SocketState, TiltCloudTeamState,
 } from "./types"
 import { logLinesFromString } from "./logs"
 import HudState from "./HudState"
@@ -35,6 +35,7 @@ import * as _ from "lodash"
 import FacetsPane from "./FacetsPane"
 import HUDLayout from "./HUDLayout"
 import LogStore from "./LogStore"
+import {TiltCloudProps} from "./TiltCloud"
 
 type HudProps = {
   history: History
@@ -89,6 +90,8 @@ class HUD extends Component<HudProps, HudState> {
         tiltCloudUsername: "",
         tiltCloudSchemeHost: "",
         tiltCloudTeamID: "",
+        tiltCloudTeamRole: "",
+        tiltCloudTeamState: "",
       },
       isSidebarClosed: false,
       snapshotLink: "",
@@ -386,6 +389,14 @@ class HUD extends Component<HudProps, HudState> {
     let resources = (view && view.resources) || []
     let sidebarItems = resources.map(res => new SidebarItem(res))
     let isSidebarClosed = !!this.state.isSidebarClosed
+    let tiltCloudProps: TiltCloudProps = {
+      teamID: view.tiltCloudTeamID,
+      userName: view.tiltCloudUsername,
+      teamName: view.tiltCloudTeamID,
+      teamStatus: TiltCloudTeamState.SpecifiedAndUnregistered,
+      teamRole: view.tiltCloudTeamRole,
+      schemeHost: view.tiltCloudSchemeHost,
+    }
     let sidebarRoute = (t: ResourceView, props: RouteComponentProps<any>) => {
       let name = props.match.params.name
       return (
@@ -396,6 +407,7 @@ class HUD extends Component<HudProps, HudState> {
           toggleSidebar={this.toggleSidebar}
           resourceView={t}
           pathBuilder={this.pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       )
     }

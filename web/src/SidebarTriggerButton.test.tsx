@@ -8,6 +8,7 @@ import { oneResource, twoResourceView } from "./testdata"
 import Sidebar, { SidebarItem } from "./Sidebar"
 import { MemoryRouter } from "react-router"
 import PathBuilder from "./PathBuilder"
+import {TiltCloudProps} from "./TiltCloud"
 
 type Resource = Proto.webviewResource
 
@@ -28,6 +29,15 @@ let expectIsQueued = (button: any, expected: boolean) => {
 }
 let expectWithTooltip = (button: any, expected: string) => {
   expect(button.prop("title")).toEqual(expected)
+}
+
+let tiltCloudProps: TiltCloudProps = {
+  teamID: "",
+  userName: "",
+  teamName: "",
+  teamStatus: "",
+  teamRole: "",
+  schemeHost: "",
 }
 
 describe("SidebarTriggerButton", () => {
@@ -134,6 +144,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -175,6 +186,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -211,6 +223,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -244,6 +257,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -275,6 +289,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -303,6 +318,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -333,6 +349,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )
@@ -365,6 +382,7 @@ describe("SidebarTriggerButton", () => {
           toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
+          tiltCloud={tiltCloudProps}
         />
       </MemoryRouter>
     )

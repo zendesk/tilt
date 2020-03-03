@@ -18,6 +18,8 @@ declare namespace Proto {
     tiltCloudUsername?: string;
     tiltCloudSchemeHost?: string;
     tiltCloudTeamID?: string;
+    tiltCloudTeamState?: string;
+    tiltCloudTeamRole?: string;
     fatalError?: string;
     logList?: webviewLogList;
     /**

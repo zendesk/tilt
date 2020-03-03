@@ -5,9 +5,19 @@ import { oneResourceView, twoResourceView } from "./testdata"
 import PathBuilder from "./PathBuilder"
 import { MemoryRouter } from "react-router"
 import { ResourceView, TriggerMode } from "./types"
+import {TiltCloudProps} from "./TiltCloud"
 
 type Resource = Proto.webviewResource
 let pathBuilder = new PathBuilder("localhost", "/")
+
+let tiltCloudProps: TiltCloudProps = {
+  teamID: "",
+  userName: "",
+  teamName: "",
+  teamStatus: "",
+  teamRole: "",
+  schemeHost: "",
+}
 
 function twoItemSidebar() {
   let items = twoResourceView().resources.map(
@@ -23,6 +33,7 @@ function twoItemSidebar() {
         toggleSidebar={null}
         resourceView={ResourceView.Log}
         pathBuilder={pathBuilder}
+        tiltCloud={tiltCloudProps}
       />
     </MemoryRouter>
   )
@@ -42,6 +53,7 @@ function twoItemSidebarClosed() {
         toggleSidebar={null}
         resourceView={ResourceView.Log}
         pathBuilder={pathBuilder}
+        tiltCloud={tiltCloudProps}
       />
     </MemoryRouter>
   )
@@ -64,6 +76,7 @@ function oneItemWithTrigger() {
         toggleSidebar={null}
         resourceView={ResourceView.Log}
         pathBuilder={pathBuilder}
+        tiltCloud={tiltCloudProps}
       />
     </MemoryRouter>
   )

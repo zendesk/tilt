@@ -22,6 +22,7 @@ import {
   SizeUnit,
   Width,
 } from "./style-helpers"
+import TiltCloud, {TiltCloudProps} from "./TiltCloud"
 
 const moment = require("moment")
 
@@ -81,22 +82,6 @@ let SidebarHeader = styled.header`
   justify-content: flex-end;
   margin-top: ${SizeUnit(0.5)};
   margin-bottom: ${SizeUnit(0.5)};
-`
-let SidebarAccount = styled.button`
-  background-color: transparent;
-  border: 0 none;
-  display: flex;
-  align-items: center;
-`
-let SidebarAccountIcon = styled.div`
-  background-color: ${Color.grayLight};
-  width: ${Width.badge}px;
-  height: ${Width.badge}px;
-  border-radius: ${Width.badge}px;
-`
-let SidebarAccountText = styled.span`
-  color: ${Color.white};
-  margin-right: ${SizeUnit(0.25)};
 `
 
 let SidebarResources = styled.nav`
@@ -205,6 +190,7 @@ type SidebarProps = {
   toggleSidebar: any
   resourceView: ResourceView
   pathBuilder: PathBuilder
+  tiltCloud: TiltCloudProps
 }
 
 class Sidebar extends PureComponent<SidebarProps> {
@@ -299,11 +285,7 @@ class Sidebar extends PureComponent<SidebarProps> {
       <section className={classes.join(" ")}>
         <SidebarResources className="Sidebar-resources">
           <SidebarHeader>
-            {/*TODO(dan) - Account icon should change once tiltfile_id is set */}
-            <SidebarAccount>
-              <SidebarAccountText>Account</SidebarAccountText>
-              <SidebarAccountIcon>&nbsp;</SidebarAccountIcon>
-            </SidebarAccount>
+            <TiltCloud {...this.props.tiltCloud} />
           </SidebarHeader>
           <SidebarList>
             {allItem}
