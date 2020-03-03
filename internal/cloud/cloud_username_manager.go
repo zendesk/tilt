@@ -126,9 +126,30 @@ func (c *CloudUsernameManager) CheckUsername(ctx context.Context, st store.RStor
 		Found:                    r.Found,
 		Username:                 r.Username,
 		IsPostRegistrationLookup: blocking,
-		TeamClaimed:              r.TeamClaimed,
-		TeamRole:                 cleanTeamRole(r.TeamRole),
+		TeamState:                cleanTeamState(teamID, r.TeamClaimed),
+		Role:                     cleanTeamRole(r.TeamRole),
 	})
+}
+
+func cleanTeamState(teamID string, teamClaimed bool) store.TiltCloudTeamState {
+	if teamID == "" {
+		return store.TiltCloudTeamStateTeamUnspecified
+	}
+	if !teamClaimed {
+		return store.TiltCloudTeamStateTeamSpecifiedAndUnregistered
+	}
+	return store.TiltCloudTeamStateTeamSpecifiedAndRegistered
+}
+
+func cleanTeamRole(input string) store.TiltCloudTeamRole {
+	switch input {
+	case "User":
+		return store.TiltCloudTeamRoleUser
+	case "Owner":
+		return store.TiltCloudTeamRoleOwner
+	default:
+		return store.TiltCloudTeamRoleUnknown
+	}
 }
 
 func (c *CloudUsernameManager) OnChange(ctx context.Context, st store.RStore) {
