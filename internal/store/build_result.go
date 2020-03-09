@@ -266,6 +266,8 @@ func (set BuildResultSet) OneAndOnlyLiveUpdatedContainerID() container.ID {
 // This data structure should be considered immutable.
 // All methods that return a new BuildState should first clone the existing build state.
 type BuildState struct {
+	TargetType model.TargetType
+
 	// The last successful build.
 	LastSuccessfulResult BuildResult
 
@@ -295,12 +297,13 @@ type BuildState struct {
 	RunningContainerError error
 }
 
-func NewBuildState(result BuildResult, files []string) BuildState {
+func NewBuildState(buildType model.TargetType, result BuildResult, files []string) BuildState {
 	set := make(map[string]bool, len(files))
 	for _, f := range files {
 		set[f] = true
 	}
 	return BuildState{
+		TargetType:           buildType,
 		LastSuccessfulResult: result,
 		FilesChangedSet:      set,
 	}

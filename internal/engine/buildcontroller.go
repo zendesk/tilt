@@ -201,7 +201,7 @@ func buildStateSet(ctx context.Context, manifest model.Manifest, specs []model.T
 		}
 		sort.Strings(filesChanged)
 
-		buildState := store.NewBuildState(status.LastSuccessfulResult, filesChanged)
+		buildState := store.NewBuildState(id.Type, status.LastSuccessfulResult, filesChanged)
 
 		// Pass along the container when we can update containers in-place.
 		//

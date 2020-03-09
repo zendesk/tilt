@@ -19,8 +19,6 @@ const (
 	TargetTypeK8s TargetType = "k8s"
 
 	// Image builds
-	// TODO(nick): It might make sense to represent FastBuild and normal Docker builds
-	// as separate types.
 	TargetTypeImage TargetType = "image"
 
 	// Docker-compose service build and deploy
@@ -32,8 +30,6 @@ const (
 	TargetTypeLocal TargetType = "local"
 
 	// Aggregation of multiple targets into one UI view.
-	// TODO(nick): Currently used as the type for both Manifest and YAMLManifest, though
-	// we expect YAMLManifest to go away.
 	TargetTypeManifest TargetType = "manifest"
 
 	// Changes that affect all targets, rebuilding the target graph.
