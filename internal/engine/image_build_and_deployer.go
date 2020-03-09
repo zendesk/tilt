@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/docker/distribution/reference"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -263,6 +264,7 @@ func (ibd *ImageBuildAndDeployer) deploy(ctx context.Context, st store.RStore, p
 	}
 	results[kTarget.ID()] = store.NewK8sDeployResult(kTarget.ID(), uids, podTemplateSpecHashes, deployed, deploySet.HasEligibleSynclet())
 
+	spew.Dump("results from ibad:", results)
 	return results, nil
 }
 
@@ -288,7 +290,16 @@ func newK8sDeploySet() *k8sDeploySet {
 // This resource is eligible for synclet updates
 // if we injected a synclet sidecar for all injected images.
 func (s *k8sDeploySet) HasEligibleSynclet() bool {
-	return s.injectedSynclet && !s.injectedImageWithoutSynclet
+	if s == nil {
+		return false
+	}
+	b := s.injectedSynclet && !s.injectedImageWithoutSynclet
+	entNames := []string{}
+	for _, e := range s.entities {
+		entNames = append(entNames, e.Name())
+	}
+	fmt.Printf("🤖 deployset with entites %v;\n\tinjectedSynclet: %t;\n\tinjectedWithout: %t;\n\t\thasEligible: %t\n", entNames, s.injectedSynclet, s.injectedImageWithoutSynclet, b)
+	return b
 }
 
 func (ibd *ImageBuildAndDeployer) addEntityToDeploySet(ctx context.Context,

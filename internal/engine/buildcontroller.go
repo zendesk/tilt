@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/windmilleng/tilt/internal/engine/buildcontrol"
 	"github.com/windmilleng/tilt/internal/ospath"
 	"github.com/windmilleng/tilt/internal/store"
@@ -121,6 +122,7 @@ func (c *BuildController) buildAndDeploy(ctx context.Context, st store.RStore, e
 			return store.BuildResultSet{}, err
 		}
 	}
+	spew.Dump("the build entry!", entry)
 	return c.b.BuildAndDeploy(ctx, st, targets, entry.buildStateSet)
 }
 
@@ -188,9 +190,9 @@ func buildStateSet(ctx context.Context, manifest model.Manifest, specs []model.T
 
 	for _, spec := range specs {
 		id := spec.ID()
-		if id.Type != model.TargetTypeImage && id.Type != model.TargetTypeDockerCompose && id.Type != model.TargetTypeLocal {
-			continue
-		}
+		// if id.Type != model.TargetTypeImage && id.Type != model.TargetTypeDockerCompose && id.Type != model.TargetTypeLocal {
+		// 	continue
+		// }
 
 		status := ms.BuildStatus(id)
 		var filesChanged []string

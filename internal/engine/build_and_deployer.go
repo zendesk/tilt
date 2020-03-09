@@ -81,6 +81,7 @@ func (composite *CompositeBuildAndDeployer) BuildAndDeploy(ctx context.Context, 
 			for _, bt := range buildTypes {
 				span.SetAttributes(core.KeyValue{Key: core.Key(fmt.Sprintf("buildType.%s", bt)), Value: core.Bool(true)})
 			}
+			fmt.Println("✨ yay returned from builder")
 			return br, nil
 		}
 

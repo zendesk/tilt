@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
@@ -257,45 +258,60 @@ func (lubad *LiveUpdateBuildAndDeployer) containerUpdaterForSpecs(specs []model.
 	}
 
 	if lubad.updMode == buildcontrol.UpdateModeSynclet {
+		fmt.Println("✨ upd mode=synclet")
 		return lubad.scu
 	}
 
 	if lubad.updMode == buildcontrol.UpdateModeKubectlExec {
+		fmt.Println("✨ upd mode=exec")
 		return lubad.ecu
 	}
 
 	if lubad.shouldUseSynclet(specs, stateSet) {
+		fmt.Println("✨ should use synclet")
 		return lubad.scu
 	}
 
 	if lubad.runtime == container.RuntimeDocker && lubad.env.UsesLocalDockerRegistry() {
 		return lubad.dcu
 	}
+	fmt.Println("✨ default to exec updater")
 
 	return lubad.ecu
 }
 
 func (lubad *LiveUpdateBuildAndDeployer) shouldUseSynclet(specs []model.TargetSpec, stateSet store.BuildStateSet) bool {
 	if !shouldUseSynclet(lubad.updMode, lubad.env, lubad.runtime) {
+		fmt.Println("🤖 !shouldUseSynclet")
 		return false
 	}
 
 	k8sTargets := model.ExtractK8sTargets(specs)
 	if len(k8sTargets) == 0 {
+		fmt.Println("🤖 no k8s targets")
 		return false
 	}
+	spew.Dump(k8sTargets)
+	spew.Dump(stateSet)
 
 	for _, t := range k8sTargets {
 		state := stateSet[t.ID()]
+		spew.Dump(state)
 		result := state.LastSuccessfulResult
 		k8sResult, ok := result.(store.K8sBuildResult)
+		tid := "<none>"
+		if result != nil {
+			tid = result.TargetID().String()
+		}
 		if !ok {
+			fmt.Printf("🤖 no build result for target: %v\n", tid)
 			return false
 		}
 
 		if !k8sResult.HasEligibleSynclet {
 			// If we failed to inject the synclet in one of the resources,
 			// then don't try to use this as an update method.
+			fmt.Printf("🤖 no eligible synclet for target: %v\n", tid)
 			return false
 		}
 	}
