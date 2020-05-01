@@ -50,9 +50,9 @@ func TestTargetQueue_DepsBuilt(t *testing.T) {
 
 	f.run(targets, buildStateSet)
 
-	barCall := newFakeBuildHandlerCall(barTarget, s2, 1, []store.BuildResult{
-		store.NewImageBuildResultSingleRef(fooTarget.ID(), store.LocalImageRefFromBuildResult(s1.LastSuccessfulResult)),
-	})
+	imageRef := store.LocalImageRefFromBuildResult(s1.LastSuccessfulResult)
+	imageResult := store.NewImageBuildResultSingleRef(fooTarget.ID(), imageRef).Recycle()
+	barCall := newFakeBuildHandlerCall(barTarget, s2, 1, []store.BuildResult{imageResult})
 
 	// foo has a valid last result, so only bar gets rebuilt
 	expectedCalls := map[model.TargetID]fakeBuildHandlerCall{

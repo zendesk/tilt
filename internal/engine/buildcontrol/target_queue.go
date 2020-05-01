@@ -95,10 +95,25 @@ func (q *TargetQueue) Results() store.BuildResultSet {
 	return q.results
 }
 
+func (q *TargetQueue) shouldRecycle(id model.TargetID) bool {
+	return !q.needsOwnBuild[id] && !q.depsNeedBuild[id]
+}
+
+func (q *TargetQueue) RecycledResults() []store.BuildResult {
+	result := []store.BuildResult{}
+	for _, target := range q.sortedTargets {
+		id := target.ID()
+		if q.shouldRecycle(id) {
+			result = append(result, q.state[id].LastSuccessfulResult.Recycle())
+		}
+	}
+	return result
+}
+
 func (q *TargetQueue) CountDirty() int {
 	result := 0
 	for _, target := range q.sortedTargets {
-		if q.needsOwnBuild[target.ID()] || q.depsNeedBuild[target.ID()] {
+		if !q.shouldRecycle(target.ID()) {
 			result++
 		}
 	}
@@ -122,7 +137,7 @@ func (q *TargetQueue) RunBuilds(handler BuildHandler) error {
 				return err
 			}
 			q.results[id] = result
-		} else {
+		} else if q.shouldRecycle(id) {
 			// Otherwise, we can re-use results from the previous build.
 			// If needsOwnBuild is false, then LastSuccessfulResult must exist if it's empty.
 			lastResult := q.state[id].LastSuccessfulResult
@@ -130,7 +145,9 @@ func (q *TargetQueue) RunBuilds(handler BuildHandler) error {
 			if image == nil {
 				return fmt.Errorf("Internal error: build marked clean but last result not found: %+v", q.state[id])
 			}
-			q.results[id] = lastResult
+			q.results[id] = lastResult.Recycle()
+		} else {
+			return fmt.Errorf("Internal error: build marked both clean and not recyclable")
 		}
 	}
 	return nil

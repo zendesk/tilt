@@ -92,6 +92,9 @@ func RemoveTargetsWithBuildingComponents(mts []*store.ManifestTarget) []*store.M
 	for _, mt := range mts {
 		if mt.State.IsBuilding() {
 			building[mt.Manifest.ID()] = true
+
+			// TODO(nick): This logic isn't quite right.  A manifest can re-use image
+			// results from another manifest's build.
 			for _, spec := range mt.Manifest.TargetSpecs() {
 				building[spec.ID()] = true
 			}

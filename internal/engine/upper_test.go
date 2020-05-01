@@ -262,6 +262,12 @@ func (b *fakeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RSto
 		}
 
 		result[iTarget.ID()] = b.nextBuildResult(iTarget, deployTarget)
+
+		iState := state[iTarget.ID()]
+		fakeRecycle := iState.LastSuccessfulResult != nil && !iState.NeedsImageBuild()
+		if fakeRecycle {
+			result[iTarget.ID()] = result[iTarget.ID()].Recycle()
+		}
 	}
 
 	if !call.dc().Empty() && len(b.nextLiveUpdateContainerIDs) == 0 {
@@ -2764,8 +2770,10 @@ func TestWatchManifestsWithCommonAncestor(t *testing.T) {
 	call = f.nextCall("m2 build1")
 	assert.Equal(t, m2.K8sTarget(), call.k8s())
 
-	f.WriteFile("common/a.txt", "hello world")
-	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("common/a.txt"))
+	f.WriteFile(filepath.Join("common", "a.txt"), "hello world")
+
+	aPath := f.JoinPath("common", "a.txt")
+	f.fsWatcher.Events <- watch.NewFileEvent(aPath)
 
 	f.waitForCompletedBuildCount(4)
 
@@ -2774,8 +2782,19 @@ func TestWatchManifestsWithCommonAncestor(t *testing.T) {
 	call = f.nextCall("m1 build2")
 	assert.Equal(t, m1.K8sTarget(), call.k8s())
 
+	imageStateM1I0 := call.state[m1.ImageTargets[0].ID()]
+	assert.Equal(t, map[string]bool{aPath: true}, imageStateM1I0.FilesChangedSet)
+
 	call = f.nextCall("m2 build2")
 	assert.Equal(t, m2.K8sTarget(), call.k8s())
+
+	// Make sure that when the second build is trigged, we did the bookkeeping
+	// correctly around recycling the image and propagating DepsChanged.
+	idM2I0 := m2.ImageTargets[0].ID()
+	idM2I1 := m2.ImageTargets[1].ID()
+	assert.Equal(t, map[string]bool{}, call.state[idM2I0].FilesChangedSet)
+	assert.True(t, call.state[idM2I0].LastSuccessfulResult.IsRecycled())
+	assert.Equal(t, map[model.TargetID]bool{idM2I0: true}, call.state[idM2I1].DepsChangedSet)
 
 }
 

@@ -74,10 +74,26 @@ func (bd *DockerComposeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st 
 	}
 
 	numStages := q.CountDirty()
+
+	recycled := q.RecycledResults()
+	hasRecyclingStep := len(recycled) > 0
+	if hasRecyclingStep {
+		numStages++
+	}
+
 	haveImage := len(iTargets) > 0
 
 	ps := build.NewPipelineState(ctx, numStages, bd.clock)
 	defer func() { ps.End(ctx, err) }()
+
+	if hasRecyclingStep {
+		ps.StartPipelineStep(ctx, "Loading cached images")
+		for _, result := range recycled {
+			ref := store.LocalImageRefFromBuildResult(result)
+			logger.Get(ctx).Infof("- %s", container.FamiliarString(ref))
+		}
+		ps.EndPipelineStep(ctx)
+	}
 
 	iTargetMap := model.ImageTargetsByID(iTargets)
 	err = q.RunBuilds(func(target model.TargetSpec, state store.BuildState, depResults []store.BuildResult) (store.BuildResult, error) {

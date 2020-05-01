@@ -224,6 +224,90 @@ func handleBuildStarted(ctx context.Context, state *store.EngineState, action bu
 	removeFromTriggerQueue(state, mn)
 }
 
+// In the current data model, build targets can be duplicated
+// across multiple manifests.
+//
+// If an image target succeeds, we want to record that success
+// in all manifests that depend on that image.
+func handleBuildResults(engineState *store.EngineState,
+	brManifestName model.ManifestName, br model.BuildRecord, results store.BuildResultSet) {
+	isBuildSuccess := br.Error == nil
+
+	engineState.ForEachMutableBuildStatusInResults(results, func(id model.TargetID, result store.BuildResult, mn model.ManifestName, status *store.BuildStatus) {
+		if brManifestName != mn {
+			// If this is not the manifest we built for, check
+			// if we can recycle the result from another manifest.
+			if !result.CanRecycle() {
+				return
+			}
+
+			result = result.Recycle()
+		}
+
+		// Record the last result
+		status.LastResult = result
+
+		// Remove pending file changes that were consumed by this build.
+		for file, modTime := range status.PendingFileChanges {
+			if store.BeforeOrEqual(modTime, br.StartTime) {
+				delete(status.PendingFileChanges, file)
+			}
+		}
+
+		for id, modTime := range status.PendingDependencyChanges {
+			if store.BeforeOrEqual(modTime, br.StartTime) {
+				delete(status.PendingDependencyChanges, id)
+			}
+		}
+
+		// If the whole build succeeded, mark all of the images in the
+		// build as successful.
+		//
+		// This has a minor bug: if one of the images in a set failed, but another
+		// one succeeded, this doesn't mark any of them as successful. Hopefully
+		// this will get fixed as we move towards a build graph that builds them
+		// separately. :\
+		//
+		// TODO(nick): Fix the build and deployers so that they return partial
+		// results.
+		if isBuildSuccess {
+			status.LastSuccessfulResult = result
+		}
+	})
+
+	// Suppose we built manifestA, which contains imageA depending on
+	// imageCommon.
+	//
+	// We also have manifestB, which contains imageB depending on imageCommon.
+	//
+	// We need to mark imageB as dirty, because it was not built in the manifestA build
+	// but its dependency was built.
+	engineState.ForEachMutableBuildStatusDependingOn(results, func(id, reverseDepID model.TargetID, mn model.ManifestName, reverseDepStatus *store.BuildStatus) {
+		if mn == brManifestName {
+			// We're only worried about manifests that we didn't build.
+			return
+		}
+
+		_, ok := results[reverseDepID]
+		if ok {
+			// The reverseDep is fresh! Skip it.
+			return
+		}
+
+		depResult, ok := results[id]
+		depIsDirty := ok && !depResult.IsRecycled()
+		if !depIsDirty {
+			// This build didn't actually produce a new result. So no need to mark other
+			// manifests dirty.
+			return
+		}
+
+		// This target was not built, but one of its dependencies was
+		// built, so we have to mark it for rebuild.
+		reverseDepStatus.PendingDependencyChanges[id] = br.StartTime
+	})
+}
+
 func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, cb buildcontrol.BuildCompleteAction) {
 	defer func() {
 		delete(engineState.CurrentlyBuilding, cb.ManifestName)
@@ -256,18 +340,8 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	ms.CurrentBuild = model.BuildRecord{}
 	ms.NeedsRebuildFromCrash = false
 
-	for id, result := range cb.Result {
-		ms.MutableBuildStatus(id).LastResult = result
-	}
-
 	// Remove pending file changes that were consumed by this build.
-	for _, status := range ms.BuildStatuses {
-		for file, modTime := range status.PendingFileChanges {
-			if store.BeforeOrEqual(modTime, bs.StartTime) {
-				delete(status.PendingFileChanges, file)
-			}
-		}
-	}
+	handleBuildResults(engineState, cb.ManifestName, bs, cb.Result)
 
 	if !ms.PendingManifestChange.IsZero() &&
 		store.BeforeOrEqual(ms.PendingManifestChange, bs.StartTime) {
@@ -281,10 +355,6 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 		}
 	} else {
 		ms.LastSuccessfulDeployTime = cb.FinishTime
-
-		for id, result := range cb.Result {
-			ms.MutableBuildStatus(id).LastSuccessfulResult = result
-		}
 
 		for _, pod := range ms.K8sRuntimeState().Pods {
 			// Reset the baseline, so that we don't show restarts

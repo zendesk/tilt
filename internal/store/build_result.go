@@ -19,6 +19,21 @@ type BuildResult interface {
 	TargetID() model.TargetID
 	BuildType() model.BuildType
 	Facets() []model.Facet
+
+	// Mark a build result as recycled from a previous build.
+	//
+	// This should help with the transition to a build graph. In a graph-based
+	// architecture, the graph itself would ensure that each image is only built
+	// once. If building a node of the graph doesn't change the result, we
+	// don't need to rebuild nodes that depend on it.
+	//
+	// In the short-term, the concept of "recycled" means "hey, this was already
+	// built somewhere else, so we don't need to rebuild it". That might have been
+	// in a previous build, or it might have been in another manifest. But that
+	// won't be necessary in a real graph.
+	CanRecycle() bool
+	Recycle() BuildResult
+	IsRecycled() bool
 }
 
 type LocalBuildResult struct {
@@ -28,6 +43,11 @@ type LocalBuildResult struct {
 func (r LocalBuildResult) TargetID() model.TargetID   { return r.id }
 func (r LocalBuildResult) BuildType() model.BuildType { return model.BuildTypeLocal }
 func (r LocalBuildResult) Facets() []model.Facet      { return nil }
+
+// Local build results can't be recycled.
+func (r LocalBuildResult) CanRecycle() bool     { return false }
+func (r LocalBuildResult) Recycle() BuildResult { return r }
+func (r LocalBuildResult) IsRecycled() bool     { return false }
 
 func NewLocalBuildResult(id model.TargetID) LocalBuildResult {
 	return LocalBuildResult{
@@ -47,11 +67,23 @@ type ImageBuildResult struct {
 	// Often ImageLocalRef and ImageClusterRef will be the same, but may diverge: e.g.
 	// when using KIND + local registry, localRef is localhost:1234/my-img:tilt-abc,
 	// ClusterRef is http://registry/my-img:tilt-abc
+
+	recycled bool
 }
 
 func (r ImageBuildResult) TargetID() model.TargetID   { return r.id }
 func (r ImageBuildResult) BuildType() model.BuildType { return model.BuildTypeImage }
 func (r ImageBuildResult) Facets() []model.Facet      { return nil }
+
+func (r ImageBuildResult) CanRecycle() bool { return true }
+func (r ImageBuildResult) Recycle() BuildResult {
+	r2 := r
+	r2.recycled = true
+	return r2
+}
+func (r ImageBuildResult) IsRecycled() bool {
+	return r.recycled
+}
 
 // For image targets.
 func NewImageBuildResult(id model.TargetID, localRef, clusterRef reference.NamedTagged) ImageBuildResult {
@@ -81,6 +113,11 @@ func (r LiveUpdateBuildResult) TargetID() model.TargetID   { return r.id }
 func (r LiveUpdateBuildResult) BuildType() model.BuildType { return model.BuildTypeLiveUpdate }
 func (r LiveUpdateBuildResult) Facets() []model.Facet      { return nil }
 
+// LiveUpdate results can't be recycled.
+func (r LiveUpdateBuildResult) CanRecycle() bool     { return true }
+func (r LiveUpdateBuildResult) Recycle() BuildResult { return r }
+func (r LiveUpdateBuildResult) IsRecycled() bool     { return false }
+
 // For in-place container updates.
 func NewLiveUpdateBuildResult(id model.TargetID, containerIDs []container.ID) LiveUpdateBuildResult {
 	return LiveUpdateBuildResult{
@@ -107,6 +144,11 @@ type DockerComposeBuildResult struct {
 func (r DockerComposeBuildResult) TargetID() model.TargetID   { return r.id }
 func (r DockerComposeBuildResult) BuildType() model.BuildType { return model.BuildTypeDockerCompose }
 func (r DockerComposeBuildResult) Facets() []model.Facet      { return nil }
+
+// DockerCompose build results can't be recycled.
+func (r DockerComposeBuildResult) CanRecycle() bool     { return false }
+func (r DockerComposeBuildResult) Recycle() BuildResult { return r }
+func (r DockerComposeBuildResult) IsRecycled() bool     { return false }
 
 // For docker compose deploy targets.
 func NewDockerComposeDeployResult(id model.TargetID, containerID container.ID, state *dockertypes.ContainerState) DockerComposeBuildResult {
@@ -140,6 +182,11 @@ func (r K8sBuildResult) Facets() []model.Facet {
 		},
 	}
 }
+
+// K8s build results can't be recycled.
+func (r K8sBuildResult) CanRecycle() bool     { return false }
+func (r K8sBuildResult) Recycle() BuildResult { return r }
+func (r K8sBuildResult) IsRecycled() bool     { return false }
 
 // For kubernetes deploy targets.
 func NewK8sDeployResult(id model.TargetID, uids []types.UID, hashes []k8s.PodTemplateSpecHash, appliedEntities []k8s.K8sEntity) BuildResult {
@@ -275,6 +322,9 @@ type BuildState struct {
 	// This must be liberal: it's ok if this has too many files, but not ok if it has too few.
 	FilesChangedSet map[string]bool
 
+	// Dependencies changed since the last result was built
+	DepsChangedSet map[model.TargetID]bool
+
 	// There are three kinds of triggers:
 	//
 	// 1) If a resource is in trigger_mode=TRIGGER_MODE_AUTO, then the resource auto-builds.
@@ -297,14 +347,19 @@ type BuildState struct {
 	RunningContainerError error
 }
 
-func NewBuildState(result BuildResult, files []string) BuildState {
+func NewBuildState(result BuildResult, files []string, pendingDeps []model.TargetID) BuildState {
 	set := make(map[string]bool, len(files))
 	for _, f := range files {
 		set[f] = true
 	}
+	depsSet := make(map[model.TargetID]bool, len(pendingDeps))
+	for _, d := range pendingDeps {
+		depsSet[d] = true
+	}
 	return BuildState{
 		LastSuccessfulResult: result,
 		FilesChangedSet:      set,
+		DepsChangedSet:       depsSet,
 	}
 }
 

@@ -288,11 +288,11 @@ func NewManifestsWithCommonAncestor(fixture Fixture) (model.Manifest, model.Mani
 	target1 := model.MustNewImageTarget(ref1).WithBuildDetails(model.DockerBuild{
 		Dockerfile: `FROM ` + refCommon.String(),
 		BuildPath:  fixture.JoinPath("image-1"),
-	})
+	}).WithDependencyIDs([]model.TargetID{targetCommon.ID()})
 	target2 := model.MustNewImageTarget(ref2).WithBuildDetails(model.DockerBuild{
 		Dockerfile: `FROM ` + refCommon.String(),
 		BuildPath:  fixture.JoinPath("image-2"),
-	})
+	}).WithDependencyIDs([]model.TargetID{targetCommon.ID()})
 
 	m1 := manifestbuilder.New(fixture, "image-1").
 		WithK8sYAML(testyaml.Deployment("image-1", ref1.String())).
