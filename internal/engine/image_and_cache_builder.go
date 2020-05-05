@@ -18,6 +18,8 @@ type imageAndCacheBuilder struct {
 	ib         build.ImageBuilder
 	custb      build.CustomBuilder
 	updateMode buildcontrol.UpdateMode
+
+	cache map[container.RefSelector]CacheEntry
 }
 
 func NewImageAndCacheBuilder(ib build.ImageBuilder, custb build.CustomBuilder, updateMode buildcontrol.UpdateMode) *imageAndCacheBuilder {
@@ -31,6 +33,14 @@ func NewImageAndCacheBuilder(ib build.ImageBuilder, custb build.CustomBuilder, u
 func (icb *imageAndCacheBuilder) Build(ctx context.Context, iTarget model.ImageTarget, state store.BuildState,
 	ps *build.PipelineState) (refs container.TaggedRefs, err error) {
 	userFacingRefName := container.FamiliarString(iTarget.Refs.ConfigurationRef)
+
+	if refs, err, ok := icb.lookupCache(ctx, iTarget, state, ps); ok {
+		return refs, err
+	}
+
+	defer func() {
+		icb.putCache(ctx, iTarget, state, ps, refs, err)
+	}()
 
 	switch bd := iTarget.BuildDetails.(type) {
 	case model.DockerBuild:
@@ -58,4 +68,41 @@ func (icb *imageAndCacheBuilder) Build(ctx context.Context, iTarget model.ImageT
 	}
 
 	return refs, nil
+}
+
+func (icb *imageAndCacheBuilder) checkCache(ctx context.Context, iTarget model.ImageTarget, state store.BuildState, ps *build.PipelineState) (refs container.TaggedRefs, err error, ok bool) {
+	if state.ImageBuildTriggered {
+		// explicit build requested
+		return nil, nil, false
+	}
+
+	entry := icb.cache[iTarget.Refs.ConfigurationRef]
+	if entry.IsZero() {
+		// no cached entry
+		return nil, nil, false
+	}
+
+	if state.MostRecentMod().After(entry.LastChange) {
+		// there was a file modified since we built this
+		return nil, nil, false
+	}
+
+	return entry.Refs, entry.Err, true
+}
+
+func (icb *imageAndCacheBuilder) putCache(ctx context.Context, iTarget model.ImageTarget, state store.BuildState, ps *build.PipelineState, refs container.TaggedRefs, err error) {
+	icb.cache[iTarget.Refs.ConfigurationRef] = CacheEntry{
+		ITarget:    iTarget,
+		LastChange: state.MostRecentMod(),
+		Refs:       refs,
+		Err:        err,
+	}
+}
+
+type CacheEntry struct {
+	ITarget    model.ImageTarget
+	LastChange time.Time
+
+	Refs container.TaggedRefs
+	Err  error
 }

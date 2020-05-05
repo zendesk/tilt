@@ -273,7 +273,7 @@ type BuildState struct {
 
 	// Files changed since the last result was build.
 	// This must be liberal: it's ok if this has too many files, but not ok if it has too few.
-	FilesChangedSet map[string]bool
+	FilesChangedSet map[string]time.Time
 
 	// There are three kinds of triggers:
 	//
@@ -297,10 +297,10 @@ type BuildState struct {
 	RunningContainerError error
 }
 
-func NewBuildState(result BuildResult, files []string) BuildState {
-	set := make(map[string]bool, len(files))
-	for _, f := range files {
-		set[f] = true
+func NewBuildState(result BuildResult, files map[string]time.Time) BuildState {
+	set := make(map[string]time.Time, len(files))
+	for k, v := range files {
+		set[k] = v
 	}
 	return BuildState{
 		LastSuccessfulResult: result,
