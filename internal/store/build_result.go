@@ -421,6 +421,10 @@ func (b BuildState) HasLastSuccessfulResult() bool {
 func (b BuildState) NeedsImageBuild() bool {
 	lastBuildWasImgBuild := b.LastSuccessfulResult != nil &&
 		b.LastSuccessfulResult.BuildType() == model.BuildTypeImage
+
+	// maybe to dispense with the second loop in `handleBuildResult`:
+	// compare b.lastSuccessfulResult.wasRecycled timestamp to b.filesChangedSet -->
+	// if no files have changed since we recycled last build, then doesn't need build
 	return !lastBuildWasImgBuild || len(b.FilesChangedSet) > 0 || b.ImageBuildTriggered
 }
 

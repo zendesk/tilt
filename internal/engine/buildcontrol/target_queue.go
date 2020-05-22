@@ -95,6 +95,8 @@ func (q *TargetQueue) Results() store.BuildResultSet {
 	return q.results
 }
 
+// i still think this naming is wrong
+// "recycle" feels specifically like "we reused a result from a different build" and not "oh nothing on this image changed"
 func (q *TargetQueue) shouldRecycle(id model.TargetID) bool {
 	return !q.needsOwnBuild[id] && !q.depsNeedBuild[id]
 }

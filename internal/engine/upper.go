@@ -233,10 +233,16 @@ func handleBuildResults(engineState *store.EngineState,
 	brManifestName model.ManifestName, br model.BuildRecord, results store.BuildResultSet) {
 	isBuildSuccess := br.Error == nil
 
+	// Step 1: for every target we just built, if that target exists on another manifest,
+	// tell that manifest "hey, we just built this so you don't have to"
+	// Step 2: for every manifest we updated this way, if anything DEPENDS ON the target
+	// we build, mark that thing as dirty cuz its dep just changed
+
+	// For every target on ANY manifest where target corresponds to some target in results:
 	engineState.ForEachMutableBuildStatusInResults(results, func(id model.TargetID, result store.BuildResult, mn model.ManifestName, status *store.BuildStatus) {
 		if brManifestName != mn {
 			// If this is not the manifest we built for, check
-			// if we can recycle the result from another manifest.
+			// if we can recycle the result from the build we just completed.
 			if !result.CanRecycle() {
 				return
 			}
@@ -248,6 +254,11 @@ func handleBuildResults(engineState *store.EngineState,
 		status.LastResult = result
 
 		// Remove pending file changes that were consumed by this build.
+
+		// maybe to dispense with the second loop in `handleBuildResult`:
+		// if result is one we're recycling, don't scrub file changes, let
+		// it run thru the builders, but when checking if it needs a build,
+		// return `false` b/c it's recycled
 		for file, modTime := range status.PendingFileChanges {
 			if store.BeforeOrEqual(modTime, br.StartTime) {
 				delete(status.PendingFileChanges, file)
@@ -282,11 +293,23 @@ func handleBuildResults(engineState *store.EngineState,
 	//
 	// We need to mark imageB as dirty, because it was not built in the manifestA build
 	// but its dependency was built.
+	//
+	// (Maybe worth mentioning the k8s target case as well)
+
+	// For every target on ANY manifest where target corresponds to some target in results, every
+	// (target, targetDependingOnThatTarget) pair --> (id, reverseDepID)
 	engineState.ForEachMutableBuildStatusDependingOn(results, func(id, reverseDepID model.TargetID, mn model.ManifestName, reverseDepStatus *store.BuildStatus) {
 		if mn == brManifestName {
-			// We're only worried about manifests that we didn't build.
+			// We're only worried about manifests that we didn't just build.
 			return
 		}
+
+		// reverseDepID / id naming had me and matt tying ourselves in knots.
+		// Is there a clearer naming scheme? parent / child?
+
+		// imgB.dependencies = [imgCommon]
+		// reverseDep = imgB
+		// id = common
 
 		_, ok := results[reverseDepID]
 		if ok {
@@ -295,15 +318,21 @@ func handleBuildResults(engineState *store.EngineState,
 		}
 
 		depResult, ok := results[id]
-		depIsDirty := ok && !depResult.IsRecycled()
+		// Q: would "ok" ever be false here? I thought that by the contract of this iterator,
+		// "id" will always be a target in "results"?
+		depIsDirty := ok && !depResult.IsRecycled() // prevent infinite loops
 		if !depIsDirty {
 			// This build didn't actually produce a new result. So no need to mark other
 			// manifests dirty.
 			return
 		}
 
+		// QUESTION: what if we didn't scrub the file-changes for `common` and let it run thru the builder as a no-op?
+		// a. saves us this complexity (??) and
+		// b. maybe improves behavior for manual triggers
+
 		// This target was not built, but one of its dependencies was
-		// built, so we have to mark it for rebuild.
+		// built, so we have to mark it ("this target") for rebuild.
 		reverseDepStatus.PendingDependencyChanges[id] = br.StartTime
 	})
 }
