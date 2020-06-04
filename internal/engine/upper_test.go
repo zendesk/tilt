@@ -3504,7 +3504,6 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 	ghc := &github.FakeClient{}
 	ewm := k8swatch.NewEventWatchManager(kCli, of)
 	tcum := cloud.NewStatusManager(httptest.NewFakeClientEmptyJSON(), clock)
-	cuu := cloud.NewUpdateUploader(httptest.NewFakeClient(), "cloud-test.tilt.dev")
 	fe := local.NewFakeExecer()
 	lc := local.NewController(fe)
 
@@ -3543,7 +3542,7 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 	podm := k8srollout.NewPodMonitor()
 	ec := exit.NewController()
 
-	subs := ProvideSubscribers(h, pw, sw, plm, pfc, fwm, bc, cc, dcw, dclm, pm, sm, ar, hudsc, au, ewm, tcum, cuu, dp, tc, lc, podm, ec)
+	subs := ProvideSubscribers(h, pw, sw, plm, pfc, fwm, bc, cc, dcw, dclm, pm, sm, ar, hudsc, au, ewm, tcum, dp, tc, lc, podm, ec)
 	ret.upper = NewUpper(ctx, st, subs)
 
 	go func() {

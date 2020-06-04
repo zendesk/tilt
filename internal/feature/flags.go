@@ -50,7 +50,7 @@ var MainDefaults = Defaults{
 	},
 	UpdateHistory: Value{
 		Enabled: false,
-		Status:  Active,
+		Status:  Obsolete,
 	},
 	Facets: Value{
 		Enabled: true,
