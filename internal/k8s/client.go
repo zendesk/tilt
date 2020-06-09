@@ -480,8 +480,8 @@ func ProvideClientset(cfg RESTConfigOrError) ClientsetOrError {
 func ProvideClientConfig() clientcmd.ClientConfig {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
-
 	overrides := &clientcmd.ConfigOverrides{}
+	overrides.CurrentContext = "microk8s"
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		rules,
 		overrides)
