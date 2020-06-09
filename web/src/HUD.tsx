@@ -1,7 +1,9 @@
 import React, { Component } from "react"
 import AppController from "./AppController"
 import NoMatch from "./NoMatch"
-import Sidebar, { SidebarItem } from "./Sidebar"
+import Sidebar from "./Sidebar"
+import SidebarAccount from "./SidebarAccount"
+import SidebarResources, { SidebarItem } from "./SidebarResources"
 import Statusbar, { StatusItem } from "./Statusbar"
 import LogPane from "./LogPane"
 import HeroScreen from "./HeroScreen"
@@ -17,14 +19,13 @@ import SocketBar from "./SocketBar"
 import "./HUD.scss"
 import {
   LogLine,
-  LogTrace,
-  LogTraceNav,
   ResourceView,
   ShowFatalErrorModal,
   SnapshotHighlight,
   SocketState,
+  ShowErrorModal,
 } from "./types"
-import { logLinesFromString, isBuildSpanId } from "./logs"
+import { logLinesFromString } from "./logs"
 import HudState from "./HudState"
 import AlertPane from "./AlertPane"
 import AnalyticsNudge from "./AnalyticsNudge"
@@ -37,6 +38,8 @@ import * as _ from "lodash"
 import FacetsPane from "./FacetsPane"
 import HUDLayout from "./HUDLayout"
 import LogStore from "./LogStore"
+import { traceNav } from "./trace"
+import ErrorModal from "./ErrorModal"
 
 type HudProps = {
   history: History
@@ -81,11 +84,7 @@ class HUD extends Component<HudProps, HudState> {
           date: "",
           dev: false,
         },
-        latestTiltBuild: {
-          version: "",
-          date: "",
-          dev: false,
-        },
+        suggestedTiltVersion: "",
         versionSettings: { checkUpdates: true },
         featureFlags: {},
         tiltCloudUsername: "",
@@ -98,6 +97,8 @@ class HUD extends Component<HudProps, HudState> {
       showFatalErrorModal: ShowFatalErrorModal.Default,
       snapshotHighlight: undefined,
       socketState: SocketState.Closed,
+      showErrorModal: ShowErrorModal.Default,
+      error: undefined,
     }
 
     this.toggleSidebar = this.toggleSidebar.bind(this)
@@ -181,6 +182,7 @@ class HUD extends Component<HudProps, HudState> {
 
     let body = JSON.stringify(snapshot)
 
+    // TODO(dmiller): we need to figure out a way to get human readable error messages from the server
     fetch(url, {
       method: "post",
       body: body,
@@ -193,9 +195,21 @@ class HUD extends Component<HudProps, HudState> {
               snapshotLink: value.url ? value.url : "",
             })
           })
-          .catch(err => console.error(err))
+          .catch(err => {
+            console.error(err)
+            this.setAppState({
+              showSnapshotModal: false,
+              error: "Error decoding JSON response",
+            })
+          })
       })
-      .catch(err => console.error(err))
+      .catch(err => {
+        console.error(err)
+        this.setAppState({
+          showSnapshotModal: false,
+          error: "Error posting snapshot",
+        })
+      })
   }
 
   private getFeatures(): Features {
@@ -226,26 +240,26 @@ class HUD extends Component<HudProps, HudState> {
     let view = this.state.view
 
     let needsNudge = view?.needsAnalyticsNudge ?? false
-    let logStore = this.state.logStore ?? null
     let resources = view?.resources ?? []
     if (!resources?.length) {
       return <HeroScreen message={"Loading…"} />
     }
     let statusItems = resources.map(res => new StatusItem(res))
 
-    let runningVersion = view?.runningTiltBuild
-    let latestVersion = view?.latestTiltBuild
+    let runningBuild = view?.runningTiltBuild
+    let suggestedVersion = view?.suggestedTiltVersion
     const versionSettings = view?.versionSettings
     const checkUpdates = versionSettings?.checkUpdates ?? true
     let shareSnapshotModal = this.renderShareSnapshotModal(view)
     let fatalErrorModal = this.renderFatalErrorModal(view)
+    let errorModal = this.renderErrorModal()
 
     let statusbar = (
       <Statusbar
         items={statusItems}
         alertsUrl={this.path("/alerts")}
-        runningVersion={runningVersion}
-        latestVersion={latestVersion}
+        runningBuild={runningBuild}
+        suggestedVersion={suggestedVersion}
         checkVersion={checkUpdates}
       />
     )
@@ -255,11 +269,18 @@ class HUD extends Component<HudProps, HudState> {
       hudClasses.push("is-snapshot")
     }
 
+    let matchTrace = matchPath(String(this.props.history.location.pathname), {
+      path: this.path("/r/:name/trace/:span"),
+    })
+    let matchTraceParams: any = matchTrace?.params
+    let isTwoLevelHeader = !!matchTraceParams?.span
+
     return (
       <div className={hudClasses.join(" ")}>
         <AnalyticsNudge needsNudge={needsNudge} />
         <SocketBar state={this.state.socketState} />
         {fatalErrorModal}
+        {errorModal}
         {shareSnapshotModal}
 
         {this.renderSidebarSwitch()}
@@ -268,6 +289,7 @@ class HUD extends Component<HudProps, HudState> {
         <HUDLayout
           header={this.renderHUDHeader()}
           isSidebarClosed={!!this.state.isSidebarClosed}
+          isTwoLevelHeader={isTwoLevelHeader}
         >
           {this.renderMainPaneSwitch()}
         </HUDLayout>
@@ -334,12 +356,12 @@ class HUD extends Component<HudProps, HudState> {
       let alertsUrl =
         name === "" ? this.path("/alerts") : this.path(`/r/${name}/alerts`)
 
-      let isFacetsEnabled = this.getFeatures().isEnabled("facets")
-      let facetsUrl =
-        name !== "" && isFacetsEnabled ? this.path(`/r/${name}/facets`) : null
+      let facetsUrl = name !== "" ? this.path(`/r/${name}/facets`) : null
 
-      let traceUrl =
-        name !== "" && span != "" ? this.path(`/r/${name}/trace/${span}`) : null
+      let currentTraceNav =
+        span && this.state.logStore
+          ? traceNav(this.state.logStore, this.pathBuilder, span)
+          : null
 
       if (name) {
         let selectedResource = resources.find(r => r.name === name)
@@ -359,8 +381,7 @@ class HUD extends Component<HudProps, HudState> {
           resourceView={t}
           numberOfAlerts={numAlerts}
           facetsUrl={facetsUrl}
-          traceUrl={traceUrl}
-          span={span}
+          traceNav={currentTraceNav}
         />
       )
     }
@@ -394,20 +415,32 @@ class HUD extends Component<HudProps, HudState> {
 
   renderSidebarSwitch() {
     let view = this.state.view
-    let resources = (view && view.resources) || []
+    let resources = view?.resources || []
     let sidebarItems = resources.map(res => new SidebarItem(res))
     let isSidebarClosed = !!this.state.isSidebarClosed
+    let tiltCloudUsername = view?.tiltCloudUsername || null
+    let tiltCloudSchemeHost = view?.tiltCloudSchemeHost || ""
+    let tiltCloudTeamID = view?.tiltCloudTeamID || null
+    let tiltCloudTeamName = view?.tiltCloudTeamName || null
+    let isSnapshot = this.pathBuilder.isSnapshot()
     let sidebarRoute = (t: ResourceView, props: RouteComponentProps<any>) => {
       let name = props.match.params.name
       return (
-        <Sidebar
-          selected={name}
-          items={sidebarItems}
-          isClosed={isSidebarClosed}
-          toggleSidebar={this.toggleSidebar}
-          resourceView={t}
-          pathBuilder={this.pathBuilder}
-        />
+        <Sidebar isClosed={isSidebarClosed} toggleSidebar={this.toggleSidebar}>
+          <SidebarAccount
+            tiltCloudUsername={tiltCloudUsername}
+            tiltCloudSchemeHost={tiltCloudSchemeHost}
+            tiltCloudTeamID={tiltCloudTeamID}
+            tiltCloudTeamName={tiltCloudTeamName}
+            isSnapshot={isSnapshot}
+          />
+          <SidebarResources
+            selected={name}
+            items={sidebarItems}
+            resourceView={t}
+            pathBuilder={this.pathBuilder}
+          />
+        </Sidebar>
       )
     }
     return (
@@ -438,7 +471,6 @@ class HUD extends Component<HudProps, HudState> {
     let view = this.state.view
     let resources = (view && view.resources) || []
     let snapshotHighlight = this.state.snapshotHighlight || null
-    let showSnapshotModal = !!this.state.showSnapshotModal
     let isSnapshot = this.pathBuilder.isSnapshot()
 
     let traceRoute = (props: RouteComponentProps<any>) => {
@@ -606,6 +638,21 @@ class HUD extends Component<HudProps, HudState> {
         error={error}
         showFatalErrorModal={this.state.showFatalErrorModal}
         handleClose={handleClose}
+      />
+    )
+  }
+
+  renderErrorModal() {
+    return (
+      <ErrorModal
+        error={this.state.error}
+        showErrorModal={this.state.showErrorModal}
+        handleClose={() =>
+          this.setState({
+            showErrorModal: ShowErrorModal.Default,
+            error: undefined,
+          })
+        }
       />
     )
   }

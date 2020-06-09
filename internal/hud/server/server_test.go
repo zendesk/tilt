@@ -8,25 +8,26 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/windmilleng/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/testutils"
 
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	grpcRuntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 
-	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/cloud"
-	"github.com/windmilleng/tilt/internal/cloud/cloudurl"
-	"github.com/windmilleng/tilt/internal/hud/server"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/pkg/assets"
-	"github.com/windmilleng/tilt/pkg/model"
-	proto_webview "github.com/windmilleng/tilt/pkg/webview"
+	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/cloud"
+	"github.com/tilt-dev/tilt/internal/cloud/cloudurl"
+	"github.com/tilt-dev/tilt/internal/hud/server"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/assets"
+	"github.com/tilt-dev/tilt/pkg/model"
+	proto_webview "github.com/tilt-dev/tilt/pkg/webview"
 )
 
 func TestHandleAnalyticsEmptyRequest(t *testing.T) {
@@ -302,6 +303,9 @@ func TestHandleTriggerMalformedPayload(t *testing.T) {
 }
 
 func TestSendToTriggerQueue_manualManifest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TODO(nick): fix this")
+	}
 	f := newTestFixture(t)
 
 	mt := store.ManifestTarget{
@@ -314,7 +318,7 @@ func TestSendToTriggerQueue_manualManifest(t *testing.T) {
 	state.UpsertManifestTarget(&mt)
 	f.st.UnlockMutableState()
 
-	err := server.SendToTriggerQueue(f.st, "foobar")
+	err := server.SendToTriggerQueue(f.st, "foobar", model.BuildReasonFlagTriggerWeb)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,6 +329,7 @@ func TestSendToTriggerQueue_manualManifest(t *testing.T) {
 		t.Fatalf("Action was not of type 'AppendToTriggerQueueAction': %+v", action)
 	}
 	assert.Equal(t, "foobar", action.Name.String())
+	assert.Equal(t, model.BuildReasonFlagTriggerWeb, action.Reason)
 }
 
 func TestSendToTriggerQueue_automaticManifest(t *testing.T) {
@@ -340,7 +345,7 @@ func TestSendToTriggerQueue_automaticManifest(t *testing.T) {
 	state.UpsertManifestTarget(&mt)
 	f.st.UnlockMutableState()
 
-	err := server.SendToTriggerQueue(f.st, "foobar")
+	err := server.SendToTriggerQueue(f.st, "foobar", model.BuildReasonFlagTriggerWeb)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +361,7 @@ func TestSendToTriggerQueue_automaticManifest(t *testing.T) {
 func TestSendToTriggerQueue_noManifestWithName(t *testing.T) {
 	f := newTestFixture(t)
 
-	err := server.SendToTriggerQueue(f.st, "foobar")
+	err := server.SendToTriggerQueue(f.st, "foobar", model.BuildReasonFlagTriggerWeb)
 
 	assert.EqualError(t, err, "no manifest found with name 'foobar'")
 	store.AssertNoActionOfType(t, reflect.TypeOf(server.AppendToTriggerQueueAction{}), f.getActions)
@@ -387,7 +392,7 @@ func TestHandleNewSnapshot(t *testing.T) {
 	lastReq := f.snapshotHTTP.lastReq
 	if assert.NotNil(t, lastReq) {
 		var snapshot proto_webview.Snapshot
-		jspb := &runtime.JSONPb{OrigName: false, EmitDefaults: true}
+		jspb := &grpcRuntime.JSONPb{OrigName: false, EmitDefaults: true}
 		decoder := jspb.NewDecoder(lastReq.Body)
 		err := decoder.Decode(&snapshot)
 		require.NoError(t, err)
@@ -430,7 +435,7 @@ type serverFixture struct {
 }
 
 func newTestFixture(t *testing.T) *serverFixture {
-	st, getActions := store.NewStoreForTesting()
+	st, getActions := store.NewStoreWithFakeReducer()
 	go func() {
 		err := st.Loop(context.Background())
 		testutils.FailOnNonCanceledErr(t, err, "store.Loop failed")

@@ -14,8 +14,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 const ExampleBuildSHA1 = "sha256:11cd0b38bc3ceb958ffb2f9bd70be3fb317ce7d255c8a4c3f4af30e298aa1aab"
@@ -150,6 +150,16 @@ func (c *FakeClient) ServerVersion() types.Version {
 
 func (c *FakeClient) SetExecError(err error) {
 	c.ExecErrorsToThrow = []error{err}
+}
+
+func (c *FakeClient) ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error) {
+	state := NewRunningContainerState()
+	return types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{
+			ID:    containerID,
+			State: &state,
+		},
+	}, nil
 }
 
 func (c *FakeClient) SetContainerListOutput(output map[string][]types.Container) {

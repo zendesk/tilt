@@ -5,16 +5,18 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/windmilleng/tilt/internal/dockerfile"
-	"github.com/windmilleng/tilt/internal/dockerignore"
-	"github.com/windmilleng/tilt/internal/testutils"
-	"github.com/windmilleng/tilt/internal/testutils/tempdir"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/dockerfile"
+	"github.com/tilt-dev/tilt/internal/dockerignore"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func TestArchiveDf(t *testing.T) {
@@ -69,7 +71,7 @@ func TestArchivePathsIfExists(t *testing.T) {
 
 	actual := tar.NewReader(pr)
 	f.assertFilesInTar(actual, []expectedFile{
-		expectedFile{Path: "a", Contents: "a", AssertUidAndGidAreZero: true},
+		expectedFile{Path: "a", Contents: "a", AssertUidAndGidAreZero: true, HasExecBitWindows: true},
 		expectedFile{Path: "b", Missing: true},
 	})
 }
@@ -125,6 +127,10 @@ func TestDontArchiveTiltfile(t *testing.T) {
 }
 
 func TestArchiveOverlapping(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Cannot create a symlink on windows")
+	}
+
 	f := newFixture(t)
 	buf := new(bytes.Buffer)
 	ab := NewArchiveBuilder(buf, model.EmptyMatcher)
@@ -160,6 +166,10 @@ func TestArchiveOverlapping(t *testing.T) {
 }
 
 func TestArchiveSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Cannot create a symlink on windows")
+	}
+
 	f := newFixture(t)
 	buf := new(bytes.Buffer)
 	ab := NewArchiveBuilder(buf, model.EmptyMatcher)
@@ -185,6 +195,43 @@ func TestArchiveSymlink(t *testing.T) {
 	f.assertFilesInTar(actual, []expectedFile{
 		expectedFile{Path: "src/a.txt", Contents: "hello world"},
 		expectedFile{Path: "src/b.txt", Linkname: "a.txt"},
+	})
+}
+
+func TestArchiveSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Cannot create a unix socket on windows")
+	}
+
+	f := newFixture(t)
+	buf := new(bytes.Buffer)
+	ab := NewArchiveBuilder(buf, model.EmptyMatcher)
+	defer ab.Close()
+	defer f.tearDown()
+
+	f.WriteFile("src/a.txt", "hello world")
+	c, err := net.Listen("unix", f.JoinPath("src/my.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	paths := []PathMapping{
+		PathMapping{
+			LocalPath:     f.JoinPath("src"),
+			ContainerPath: "/src",
+		},
+	}
+
+	err = ab.ArchivePathsIfExist(f.ctx, paths)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+
+	actual := tar.NewReader(buf)
+	f.assertFilesInTar(actual, []expectedFile{
+		expectedFile{Path: "src/a.txt", Contents: "hello world"},
+		expectedFile{Path: "src/my.sock", Missing: true},
 	})
 }
 

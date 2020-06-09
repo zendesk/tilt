@@ -2,7 +2,7 @@ import React from "react"
 import { storiesOf } from "@storybook/react"
 import HUDLayout from "./HUDLayout"
 import styled from "styled-components"
-import { Color, Height, SizeUnit } from "./style-helpers"
+import { Color, SizeUnit } from "./style-helpers"
 
 let Header = styled.header`
   border-right: 1px dashed ${Color.white};
@@ -94,6 +94,19 @@ function layoutWithSidebarCollapsed() {
   )
 }
 
+function layoutTwoLevelNav() {
+  return (
+    <HUDLayout
+      header={<Header>Header</Header>}
+      isSidebarClosed={false}
+      isTwoLevelHeader={true}
+    >
+      <Main>{mainLorem}</Main>
+    </HUDLayout>
+  )
+}
+
 storiesOf("HUDLayout", module)
   .add("default", layoutDefault)
   .add("sidebar-collapsed", layoutWithSidebarCollapsed)
+  .add("two-level-nav", layoutTwoLevelNav)

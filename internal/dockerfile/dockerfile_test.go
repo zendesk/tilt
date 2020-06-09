@@ -1,12 +1,9 @@
 package dockerfile
 
 import (
-	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/windmilleng/tilt/pkg/model"
 )
 
 func TestAllowEntrypoint(t *testing.T) {
@@ -97,46 +94,6 @@ RUN echo bye
 	assert.True(t, ok)
 }
 
-func TestDeriveSyncs(t *testing.T) {
-	df := Dockerfile(`RUN echo 'hi'
-COPY foo /bar
-ADD /abs/bar /baz
-ADD ./beep/boop /blorp`)
-	context := "/context/dir"
-	syncs, err := df.BUGGY_DeriveSyncs(context)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expectedSyncs := []model.Sync{
-		model.Sync{
-			LocalPath:     path.Join(context, "foo"),
-			ContainerPath: "/bar",
-		},
-		model.Sync{
-			LocalPath:     "/abs/bar",
-			ContainerPath: "/baz",
-		},
-		model.Sync{
-			LocalPath:     path.Join(context, "beep/boop"),
-			ContainerPath: "/blorp",
-		},
-	}
-	assert.Equal(t, len(expectedSyncs), len(syncs))
-	for _, s := range expectedSyncs {
-		assert.Contains(t, syncs, s)
-	}
-}
-
-func TestNoAddsToNoSyncs(t *testing.T) {
-	df := Dockerfile(`RUN echo 'hi'`)
-	syncs, err := df.BUGGY_DeriveSyncs("/context/dir")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Empty(t, syncs)
-}
-
 func TestFindImages(t *testing.T) {
 	df := Dockerfile(`FROM gcr.io/image-a`)
 	images, err := df.FindImages()
@@ -197,5 +154,29 @@ FROM gcr.io/image-a:${TAG}
 	assert.NoError(t, err)
 	if assert.Equal(t, 1, len(images)) {
 		assert.Equal(t, "gcr.io/image-a:latest", images[0].String())
+	}
+}
+
+func TestFindImagesWithMount(t *testing.T) {
+	// Example from:
+	// https://github.com/tilt-dev/tilt/issues/3331
+	//
+	// The buildkit experimental parser will parse commands
+	// like `RUN --mount` that the normal parser won't. So
+	// we want to make sure a partial parse succeeds:
+	// an bad parse later in the Dockerfile shouldn't interfere
+	// with commands further up.
+	df := Dockerfile(`
+# syntax=docker/dockerfile:experimental
+
+ARG PYTHON2_BASE="python2-base"
+FROM ${PYTHON2_BASE}
+
+RUN --mount=type=cache,id=pip,target=/root/.cache/pip pip install python-dateutil
+`)
+	images, err := df.FindImages()
+	assert.NoError(t, err)
+	if assert.Equal(t, 1, len(images)) {
+		assert.Equal(t, "docker.io/library/python2-base", images[0].String())
 	}
 }

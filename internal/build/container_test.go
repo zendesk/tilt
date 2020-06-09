@@ -1,4 +1,4 @@
-//+build !skipcontainertests
+//+build !skipcontainertests,!windows
 
 // Tests that involve spinning up/interacting with actual containers
 package build
@@ -6,10 +6,10 @@ package build
 import (
 	"testing"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/docker"
-	"github.com/windmilleng/tilt/internal/dockerfile"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/docker"
+	"github.com/tilt-dev/tilt/internal/dockerfile"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // * * * IMAGE BUILDER * * *

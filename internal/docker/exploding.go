@@ -8,8 +8,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // A docker client that returns errors on every method call.
@@ -37,6 +37,9 @@ func (c explodingClient) BuilderVersion() types.BuilderVersion {
 }
 func (c explodingClient) ServerVersion() types.Version {
 	return types.Version{}
+}
+func (c explodingClient) ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error) {
+	return types.ContainerJSON{}, c.err
 }
 func (c explodingClient) ContainerList(ctx context.Context, options types.ContainerListOptions) ([]types.Container, error) {
 	return nil, c.err

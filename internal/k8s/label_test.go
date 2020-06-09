@@ -13,8 +13,8 @@ import (
 	"k8s.io/api/apps/v1beta2"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/windmilleng/tilt/internal/k8s/testyaml"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/k8s/testyaml"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 type field struct {
@@ -119,6 +119,31 @@ func TestInjectLabelDeploymentBeta1(t *testing.T) {
 	}
 
 	d, ok := newEntity.Obj.(*v1beta1.Deployment)
+	require.True(t, ok)
+
+	expectedLPs := append(lps, model.LabelPair{Key: "app", Value: "sancho"})
+
+	verifyFields(t, expectedLPs, []field{
+		{"d.Labels", d.Labels},
+		{"d.Spec.Template.Labels", d.Spec.Template.Labels},
+		{"d.Spec.Selector.MatchLabels", d.Spec.Selector.MatchLabels},
+	})
+}
+
+func TestInjectLabelStatefulSetBeta1(t *testing.T) {
+	entity := parseOneEntity(t, testyaml.SanchoStatefulSetBeta1YAML)
+	lps := []model.LabelPair{
+		{
+			Key:   "owner",
+			Value: "me",
+		},
+	}
+	newEntity, err := InjectLabels(entity, lps)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d, ok := newEntity.Obj.(*v1beta1.StatefulSet)
 	require.True(t, ok)
 
 	expectedLPs := append(lps, model.LabelPair{Key: "app", Value: "sancho"})

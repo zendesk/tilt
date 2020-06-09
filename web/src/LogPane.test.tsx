@@ -1,9 +1,10 @@
 import React from "react"
 import ReactDOM from "react-dom"
-import LogPane from "./LogPane"
+import LogPane, { logText } from "./LogPane"
 import renderer from "react-test-renderer"
-import { mount } from "enzyme"
+import { mount, render } from "enzyme"
 import { logLinesFromString } from "./logs"
+import { LogLine } from "./types"
 
 const fakeHandleSetHighlight = () => {}
 const fakeHandleClearHighlight = () => {}
@@ -73,8 +74,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
 
     RUN go get github.com/golang/protobuf/protoc-gen-go
 
-    ADD . /go/src/github.com/windmilleng/servantes/fe
-    RUN go install github.com/windmilleng/servantes/fe
+    ADD . /go/src/github.com/tilt-dev/servantes/fe
+    RUN go install github.com/tilt-dev/servantes/fe
     ENTRYPOINT /go/bin/fe
 
 
@@ -85,8 +86,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
       ╎ [2/6] RUN apt update && apt install -y unzip time make
       ╎ [3/6] RUN wget https://github.com/google/protobuf/releases/download/v3.5.1/protoc-3.5.1-linux-x86_64.zip &&   unzip protoc-3.5.1-linux-x86_64.zip -d protoc &&   mv protoc/bin/protoc /usr/bin/protoc
       ╎ [4/6] RUN go get github.com/golang/protobuf/protoc-gen-go
-      ╎ [5/6] ADD . /go/src/github.com/windmilleng/servantes/fe
-      ╎ [6/6] RUN go install github.com/windmilleng/servantes/fe
+      ╎ [5/6] ADD . /go/src/github.com/tilt-dev/servantes/fe
+      ╎ [6/6] RUN go install github.com/tilt-dev/servantes/fe
 
   [34mSTEP 2/3 — [0mPushing gcr.io/windmill-public-containers/servantes/fe:tilt-2540b7769f4b0e45
       ╎ Skipping push
@@ -106,8 +107,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
   Building Dockerfile:
     FROM golang:1.10
 
-    ADD . /go/src/github.com/windmilleng/servantes/vigoda
-    RUN go install github.com/windmilleng/servantes/vigoda
+    ADD . /go/src/github.com/tilt-dev/servantes/vigoda
+    RUN go install github.com/tilt-dev/servantes/vigoda
 
     ENTRYPOINT /go/bin/vigoda
 
@@ -115,8 +116,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
       ╎ Created tarball (size: 8.7 kB)
   [34m  │ [0mBuilding image
       ╎ [1/3] FROM docker.io/library/golang:1.10
-      ╎ [2/3] ADD . /go/src/github.com/windmilleng/servantes/vigoda
-      ╎ [3/3] RUN go install github.com/windmilleng/servantes/vigoda
+      ╎ [2/3] ADD . /go/src/github.com/tilt-dev/servantes/vigoda
+      ╎ [3/3] RUN go install github.com/tilt-dev/servantes/vigoda
 
   [34mSTEP 2/3 — [0mPushing gcr.io/windmill-public-containers/servantes/vigoda:tilt-2d369271c8091f68
       ╎ Skipping push
@@ -136,8 +137,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
   Building Dockerfile:
     FROM golang:1.10
 
-    ADD . /go/src/github.com/windmilleng/servantes/snack
-    RUN go install github.com/windmilleng/servantes/snack
+    ADD . /go/src/github.com/tilt-dev/servantes/snack
+    RUN go install github.com/tilt-dev/servantes/snack
 
     ENTRYPOINT /go/bin/snack
 
@@ -147,8 +148,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
       ╎ [1/3] FROM docker.io/library/golang:1.10
   Starting Tilt webpack server…
   fe          ┊ 2019/04/10 15:37:37 Starting Servantes FE on :8080
-      ╎ [2/3] ADD . /go/src/github.com/windmilleng/servantes/snack
-      ╎ [3/3] RUN go install github.com/windmilleng/servantes/snack
+      ╎ [2/3] ADD . /go/src/github.com/tilt-dev/servantes/snack
+      ╎ [3/3] RUN go install github.com/tilt-dev/servantes/snack
 
   [34mSTEP 2/3 — [0mPushing gcr.io/windmill-public-containers/servantes/snack:tilt-731280d503bbbcf5
       ╎ Skipping push
@@ -168,8 +169,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
   Building Dockerfile:
     FROM golang:1.10
 
-    ADD . /go/src/github.com/windmilleng/servantes/doggos
-    RUN go install github.com/windmilleng/servantes/doggos
+    ADD . /go/src/github.com/tilt-dev/servantes/doggos
+    RUN go install github.com/tilt-dev/servantes/doggos
 
     ENTRYPOINT /go/bin/doggos
 
@@ -178,8 +179,8 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
   [34m  │ [0mBuilding image
   vigoda      ┊ 2019/04/10 15:37:39 Starting Vigoda Health Check Service on :8081
       ╎ [1/3] FROM docker.io/library/golang:1.10
-      ╎ [2/3] ADD . /go/src/github.com/windmilleng/servantes/doggos
-      ╎ [3/3] RUN go install github.com/windmilleng/servantes/doggos
+      ╎ [2/3] ADD . /go/src/github.com/tilt-dev/servantes/doggos
+      ╎ [3/3] RUN go install github.com/tilt-dev/servantes/doggos
 
   [34mSTEP 2/5 — [0mPushing gcr.io/windmill-public-containers/servantes/doggos:tilt-28a4e6fab0991d2f
       ╎ Skipping push
@@ -229,9 +230,9 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
 
     RUN go get github.com/golang/protobuf/protoc-gen-go
 
-    ADD . /go/src/github.com/windmilleng/servantes/fortune
-    RUN cd /go/src/github.com/windmilleng/servantes/fortune && make proto
-    RUN go install github.com/windmilleng/servantes/fortune
+    ADD . /go/src/github.com/tilt-dev/servantes/fortune
+    RUN cd /go/src/github.com/tilt-dev/servantes/fortune && make proto
+    RUN go install github.com/tilt-dev/servantes/fortune
 
     ENTRYPOINT /go/bin/fortune
 
@@ -245,9 +246,9 @@ const longLog = `[32mStarting Tilt (v0.7.10-dev, built 2019-04-10)…[0m
       ╎ [2/7] RUN apt update && apt install -y unzip time make
       ╎ [3/7] RUN wget https://github.com/google/protobuf/releases/download/v3.5.1/protoc-3.5.1-linux-x86_64.zip &&   unzip protoc-3.5.1-linux-x86_64.zip -d protoc &&   mv protoc/bin/protoc /usr/bin/protoc
       ╎ [4/7] RUN go get github.com/golang/protobuf/protoc-gen-go
-      ╎ [5/7] ADD . /go/src/github.com/windmilleng/servantes/fortune
-      ╎ [6/7] RUN cd /go/src/github.com/windmilleng/servantes/fortune && make proto
-      ╎ [7/7] RUN go install github.com/windmilleng/servantes/fortune
+      ╎ [5/7] ADD . /go/src/github.com/tilt-dev/servantes/fortune
+      ╎ [6/7] RUN cd /go/src/github.com/tilt-dev/servantes/fortune && make proto
+      ╎ [7/7] RUN go install github.com/tilt-dev/servantes/fortune
 
   [34mSTEP 2/3 — [0mPushing gcr.io/windmill-public-containers/servantes/fortune:tilt-7e4331cb0b073360
       ╎ Skipping push
@@ -422,35 +423,43 @@ it("renders highlighted lines", () => {
   expect(hLines).toHaveLength(2)
 })
 
-it("scrolls to highlighted lines in snapshot", () => {
-  const fakeScrollIntoView = jest.fn()
-  Element.prototype.scrollIntoView = fakeScrollIntoView
+it.each(["update", "mount"])(
+  "scrolls to highlighted lines in snapshot",
+  verb => {
+    const fakeScrollIntoView = jest.fn()
+    Element.prototype.scrollIntoView = fakeScrollIntoView
 
-  const highlight = {
-    beginningLogID: "2",
-    endingLogID: "3",
-    text: "foo\nbar",
+    const highlight = {
+      beginningLogID: "2",
+      endingLogID: "3",
+      text: "foo\nbar",
+    }
+    const root = mount<LogPane>(
+      <LogPane
+        manifestName={""}
+        logLines={logLinesFromString(longLog)}
+        showManifestPrefix={false}
+        handleSetHighlight={fakeHandleSetHighlight}
+        handleClearHighlight={fakeHandleClearHighlight}
+        highlight={verb === "mount" ? highlight : null}
+        isSnapshot={true}
+      />
+    )
+
+    if (verb === "update") {
+      fakeScrollIntoView.mockClear()
+      root.setProps({ highlight: highlight })
+    }
+
+    expect(root.instance().highlightRef.current).not.toBeNull()
+    expect(fakeScrollIntoView.mock.instances).toHaveLength(1)
+    expect(fakeScrollIntoView.mock.instances[0]).toBeInstanceOf(HTMLSpanElement)
+    expect(fakeScrollIntoView.mock.instances[0].innerHTML).toContain(
+      '[Tiltfile] Running `"whoami"`'
+    )
+    expect(fakeScrollIntoView).toBeCalledTimes(1)
   }
-  const root = mount<LogPane>(
-    <LogPane
-      manifestName={""}
-      logLines={logLinesFromString(longLog)}
-      showManifestPrefix={false}
-      handleSetHighlight={fakeHandleSetHighlight}
-      handleClearHighlight={fakeHandleClearHighlight}
-      highlight={highlight}
-      isSnapshot={true}
-    />
-  )
-
-  expect(root.instance().highlightRef.current).not.toBeNull()
-  expect(fakeScrollIntoView.mock.instances).toHaveLength(1)
-  expect(fakeScrollIntoView.mock.instances[0]).toBeInstanceOf(HTMLSpanElement)
-  expect(fakeScrollIntoView.mock.instances[0].innerHTML).toContain(
-    '[Tiltfile] Running `"whoami"`'
-  )
-  expect(fakeScrollIntoView).toBeCalledTimes(1)
-})
+)
 
 it("does not scroll to highlighted lines if not snapshot", () => {
   const fakeScrollIntoView = jest.fn()
@@ -512,4 +521,32 @@ it("doesn't set selection event handler if snapshot", () => {
   )
   expect(registeredEventHandlers).toEqual(expect.arrayContaining(["scroll"]))
   expect(registeredEventHandlers).not.toEqual(expect.arrayContaining(["wheel"]))
+})
+
+xit("sets highlighted text correctly", () => {
+  // TODO(matt) test LogPane.handleSelectionChange
+  // as of 2020-03-30, document.getSelection is not supported in Jest ("TypeError: document.getSelection is not a function"),
+  // so this isn't really testable
+  // https://github.com/jsdom/jsdom/issues/317#issuecomment-570948181
+})
+
+it("extracts the log text w/o resource prefixes", () => {
+  let log = logLinesFromString("l1\nl2", "manifest1")
+  let el = mount(
+    <LogPane
+      manifestName={""}
+      logLines={log}
+      showManifestPrefix={false}
+      handleSetHighlight={fakeHandleSetHighlight}
+      handleClearHighlight={fakeHandleClearHighlight}
+      highlight={null}
+      isSnapshot={true}
+    />
+  )
+
+  let df = document.createDocumentFragment()
+  df.append(el.getDOMNode())
+  let s = logText(df)
+
+  expect(s).toEqual("l1\nl2\n")
 })

@@ -5,7 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/windmilleng/tilt/internal/testutils/tempdir"
+	"github.com/tilt-dev/tilt/internal/ospath"
+	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
 )
 
 func TestNewRelativeFileOrChildMatcher(t *testing.T) {
@@ -15,14 +16,14 @@ func TestNewRelativeFileOrChildMatcher(t *testing.T) {
 	paths := []string{
 		"a",
 		"b/c/d",
-		"/already/abs",
+		ospath.MustAbs("already/abs"),
 	}
 	matcher := NewRelativeFileOrChildMatcher(f.Path(), paths...)
 
 	expected := map[string]bool{
-		f.JoinPath("a"):     true,
-		f.JoinPath("b/c/d"): true,
-		"/already/abs":      true,
+		f.JoinPath("a"):               true,
+		f.JoinPath("b/c/d"):           true,
+		ospath.MustAbs("already/abs"): true,
 	}
 
 	assert.Equal(t, expected, matcher.paths)

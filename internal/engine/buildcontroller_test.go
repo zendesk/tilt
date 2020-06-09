@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -12,15 +13,15 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/hud/server"
-	"github.com/windmilleng/tilt/internal/k8s/testyaml"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/testutils/manifestbuilder"
-	"github.com/windmilleng/tilt/internal/testutils/podbuilder"
-	"github.com/windmilleng/tilt/internal/watch"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/hud/server"
+	"github.com/tilt-dev/tilt/internal/k8s/testyaml"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/testutils/manifestbuilder"
+	"github.com/tilt-dev/tilt/internal/testutils/podbuilder"
+	"github.com/tilt-dev/tilt/internal/watch"
 )
 
 func TestBuildControllerOnePod(t *testing.T) {
@@ -28,7 +29,7 @@ func TestBuildControllerOnePod(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -36,7 +37,7 @@ func TestBuildControllerOnePod(t *testing.T) {
 
 	pod := podbuilder.New(f.T(), manifest).Build()
 	f.podEvent(pod, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	assert.Equal(t, pod.Name, call.oneState().OneContainerInfo().PodID.String())
@@ -51,7 +52,7 @@ func TestBuildControllerTooManyPodsForLiveUpdateErrorMessage(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := NewSanchoLiveUpdateManifest(f)
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	// initial build
 	call := f.nextCall()
@@ -63,7 +64,7 @@ func TestBuildControllerTooManyPodsForLiveUpdateErrorMessage(t *testing.T) {
 
 	f.podEvent(p1, manifest.Name)
 	f.podEvent(p2, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	// Should not have sent container info b/c too many pods
@@ -85,7 +86,7 @@ func TestBuildControllerTooManyPodsForDockerBuildNoErrorMessage(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := NewSanchoDockerBuildManifest(f)
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	// initial build
 	call := f.nextCall()
@@ -97,7 +98,7 @@ func TestBuildControllerTooManyPodsForDockerBuildNoErrorMessage(t *testing.T) {
 
 	f.podEvent(p1, manifest.Name)
 	f.podEvent(p2, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	// Should not have sent container info b/c too many pods
@@ -118,7 +119,7 @@ func TestBuildControllerIgnoresImageTags(t *testing.T) {
 
 	ref := container.MustParseNamed("image-foo:tagged")
 	manifest := f.newManifestWithRef("fe", ref)
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -129,7 +130,7 @@ func TestBuildControllerIgnoresImageTags(t *testing.T) {
 		WithImage("image-foo:othertag").
 		Build()
 	f.podEvent(pod, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	assert.Equal(t, "pod-id", call.oneState().OneContainerInfo().PodID.String())
@@ -144,13 +145,13 @@ func TestBuildControllerDockerCompose(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := NewSanchoLiveUpdateDCManifest(f)
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	imageTarget := manifest.ImageTargetAt(0)
 	assert.Equal(t, imageTarget, call.firstImgTarg())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	imageState := call.state[imageTarget.ID()]
@@ -168,13 +169,13 @@ func TestBuildControllerLocalResource(t *testing.T) {
 	dep := f.JoinPath("stuff.json")
 	manifest := manifestbuilder.New(f, "yarn-add").
 		WithLocalResource("echo beep boop", []string{dep}).Build()
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	lt := manifest.LocalTarget()
 	assert.Equal(t, lt, call.local())
 
-	f.fsWatcher.events <- watch.NewFileEvent(dep)
+	f.fsWatcher.Events <- watch.NewFileEvent(dep)
 
 	call = f.nextCall()
 	assert.Equal(t, lt, call.local())
@@ -189,7 +190,7 @@ func TestBuildControllerWontContainerBuildWithTwoPods(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -201,7 +202,7 @@ func TestBuildControllerWontContainerBuildWithTwoPods(t *testing.T) {
 	f.podEvent(podA, manifest.Name)
 	f.podEvent(podB, manifest.Name)
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	// We expect two pods associated with this manifest. We don't want to container-build
 	// if there are multiple pods, so make sure we're not sending deploy info (i.e. that
@@ -219,7 +220,7 @@ func TestBuildControllerTwoContainers(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -247,7 +248,7 @@ func TestBuildControllerTwoContainers(t *testing.T) {
 		ContainerID: "docker://cID-different-image",
 	})
 	f.podEvent(pod, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	runningContainers := call.oneState().RunningContainers
@@ -277,7 +278,7 @@ func TestBuildControllerWontContainerBuildWithSomeButNotAllReadyContainers(t *te
 	defer f.TearDown()
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -293,7 +294,7 @@ func TestBuildControllerWontContainerBuildWithSomeButNotAllReadyContainers(t *te
 		ContainerID: "docker://cID-same-image",
 	})
 	f.podEvent(pod, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	// If even one of the containers matching this image is !ready, we have to do a
 	// full rebuild, so don't return ANY RunningContainers.
@@ -311,7 +312,7 @@ func TestBuildControllerCrashRebuild(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -322,7 +323,7 @@ func TestBuildControllerCrashRebuild(t *testing.T) {
 	pb := podbuilder.New(f.T(), manifest)
 	pod := pb.Build()
 	f.podEvent(pod, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	assert.Equal(t, pod.Name, call.oneState().OneContainerInfo().PodID.String())
@@ -336,7 +337,7 @@ func TestBuildControllerCrashRebuild(t *testing.T) {
 	f.podEvent(pb.WithContainerID("funnyContainerID").Build(), manifest.Name)
 	call = f.nextCall()
 	assert.True(t, call.oneState().OneContainerInfo().Empty())
-	assert.False(t, call.oneState().NeedsForceUpdate)
+	assert.False(t, call.oneState().FullBuildTriggered)
 	f.waitForCompletedBuildCount(3)
 
 	f.withManifestState("fe", func(ms store.ManifestState) {
@@ -356,7 +357,7 @@ func TestCrashRebuildTwoContainersOneImage(t *testing.T) {
 		WithK8sYAML(testyaml.SanchoTwoContainersOneImageYAML).
 		WithImageTarget(NewSanchoLiveUpdateImageTarget(f)).
 		Build()
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -367,7 +368,7 @@ func TestCrashRebuildTwoContainersOneImage(t *testing.T) {
 		WithContainerIDAtIndex("c1", 0).
 		WithContainerIDAtIndex("c2", 1).
 		Build(), manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	f.waitForCompletedBuildCount(2)
@@ -394,6 +395,9 @@ func TestCrashRebuildTwoContainersOneImage(t *testing.T) {
 }
 
 func TestCrashRebuildTwoContainersTwoImages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TODO(nick): investigate")
+	}
 	f := newTestFixture(t)
 	defer f.TearDown()
 
@@ -402,7 +406,7 @@ func TestCrashRebuildTwoContainersTwoImages(t *testing.T) {
 		WithImageTarget(NewSanchoLiveUpdateImageTarget(f)).
 		WithImageTarget(NewSanchoSidecarLiveUpdateImageTarget(f)).
 		Build()
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	iTargs := call.imageTargets()
@@ -416,7 +420,7 @@ func TestCrashRebuildTwoContainersTwoImages(t *testing.T) {
 		WithContainerIDAtIndex("c1", 0).
 		WithContainerIDAtIndex("c2", 1).
 		Build(), manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	f.waitForCompletedBuildCount(2)
@@ -450,7 +454,7 @@ func TestRecordLiveUpdatedContainerIDsForFailedLiveUpdate(t *testing.T) {
 		WithK8sYAML(testyaml.SanchoTwoContainersOneImageYAML).
 		WithImageTarget(NewSanchoLiveUpdateImageTarget(f)).
 		Build()
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -464,7 +468,7 @@ func TestRecordLiveUpdatedContainerIDsForFailedLiveUpdate(t *testing.T) {
 		WithContainerIDAtIndex("c1", 0).
 		WithContainerIDAtIndex("c2", 1).
 		Build(), manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	f.waitForCompletedBuildCount(2)
@@ -492,7 +496,7 @@ func TestBuildControllerManualTriggerBuildReasonInit(t *testing.T) {
 
 			manifest := f.newManifest(mName.String()).WithTriggerMode(tc.triggerMode)
 			manifests := []model.Manifest{manifest}
-			f.Start(manifests, true)
+			f.Start(manifests)
 
 			// make sure there's a first build
 			if !manifest.TriggerMode.AutoInitial() {
@@ -508,13 +512,18 @@ func TestBuildControllerManualTriggerBuildReasonInit(t *testing.T) {
 	}
 }
 
-func TestBuildControllerManualTriggerWithFileChanges(t *testing.T) {
+func TestBuildControllerImageBuildTrigger(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		triggerMode model.TriggerMode
+		name               string
+		triggerMode        model.TriggerMode
+		filesChanged       bool
+		expectedImageBuild bool
 	}{
-		{"manual including initial", model.TriggerModeManualIncludingInitial},
-		{"manual after initial", model.TriggerModeManualAfterInitial},
+		{name: "manual including initial with change", triggerMode: model.TriggerModeManualIncludingInitial, filesChanged: true, expectedImageBuild: false},
+		{name: "manual after initial with change", triggerMode: model.TriggerModeManualAfterInitial, filesChanged: true, expectedImageBuild: false},
+		{name: "manual including initial without change", triggerMode: model.TriggerModeManualIncludingInitial, filesChanged: false, expectedImageBuild: true},
+		{name: "manual after initial without change", triggerMode: model.TriggerModeManualAfterInitial, filesChanged: false, expectedImageBuild: true},
+		{name: "auto without change", triggerMode: model.TriggerModeAuto, filesChanged: false, expectedImageBuild: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newTestFixture(t)
@@ -523,24 +532,31 @@ func TestBuildControllerManualTriggerWithFileChanges(t *testing.T) {
 
 			manifest := f.newManifest(mName.String()).WithTriggerMode(tc.triggerMode)
 			manifests := []model.Manifest{manifest}
-			f.Start(manifests, true)
+			f.Start(manifests)
 
 			// if we expect an initial build from the manifest, wait for it to complete
 			if manifest.TriggerMode.AutoInitial() {
 				f.nextCallComplete()
 			}
 
-			f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+			expectedFiles := []string{}
+			if tc.filesChanged {
+				expectedFiles = append(expectedFiles, f.JoinPath("main.go"))
+				f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
+			}
 			f.WaitUntil("pending change appears", func(st store.EngineState) bool {
-				return len(st.BuildStatus(manifest.ImageTargetAt(0).ID()).PendingFileChanges) > 0
+				return len(st.BuildStatus(manifest.ImageTargetAt(0).ID()).PendingFileChanges) >= len(expectedFiles)
 			})
-			f.assertNoCall("even tho there are pending changes, manual manifest shouldn't build w/o explicit trigger")
+
+			if manifest.TriggerMode.AutoOnChange() {
+				f.assertNoCall("even tho there are pending changes, manual manifest shouldn't build w/o explicit trigger")
+			}
 
 			f.store.Dispatch(server.AppendToTriggerQueueAction{Name: mName})
 			call := f.nextCallComplete()
 			state := call.oneState()
-			assert.Equal(t, []string{f.JoinPath("main.go")}, state.FilesChanged())
-			assert.False(t, state.NeedsForceUpdate) // it was NOT a force update, b/c there were changed files
+			assert.Equal(t, expectedFiles, state.FilesChanged())
+			assert.Equal(t, tc.expectedImageBuild, state.FullBuildTriggered)
 
 			f.WaitUntil("manifest removed from queue", func(st store.EngineState) bool {
 				for _, mn := range st.TriggerQueue {
@@ -554,57 +570,31 @@ func TestBuildControllerManualTriggerWithFileChanges(t *testing.T) {
 	}
 }
 
-func TestBuildControllerManualTriggerWithoutFileChangesForceUpdates(t *testing.T) {
-	f := newTestFixture(t)
-	defer f.TearDown()
-	mName := model.ManifestName("foobar")
-
-	manifest := f.newManifest(mName.String())
-	manifests := []model.Manifest{manifest}
-	f.Start(manifests, true)
-
-	f.nextCall()
-	f.waitForCompletedBuildCount(1)
-
-	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: mName})
-	call := f.nextCall()
-	state := call.oneState()
-	assert.Empty(t, state.FilesChanged())
-	assert.True(t, state.NeedsForceUpdate)
-	f.waitForCompletedBuildCount(2)
-
-	f.WaitUntil("manifest removed from queue", func(st store.EngineState) bool {
-		for _, mn := range st.TriggerQueue {
-			if mn == mName {
-				return false
-			}
-		}
-		return true
-	})
-}
-
 // it should be a force update if there have been no file changes since the last build
 // make sure file changes prior to the last build are ignored for this purpose
 func TestBuildControllerManualTriggerWithFileChangesSinceLastSuccessfulBuildButBeforeLastBuild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TODO(nick): fix this")
+	}
 	f := newTestFixture(t)
 	defer f.TearDown()
 	mName := model.ManifestName("foobar")
 
 	manifest := f.newManifest(mName.String())
 	manifests := []model.Manifest{manifest}
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	f.nextCallComplete()
 
 	f.b.nextBuildFailure = errors.New("build failure!")
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 	f.nextCallComplete()
 
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: mName})
 	call := f.nextCallComplete()
 	state := call.oneState()
-	assert.Equal(t, []string{f.JoinPath("main.go")}, state.FilesChanged())
-	assert.True(t, state.NeedsForceUpdate)
+	assert.Equal(t, []string{}, state.FilesChanged())
+	assert.True(t, state.FullBuildTriggered)
 
 	f.WaitUntil("manifest removed from queue", func(st store.EngineState) bool {
 		for _, mn := range st.TriggerQueue {
@@ -631,7 +621,7 @@ func TestBuildQueueOrdering(t *testing.T) {
 
 	// attach to state in different order than we plan to trigger them
 	manifests := []model.Manifest{m4, m2, m3, m1}
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	expectedInitialBuildCount := 0
 	for _, m := range manifests {
@@ -643,7 +633,7 @@ func TestBuildQueueOrdering(t *testing.T) {
 
 	f.waitForCompletedBuildCount(expectedInitialBuildCount)
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 	f.WaitUntil("pending change appears", func(st store.EngineState) bool {
 		return len(st.BuildStatus(m1.ImageTargetAt(0).ID()).PendingFileChanges) > 0 &&
 			len(st.BuildStatus(m2.ImageTargetAt(0).ID()).PendingFileChanges) > 0 &&
@@ -688,7 +678,7 @@ func TestBuildQueueAndAutobuildOrdering(t *testing.T) {
 
 	// attach to state in different order than we plan to trigger them
 	manifests := []model.Manifest{m5, m4, m2, m3, m1}
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	expectedInitialBuildCount := 0
 	for _, m := range manifests {
@@ -700,7 +690,7 @@ func TestBuildQueueAndAutobuildOrdering(t *testing.T) {
 
 	f.waitForCompletedBuildCount(expectedInitialBuildCount)
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("dirManual/main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("dirManual/main.go"))
 	f.WaitUntil("pending change appears", func(st store.EngineState) bool {
 		return len(st.BuildStatus(m1.ImageTargetAt(0).ID()).PendingFileChanges) > 0 &&
 			len(st.BuildStatus(m2.ImageTargetAt(0).ID()).PendingFileChanges) > 0 &&
@@ -713,7 +703,7 @@ func TestBuildQueueAndAutobuildOrdering(t *testing.T) {
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest2"})
 	// make our one auto-trigger manifest build - should be evaluated LAST, after
 	// all the manual manifests waiting in the queue
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("dirAuto/main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("dirAuto/main.go"))
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest3"})
 	f.store.Dispatch(server.AppendToTriggerQueueAction{Name: "manifest4"})
 
@@ -746,7 +736,7 @@ func TestBuildControllerNoBuildManifestsFirst(t *testing.T) {
 			WithK8sYAML(SanchoYAML).
 			Build()
 	}
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	var observedBuildOrder []string
 	for i := 0; i < len(manifests); i++ {
@@ -784,7 +774,7 @@ func TestBuildControllerUnresourcedYAMLFirst(t *testing.T) {
 
 	manifests = append(manifests, manifestbuilder.New(f, model.UnresourcedYAMLManifestName).
 		WithK8sYAML(testyaml.SecretYaml).Build())
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	var observedBuildOrder []string
 	for i := 0; i < len(manifests); i++ {
@@ -810,7 +800,7 @@ func TestBuildControllerRespectDockerComposeOrder(t *testing.T) {
 	redis := manifestbuilder.New(f, "redis").WithDockerCompose().Build()
 	donQuixote := manifestbuilder.New(f, "don-quixote").WithDockerCompose().Build()
 	manifests := []model.Manifest{redis, sancho, donQuixote}
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	var observedBuildOrder []string
 	for i := 0; i < len(manifests); i++ {
@@ -849,7 +839,7 @@ func TestBuildControllerLocalResourcesBeforeClusterResources(t *testing.T) {
 
 	manifests = append(manifests, manifestbuilder.New(f, model.UnresourcedYAMLManifestName).
 		WithK8sYAML(testyaml.SecretYaml).Build())
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	var observedBuildOrder []string
 	for i := 0; i < len(manifests); i++ {
@@ -898,7 +888,7 @@ func TestBuildControllerResourceDeps(t *testing.T) {
 		manifestsByName[name] = m
 	}
 
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	var observedOrder []string
 	for i := range manifests {
@@ -941,7 +931,7 @@ func TestBuildControllerResourceDepTrumpsLocalResourcePriority(t *testing.T) {
 		WithLocalResource("echo bar", nil).
 		WithResourceDeps("foo").Build()
 	manifests := []model.Manifest{localManifest, k8sManifest}
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	var observedBuildOrder []string
 	for i := 0; i < len(manifests); i++ {
@@ -973,17 +963,17 @@ func TestBuildControllerResourceDepTrumpsInitialBuild(t *testing.T) {
 		Build()
 	manifests := []model.Manifest{foo, bar}
 	f.b.nextBuildFailure = errors.New("failure")
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	call := f.nextCall()
 	require.Equal(t, "foo", call.local().Name.String())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("foo", "main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("foo", "main.go"))
 	f.b.nextBuildFailure = errors.New("failure")
 	call = f.nextCall()
 	require.Equal(t, "foo", call.local().Name.String())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("foo", "main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("foo", "main.go"))
 	call = f.nextCall()
 	require.Equal(t, "foo", call.local().Name.String())
 
@@ -1007,20 +997,20 @@ func TestBuildControllerResourceDepTrumpsPendingBuild(t *testing.T) {
 
 	manifests := []model.Manifest{bar, foo}
 	f.b.nextBuildFailure = errors.New("failure")
-	f.Start(manifests, true)
+	f.Start(manifests)
 
 	// trigger a change for bar so that it would try to build if not for its resource dep
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("bar", "main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("bar", "main.go"))
 
 	call := f.nextCall()
 	require.Equal(t, "foo", call.local().Name.String())
 
 	f.b.nextBuildFailure = errors.New("failure")
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("foo", "main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("foo", "main.go"))
 	call = f.nextCall()
 	require.Equal(t, "foo", call.local().Name.String())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("foo", "main2.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("foo", "main2.go"))
 	call = f.nextCall()
 	require.Equal(t, "foo", call.local().Name.String())
 
@@ -1036,7 +1026,7 @@ func TestLogsLongResourceName(t *testing.T) {
 	mn := strings.Repeat("foobar", 30)
 
 	manifest := f.newManifest(mn)
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCallComplete()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -1066,7 +1056,7 @@ func TestBuildControllerWontBuildManifestThatsAlreadyBuilding(t *testing.T) {
 	f.setMaxParallelUpdates(3)
 
 	manifest := f.newManifest("fe")
-	f.startWithInitManifests(nil, []model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.completeAndCheckBuildsForManifests(manifest)
 	f.waitUntilNumBuildSlots(3)
 
@@ -1075,7 +1065,7 @@ func TestBuildControllerWontBuildManifestThatsAlreadyBuilding(t *testing.T) {
 	f.waitUntilNumBuildSlots(2)
 
 	// a second file change doesn't start a second build, b/c 'fe' is already building
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("B.txt"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("B.txt"))
 	f.waitUntilNumBuildSlots(2) // still two build slots available
 
 	// complete the first build
@@ -1106,7 +1096,7 @@ func TestBuildControllerWontBuildManifestIfNoSlotsAvailable(t *testing.T) {
 	manA := f.newDockerBuildManifestWithBuildPath("manA", f.JoinPath("a"))
 	manB := f.newDockerBuildManifestWithBuildPath("manB", f.JoinPath("b"))
 	manC := f.newDockerBuildManifestWithBuildPath("manC", f.JoinPath("c"))
-	f.startWithInitManifests(nil, []model.Manifest{manA, manB, manC}, true)
+	f.Start([]model.Manifest{manA, manB, manC})
 	f.completeAndCheckBuildsForManifests(manA, manB, manC)
 
 	// start builds for all manifests (we only have 2 build slots)
@@ -1130,9 +1120,9 @@ func TestBuildControllerWontBuildManifestIfNoSlotsAvailable(t *testing.T) {
 	f.assertAllBuildsConsumed()
 }
 
-// It should be legal for a user to change MaxParallelUpdates while builds
+// It should be legal for a user to change maxParallelUpdates while builds
 // are in progress (e.g. if there are 5 builds in progress and user sets
-// MaxParallelUpdates=3, nothing should explode.)
+// maxParallelUpdates=3, nothing should explode.)
 func TestCurrentlyBuildingMayExceedMaxParallelUpdates(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
@@ -1142,7 +1132,7 @@ func TestCurrentlyBuildingMayExceedMaxParallelUpdates(t *testing.T) {
 	manA := f.newDockerBuildManifestWithBuildPath("manA", f.JoinPath("a"))
 	manB := f.newDockerBuildManifestWithBuildPath("manB", f.JoinPath("b"))
 	manC := f.newDockerBuildManifestWithBuildPath("manC", f.JoinPath("c"))
-	f.startWithInitManifests(nil, []model.Manifest{manA, manB, manC}, true)
+	f.Start([]model.Manifest{manA, manB, manC})
 	f.completeAndCheckBuildsForManifests(manA, manB, manC)
 
 	// start builds for all manifests
@@ -1156,7 +1146,7 @@ func TestCurrentlyBuildingMayExceedMaxParallelUpdates(t *testing.T) {
 	f.waitUntilNumBuildSlots(0)
 
 	// another file change for manB -- will try to start another build as soon as possible
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("b/other.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("b/other.go"))
 
 	f.completeBuildForManifest(manB)
 	call := f.nextCall("expect manB build complete")
@@ -1197,7 +1187,7 @@ func TestDontStartBuildIfControllerAndEngineUnsynced(t *testing.T) {
 
 	manA := f.newDockerBuildManifestWithBuildPath("manA", f.JoinPath("a"))
 	manB := f.newDockerBuildManifestWithBuildPath("manB", f.JoinPath("b"))
-	f.startWithInitManifests(nil, []model.Manifest{manA, manB}, true)
+	f.Start([]model.Manifest{manA, manB})
 	f.completeAndCheckBuildsForManifests(manA, manB)
 
 	f.editFileAndWaitForManifestBuilding("manA", "a/main.go")
@@ -1227,6 +1217,9 @@ func TestDontStartBuildIfControllerAndEngineUnsynced(t *testing.T) {
 }
 
 func TestErrorHandlingWithMultipleBuilds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TODO(nick): fix this")
+	}
 	f := newTestFixture(t)
 	defer f.TearDown()
 	f.b.completeBuildsManually = true
@@ -1238,7 +1231,7 @@ func TestErrorHandlingWithMultipleBuilds(t *testing.T) {
 	manA := f.newDockerBuildManifestWithBuildPath("manA", f.JoinPath("a"))
 	manB := f.newDockerBuildManifestWithBuildPath("manB", f.JoinPath("b"))
 	manC := f.newDockerBuildManifestWithBuildPath("manC", f.JoinPath("c"))
-	f.startWithInitManifests(nil, []model.Manifest{manA, manB, manC}, true)
+	f.Start([]model.Manifest{manA, manB, manC})
 	f.completeAndCheckBuildsForManifests(manA, manB, manC)
 
 	// start builds for all manifests (we only have 2 build slots)
@@ -1305,12 +1298,12 @@ func (f *testFixture) waitUntilNumBuildSlots(expected int) {
 }
 
 func (f *testFixture) editFileAndWaitForManifestBuilding(name model.ManifestName, path string) {
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath(path))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath(path))
 	f.waitUntilManifestBuilding(name)
 }
 
 func (f *testFixture) editFileAndAssertManifestNotBuilding(name model.ManifestName, path string) {
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath(path))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath(path))
 	f.waitUntilManifestNotBuilding(name)
 }
 

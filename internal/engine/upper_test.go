@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -17,56 +18,62 @@ import (
 	"time"
 
 	"github.com/docker/distribution/reference"
+	dockertypes "github.com/docker/docker/api/types"
 	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/windmilleng/wmclient/pkg/analytics"
-	"gopkg.in/yaml.v2"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
+	yaml "gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/cloud"
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/containerupdate"
-	"github.com/windmilleng/tilt/internal/docker"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	engineanalytics "github.com/windmilleng/tilt/internal/engine/analytics"
-	"github.com/windmilleng/tilt/internal/engine/buildcontrol"
-	"github.com/windmilleng/tilt/internal/engine/configs"
-	"github.com/windmilleng/tilt/internal/engine/dockerprune"
-	"github.com/windmilleng/tilt/internal/engine/k8srollout"
-	"github.com/windmilleng/tilt/internal/engine/k8swatch"
-	"github.com/windmilleng/tilt/internal/engine/local"
-	"github.com/windmilleng/tilt/internal/engine/runtimelog"
-	"github.com/windmilleng/tilt/internal/engine/telemetry"
-	"github.com/windmilleng/tilt/internal/feature"
-	"github.com/windmilleng/tilt/internal/github"
-	"github.com/windmilleng/tilt/internal/hud"
-	"github.com/windmilleng/tilt/internal/hud/server"
-	"github.com/windmilleng/tilt/internal/hud/view"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/k8s/testyaml"
-	"github.com/windmilleng/tilt/internal/sliceutils"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/synclet"
-	"github.com/windmilleng/tilt/internal/testutils"
-	"github.com/windmilleng/tilt/internal/testutils/bufsync"
-	"github.com/windmilleng/tilt/internal/testutils/httptest"
-	"github.com/windmilleng/tilt/internal/testutils/manifestbuilder"
-	"github.com/windmilleng/tilt/internal/testutils/podbuilder"
-	"github.com/windmilleng/tilt/internal/testutils/servicebuilder"
-	"github.com/windmilleng/tilt/internal/testutils/tempdir"
-	"github.com/windmilleng/tilt/internal/tiltfile"
-	"github.com/windmilleng/tilt/internal/tiltfile/k8scontext"
-	"github.com/windmilleng/tilt/internal/token"
-	"github.com/windmilleng/tilt/internal/tracer"
-	"github.com/windmilleng/tilt/internal/watch"
-	"github.com/windmilleng/tilt/pkg/assets"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
-	proto_webview "github.com/windmilleng/tilt/pkg/webview"
+	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/cloud"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/containerupdate"
+	"github.com/tilt-dev/tilt/internal/docker"
+	"github.com/tilt-dev/tilt/internal/dockercompose"
+	engineanalytics "github.com/tilt-dev/tilt/internal/engine/analytics"
+	"github.com/tilt-dev/tilt/internal/engine/buildcontrol"
+	"github.com/tilt-dev/tilt/internal/engine/configs"
+	"github.com/tilt-dev/tilt/internal/engine/dcwatch"
+	"github.com/tilt-dev/tilt/internal/engine/dockerprune"
+	"github.com/tilt-dev/tilt/internal/engine/exit"
+	"github.com/tilt-dev/tilt/internal/engine/fswatch"
+	"github.com/tilt-dev/tilt/internal/engine/k8srollout"
+	"github.com/tilt-dev/tilt/internal/engine/k8swatch"
+	"github.com/tilt-dev/tilt/internal/engine/local"
+	"github.com/tilt-dev/tilt/internal/engine/portforward"
+	"github.com/tilt-dev/tilt/internal/engine/runtimelog"
+	"github.com/tilt-dev/tilt/internal/engine/telemetry"
+	"github.com/tilt-dev/tilt/internal/feature"
+	"github.com/tilt-dev/tilt/internal/hud"
+	"github.com/tilt-dev/tilt/internal/hud/server"
+	"github.com/tilt-dev/tilt/internal/hud/view"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/k8s/testyaml"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/synclet"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/testutils/bufsync"
+	"github.com/tilt-dev/tilt/internal/testutils/httptest"
+	"github.com/tilt-dev/tilt/internal/testutils/manifestbuilder"
+	"github.com/tilt-dev/tilt/internal/testutils/podbuilder"
+	"github.com/tilt-dev/tilt/internal/testutils/servicebuilder"
+	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
+	"github.com/tilt-dev/tilt/internal/tiltfile"
+	"github.com/tilt-dev/tilt/internal/tiltfile/k8scontext"
+	"github.com/tilt-dev/tilt/internal/tiltfile/version"
+	"github.com/tilt-dev/tilt/internal/token"
+	"github.com/tilt-dev/tilt/internal/tracer"
+	"github.com/tilt-dev/tilt/internal/watch"
+	"github.com/tilt-dev/tilt/pkg/assets"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
+	proto_webview "github.com/tilt-dev/tilt/pkg/webview"
 )
 
 var originalWD string
@@ -172,7 +179,8 @@ type fakeBuildAndDeployer struct {
 
 	// Inject the container ID of the container started by Docker Compose.
 	// If not set, we will auto-generate an ID.
-	nextDockerComposeContainerID container.ID
+	nextDockerComposeContainerID    container.ID
+	nextDockerComposeContainerState *dockertypes.ContainerState
 
 	nextDeployedUID           types.UID
 	nextPodTemplateSpecHashes []k8s.PodTemplateSpecHash
@@ -225,7 +233,7 @@ func (b *fakeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RSto
 		ids = append(ids, id)
 		output, ok := b.buildLogOutput[id]
 		if ok {
-			logger.Get(ctx).Infof(output)
+			logger.Get(ctx).Infof("%s", output)
 		}
 	}
 
@@ -240,8 +248,17 @@ func (b *fakeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RSto
 		logger.Get(ctx).Infof("fake built %s. error: %v", ids, err)
 	}()
 
-	result := store.BuildResultSet{}
-	for _, iTarget := range model.ExtractImageTargets(specs) {
+	iTargets := model.ExtractImageTargets(specs)
+	fakeImageExistsCheck := func(ctx context.Context, namedTagged reference.NamedTagged) (bool, error) {
+		return true, nil
+	}
+	queue, err := buildcontrol.NewImageTargetQueue(ctx, iTargets, state, fakeImageExistsCheck)
+	if err != nil {
+		return nil, err
+	}
+
+	err = queue.RunBuilds(func(target model.TargetSpec, depResults []store.BuildResult) (store.BuildResult, error) {
+		iTarget := target.(model.ImageTarget)
 		var deployTarget model.TargetSpec
 		if !call.dc().Empty() {
 			if isImageDeployedToDC(iTarget, call.dc()) {
@@ -253,7 +270,11 @@ func (b *fakeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RSto
 			}
 		}
 
-		result[iTarget.ID()] = b.nextBuildResult(iTarget, deployTarget)
+		return b.nextBuildResult(iTarget, deployTarget), nil
+	})
+	result := queue.NewResults()
+	if err != nil {
+		return result, err
 	}
 
 	if !call.dc().Empty() && len(b.nextLiveUpdateContainerIDs) == 0 {
@@ -261,7 +282,10 @@ func (b *fakeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RSto
 		if b.nextDockerComposeContainerID != "" {
 			dcContainerID = b.nextDockerComposeContainerID
 		}
-		result[call.dc().ID()] = store.NewDockerComposeDeployResult(call.dc().ID(), dcContainerID)
+
+		dcContainerState := b.nextDockerComposeContainerState
+		result[call.dc().ID()] = store.NewDockerComposeDeployResult(
+			call.dc().ID(), dcContainerID, dcContainerState)
 	}
 
 	if kTarg := call.k8s(); !kTarg.Empty() {
@@ -346,7 +370,11 @@ func TestUpper_Up(t *testing.T) {
 	manifest := f.newManifest("foobar")
 
 	f.setManifests([]model.Manifest{manifest})
-	err := f.upper.Init(f.ctx, InitAction{TiltfilePath: f.JoinPath("Tiltfile")})
+	err := f.upper.Init(f.ctx, InitAction{
+		EngineMode:   store.EngineModeApply,
+		TiltfilePath: f.JoinPath("Tiltfile"),
+		StartTime:    f.Now(),
+	})
 	close(f.b.calls)
 	require.NoError(t, err)
 	var started []model.TargetID
@@ -375,7 +403,9 @@ func TestUpper_UpK8sEntityOrdering(t *testing.T) {
 	f.WriteFile("postgres.yaml", yaml)
 
 	err = f.upper.Init(f.ctx, InitAction{
+		EngineMode:   store.EngineModeApply,
 		TiltfilePath: f.JoinPath("Tiltfile"),
+		StartTime:    f.Now(),
 	})
 	require.NoError(t, err)
 
@@ -402,8 +432,10 @@ func TestUpper_WatchFalseNoManifestsExplicitlyNamed(t *testing.T) {
 	f.WriteFile("snack.yaml", simpleYAML)
 
 	err := f.upper.Init(f.ctx, InitAction{
+		EngineMode:   store.EngineModeApply,
 		TiltfilePath: f.JoinPath("Tiltfile"),
 		UserArgs:     nil, // equivalent to `tilt up --watch=false` (i.e. not specifying any manifest names)
+		StartTime:    f.Now(),
 	})
 	close(f.b.calls)
 
@@ -424,9 +456,9 @@ func TestUpper_UpWatchError(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
-	f.fsWatcher.errors <- context.Canceled
+	f.fsWatcher.Errors <- context.Canceled
 
 	err := <-f.upperInitResult
 	if assert.NotNil(t, err) {
@@ -438,15 +470,15 @@ func TestUpper_UpWatchFileChange(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
-	f.timerMaker.maxTimerLock.Lock()
+	f.timerMaker.MaxTimerLock.Lock()
 	call := f.nextCallComplete()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
 	assert.Equal(t, []string{}, call.oneState().FilesChanged())
 
 	fileRelPath := "fdas"
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath(fileRelPath))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath(fileRelPath))
 
 	call = f.nextCallComplete()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -468,20 +500,20 @@ func TestUpper_UpWatchCoalescedFileChanges(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
-	f.timerMaker.maxTimerLock.Lock()
+	f.timerMaker.MaxTimerLock.Lock()
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
 	assert.Equal(t, []string{}, call.oneState().FilesChanged())
 
-	f.timerMaker.restTimerLock.Lock()
+	f.timerMaker.RestTimerLock.Lock()
 	fileRelPaths := []string{"fdas", "giueheh"}
 	for _, fileRelPath := range fileRelPaths {
-		f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath(fileRelPath))
+		f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath(fileRelPath))
 	}
 	time.Sleep(time.Millisecond)
-	f.timerMaker.restTimerLock.Unlock()
+	f.timerMaker.RestTimerLock.Unlock()
 
 	call = f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -502,20 +534,20 @@ func TestUpper_UpWatchCoalescedFileChangesHitMaxTimeout(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
 	assert.Equal(t, []string{}, call.oneState().FilesChanged())
 
-	f.timerMaker.maxTimerLock.Lock()
-	f.timerMaker.restTimerLock.Lock()
+	f.timerMaker.MaxTimerLock.Lock()
+	f.timerMaker.RestTimerLock.Lock()
 	fileRelPaths := []string{"fdas", "giueheh"}
 	for _, fileRelPath := range fileRelPaths {
-		f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath(fileRelPath))
+		f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath(fileRelPath))
 	}
 	time.Sleep(time.Millisecond)
-	f.timerMaker.maxTimerLock.Unlock()
+	f.timerMaker.MaxTimerLock.Unlock()
 
 	call = f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -538,12 +570,12 @@ func TestFirstBuildFailsWhileWatching(t *testing.T) {
 	manifest := f.newManifest("foobar")
 	f.SetNextBuildFailure(errors.New("Build failed"))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("a.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("a.go"))
 
 	call = f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
@@ -560,7 +592,7 @@ func TestFirstBuildCancelsWhileWatching(t *testing.T) {
 	manifest := f.newManifest("foobar")
 	f.SetNextBuildFailure(context.Canceled)
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
@@ -578,13 +610,27 @@ func TestFirstBuildFailsWhileNotWatching(t *testing.T) {
 	f.SetNextBuildFailure(buildFailedToken)
 
 	f.setManifests([]model.Manifest{manifest})
-	err := f.upper.Init(f.ctx, InitAction{
+	f.Init(InitAction{
+		EngineMode:   store.EngineModeApply,
 		TiltfilePath: f.JoinPath("Tiltfile"),
 		HUDEnabled:   true,
+		StartTime:    f.Now(),
 	})
-	require.Nil(t, err)
+
 	f.WaitUntilManifestState("build has failed", manifest.ManifestName(), func(st store.ManifestState) bool {
 		return st.LastBuild().Error != nil
+	})
+
+	select {
+	case err := <-f.upperInitResult:
+		require.NotNil(t, err)
+		assert.Contains(t, err.Error(), "doesn't compile")
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for exit action")
+	}
+
+	f.withState(func(es store.EngineState) {
+		assert.True(t, es.ExitSignal)
 	})
 }
 
@@ -592,26 +638,25 @@ func TestRebuildWithChangedFiles(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCallComplete("first build")
 	assert.True(t, call.oneState().IsEmpty())
 
 	// Simulate a change to a.go that makes the build fail.
 	f.SetNextBuildFailure(errors.New("build failed"))
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("a.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("a.go"))
 
 	call = f.nextCallComplete("failed build from a.go change")
 	assert.Equal(t, "gcr.io/some-project-162817/sancho:tilt-1", call.oneState().LastLocalImageAsString())
 	assert.Equal(t, []string{f.JoinPath("a.go")}, call.oneState().FilesChanged())
 
 	// Simulate a change to b.go
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("b.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("b.go"))
 
-	// The next build should treat both a.go and b.go as changed, and build
-	// on the last successful result, from before a.go changed.
+	// The next build should only treat b.go as changed.
 	call = f.nextCallComplete("build on last successful result")
-	assert.Equal(t, []string{f.JoinPath("a.go"), f.JoinPath("b.go")}, call.oneState().FilesChanged())
+	assert.Equal(t, []string{f.JoinPath("b.go")}, call.oneState().FilesChanged())
 	assert.Equal(t, "gcr.io/some-project-162817/sancho:tilt-1", call.oneState().LastLocalImageAsString())
 
 	err := f.Stop()
@@ -624,18 +669,18 @@ func TestThreeBuilds(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCallComplete("first build")
 	assert.True(t, call.oneState().IsEmpty())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("a.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("a.go"))
 
 	call = f.nextCallComplete("second build")
 	assert.Equal(t, []string{f.JoinPath("a.go")}, call.oneState().FilesChanged())
 
 	// Simulate a change to b.go
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("b.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("b.go"))
 
 	call = f.nextCallComplete("third build")
 	assert.Equal(t, []string{f.JoinPath("b.go")}, call.oneState().FilesChanged())
@@ -654,7 +699,7 @@ func TestRebuildWithSpuriousChangedFiles(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
@@ -664,12 +709,12 @@ func TestRebuildWithSpuriousChangedFiles(t *testing.T) {
 	tmpPath := filepath.Join(f.Path(), ".#a.go")
 	_ = os.Symlink(realPath, tmpPath)
 
-	f.fsWatcher.events <- watch.NewFileEvent(tmpPath)
+	f.fsWatcher.Events <- watch.NewFileEvent(tmpPath)
 
 	f.assertNoCall()
 
 	f.TouchFiles([]string{realPath})
-	f.fsWatcher.events <- watch.NewFileEvent(realPath)
+	f.fsWatcher.Events <- watch.NewFileEvent(realPath)
 
 	call = f.nextCall()
 	assert.Equal(t, []string{realPath}, call.oneState().FilesChanged())
@@ -706,7 +751,7 @@ k8s_yaml('snack.yaml')
 	// (i.e. check that we called BuildAndDeploy with no pre-existing state)
 	assert.False(t, call.oneState().HasLastSuccessfulResult())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("random_file.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("random_file.go"))
 
 	// third call: new manifest should persist
 	call = f.nextCall("persist new manifest")
@@ -852,7 +897,7 @@ k8s_yaml('snack.yaml')`)
 	// Editing the random file means we have to do a rebuild. BUT! The Dockerfile
 	// hasn't changed, so the manifest hasn't changed, so we can do an incremental build.
 	changed := f.WriteFile("src/main.go", "goodbye")
-	f.fsWatcher.events <- watch.NewFileEvent(changed)
+	f.fsWatcher.Events <- watch.NewFileEvent(changed)
 
 	call = f.nextCall("build from file change")
 	assert.Equal(t, "snack", string(call.k8s().Name))
@@ -945,7 +990,7 @@ k8s_yaml('snack.yaml')
 	})
 
 	f.withManifestTarget("snack", func(mt store.ManifestTarget) {
-		expectedCmd := model.ToShellCmd("changed")
+		expectedCmd := model.ToUnixCmd("changed")
 		assert.Equal(t, expectedCmd, mt.Manifest.ImageTargetAt(0).LiveUpdateInfo().RunSteps()[0].Cmd,
 			"Tiltfile change should have propagated to manifest")
 	})
@@ -1011,7 +1056,7 @@ k8s_yaml('snack.yaml')`
 		return mt.Manifest.TriggerMode == model.TriggerModeManualAfterInitial
 	})
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("src/main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("src/main.go"))
 	f.WaitUntil("pending change appears", func(st store.EngineState) bool {
 		return len(st.BuildStatus(imageTargetID).PendingFileChanges) > 0
 	})
@@ -1043,7 +1088,7 @@ func TestConfigChange_ManifestIncludingInitialBuildsIfTriggerModeChangedToManual
 	foo := f.newManifest("foo").WithTriggerMode(model.TriggerModeManualIncludingInitial)
 	bar := f.newManifest("bar")
 
-	f.Start([]model.Manifest{foo, bar}, true)
+	f.Start([]model.Manifest{foo, bar})
 
 	// foo should be skipped, and just bar built
 	call := f.nextCallComplete("initial build")
@@ -1059,7 +1104,8 @@ func TestConfigChange_ManifestIncludingInitialBuildsIfTriggerModeChangedToManual
 	// change the trigger mode
 	foo = foo.WithTriggerMode(model.TriggerModeManualAfterInitial)
 	f.store.Dispatch(configs.ConfigsReloadedAction{
-		Manifests: []model.Manifest{foo, bar},
+		FinishTime: f.Now(),
+		Manifests:  []model.Manifest{foo, bar},
 	})
 
 	// now that it is a trigger mode that should build on startup, a build should kick off
@@ -1092,7 +1138,7 @@ docker_build('gcr.io/windmill-public-containers/servantes/snack', './src')`)
 	f.WriteFile("Tiltfile", `
 k8s_yaml('snack.yaml')
 docker_build('gcr.io/windmill-public-containers/servantes/snack', './src', ignore='Dockerfile')`)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("Tiltfile"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("Tiltfile"))
 
 	f.WaitUntilManifestState("snack reloaded", "snack", func(ms store.ManifestState) bool {
 		return len(ms.BuildHistory) == 2
@@ -1146,14 +1192,14 @@ go build ./...
 			BuildPath:  f.Path(),
 		}))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCallComplete("first build")
 	assert.True(t, call.oneState().IsEmpty())
 
 	// Simulate a change to main.go
 	mainPath := filepath.Join(f.Path(), "main.go")
-	f.fsWatcher.events <- watch.NewFileEvent(mainPath)
+	f.fsWatcher.Events <- watch.NewFileEvent(mainPath)
 
 	// Check that this triggered a rebuild.
 	call = f.nextCallComplete("rebuild triggered")
@@ -1170,7 +1216,7 @@ func TestHudUpdated(t *testing.T) {
 
 	manifest := f.newManifest("foobar")
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 
@@ -1190,14 +1236,17 @@ func TestHudUpdated(t *testing.T) {
 }
 
 func TestDisabledHudUpdated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TODO(nick): Investigate")
+	}
 	out := bufsync.NewThreadSafeBuffer()
-	h := hud.NewDisabledHud(hud.NewIncrementalPrinter(out))
+	h := hud.NewDisabledHud(hud.NewIncrementalPrinter(out), store.NewTestingStore())
 	f := newTestFixtureWithHud(t, h)
 	defer f.TearDown()
 
 	manifest := f.newManifest("foobar")
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 
@@ -1227,7 +1276,7 @@ func TestPodEvent(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
@@ -1253,7 +1302,7 @@ func TestPodResetRestartsAction(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
@@ -1286,8 +1335,8 @@ func TestPodEventOrdering(t *testing.T) {
 
 	manifest := f.newManifest("fe")
 
-	past := time.Now().Add(-time.Minute)
-	now := time.Now()
+	past := f.Now().Add(-time.Minute)
+	now := f.Now()
 	uidPast := types.UID("deployment-uid-past")
 	uidNow := types.UID("deployment-uid-now")
 	pb := podbuilder.New(f.T(), manifest)
@@ -1316,7 +1365,7 @@ func TestPodEventOrdering(t *testing.T) {
 			f := newTestFixture(t)
 			defer f.TearDown()
 			f.b.nextDeployedUID = uidNow
-			f.Start([]model.Manifest{manifest}, true)
+			f.Start([]model.Manifest{manifest})
 
 			call := f.nextCall()
 			assert.True(t, call.oneState().IsEmpty())
@@ -1355,7 +1404,7 @@ func TestPodEventContainerStatus(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	var ref reference.NamedTagged
 	f.WaitUntilManifestState("image appears", "foobar", func(ms store.ManifestState) bool {
@@ -1390,11 +1439,9 @@ func TestPodEventContainerStatusWithoutImage(t *testing.T) {
 	defer f.TearDown()
 	manifest := model.Manifest{
 		Name: model.ManifestName("foobar"),
-	}.WithDeployTarget(model.K8sTarget{
-		YAML: SanchoYAML,
-	})
+	}.WithDeployTarget(k8s.MustTarget("foobar", SanchoYAML))
 	ref := container.MustParseNamedTagged("dockerhub/we-didnt-build-this:foo")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	f.WaitUntilManifestState("first build complete", "foobar", func(ms store.ManifestState) bool {
 		return len(ms.BuildHistory) > 0
@@ -1450,11 +1497,11 @@ func TestPodUnexpectedContainerStartsImageBuild(t *testing.T) {
 	ptsh := k8s.PodTemplateSpecHash("hash")
 	name := model.ManifestName("foobar")
 	manifest := f.newManifest(name.String())
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.registerDeployedPodTemplateSpecHashToManifest(name, ptsh)
 
 	// Start and end a fake build to set manifestState.ExpectedContainerId
-	f.store.Dispatch(newTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
+	f.store.Dispatch(fswatch.NewTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
 
 	f.WaitUntil("builds ready & changed file recorded", func(st store.EngineState) bool {
 		ms, _ := st.ManifestState(manifest.Name)
@@ -1463,7 +1510,7 @@ func TestPodUnexpectedContainerStartsImageBuild(t *testing.T) {
 	spanID0 := SpanIDForBuildLog(0)
 	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
-		StartTime:    time.Now(),
+		StartTime:    f.Now(),
 		SpanID:       spanID0,
 	})
 
@@ -1499,13 +1546,13 @@ func TestPodUnexpectedContainerStartsImageBuildOutOfOrderEvents(t *testing.T) {
 	manifest := f.newManifest(name.String())
 	ptsh := k8s.PodTemplateSpecHash("abc123hash")
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	// (recognize incoming pods with this ptsh as belonging to this manifest)
 	f.registerDeployedPodTemplateSpecHashToManifest(name, ptsh)
 
 	// Start a fake build
-	f.store.Dispatch(newTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
+	f.store.Dispatch(fswatch.NewTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
 	f.WaitUntil("builds ready & changed file recorded", func(st store.EngineState) bool {
 		ms, _ := st.ManifestState(manifest.Name)
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name && ms.HasPendingFileChanges()
@@ -1513,7 +1560,7 @@ func TestPodUnexpectedContainerStartsImageBuildOutOfOrderEvents(t *testing.T) {
 	spanID0 := SpanIDForBuildLog(0)
 	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
-		StartTime:    time.Now(),
+		StartTime:    f.Now(),
 		SpanID:       spanID0,
 	})
 
@@ -1543,10 +1590,10 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 	manifest := f.newManifest(name.String())
 	ptsh := k8s.PodTemplateSpecHash("abc123hash")
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	// Start and end a normal build
-	f.store.Dispatch(newTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
+	f.store.Dispatch(fswatch.NewTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
 	f.WaitUntil("builds ready & changed file recorded", func(st store.EngineState) bool {
 		ms, _ := st.ManifestState(manifest.Name)
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name && ms.HasPendingFileChanges()
@@ -1555,10 +1602,10 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 	spanID0 := SpanIDForBuildLog(0)
 	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
-		StartTime:    time.Now(),
+		StartTime:    f.Now(),
 		SpanID:       spanID0,
 	})
-	podStartTime := time.Now()
+	podStartTime := f.Now()
 	ancestorUID := types.UID("fake-uid")
 	pb := podbuilder.New(t, manifest).
 		WithPodID("mypod").
@@ -1576,7 +1623,7 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 	})
 
 	// Start another fake build
-	f.store.Dispatch(newTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
+	f.store.Dispatch(fswatch.NewTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a"))
 	f.WaitUntil("waiting for builds to be ready", func(st store.EngineState) bool {
 		return buildcontrol.NextManifestNameToBuild(st) == manifest.Name
 	})
@@ -1584,7 +1631,7 @@ func TestPodUnexpectedContainerAfterSuccessfulUpdate(t *testing.T) {
 	spanID1 := SpanIDForBuildLog(1)
 	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
-		StartTime:    time.Now(),
+		StartTime:    f.Now(),
 		SpanID:       spanID1,
 	})
 
@@ -1609,12 +1656,12 @@ func TestPodEventUpdateByTimestamp(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 
-	firstCreationTime := time.Now()
+	firstCreationTime := f.Now()
 	pod := podbuilder.New(f.T(), manifest).
 		WithCreationTime(firstCreationTime).
 		WithPhase("CrashLoopBackOff").
@@ -1646,12 +1693,12 @@ func TestPodEventDeleted(t *testing.T) {
 	defer f.TearDown()
 	mn := model.ManifestName("foobar")
 	manifest := f.newManifest(mn.String())
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCallComplete()
 	assert.True(t, call.oneState().IsEmpty())
 
-	creationTime := time.Now()
+	creationTime := f.Now()
 	pb := podbuilder.New(f.T(), manifest).
 		WithCreationTime(creationTime)
 	f.podEvent(pb.Build(), manifest.Name)
@@ -1678,12 +1725,12 @@ func TestPodEventUpdateByPodName(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCallComplete()
 	assert.True(t, call.oneState().IsEmpty())
 
-	creationTime := time.Now()
+	creationTime := f.Now()
 	pb := podbuilder.New(f.T(), manifest).
 		WithCreationTime(creationTime).
 		WithPhase("CrashLoopBackOff")
@@ -1715,12 +1762,12 @@ func TestPodEventIgnoreOlderPod(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 
-	creationTime := time.Now()
+	creationTime := f.Now()
 	pod := podbuilder.New(f.T(), manifest).
 		WithPodID("my-new-pod").
 		WithPhase("CrashLoopBackOff").
@@ -1749,7 +1796,7 @@ func TestPodContainerStatus(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	_ = f.nextCall()
 
@@ -1760,7 +1807,7 @@ func TestPodContainerStatus(t *testing.T) {
 		return ref != nil
 	})
 
-	startedAt := time.Now()
+	startedAt := f.Now()
 	pb := podbuilder.New(f.T(), manifest).
 		WithCreationTime(startedAt)
 	pod := pb.Build()
@@ -1872,7 +1919,7 @@ func TestPodAddedToStateOrNotByTemplateHash(t *testing.T) {
 
 			f.b.nextDeployedUID = ancestorUID
 			f.b.nextPodTemplateSpecHashes = []k8s.PodTemplateSpecHash{deployedHash}
-			f.Start([]model.Manifest{manifest}, true)
+			f.Start([]model.Manifest{manifest})
 
 			_ = f.nextCallComplete()
 
@@ -1957,12 +2004,12 @@ func TestUpper_WatchDockerIgnoredFiles(t *testing.T) {
 			},
 		}))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
 
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("dignore.txt"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("dignore.txt"))
 	f.assertNoCall("event for ignored file should not trigger build")
 
 	err := f.Stop()
@@ -1977,7 +2024,7 @@ func TestUpper_ShowErrorPodLog(t *testing.T) {
 	name := model.ManifestName("foobar")
 	manifest := f.newManifest(name.String())
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pb := podbuilder.New(f.T(), manifest)
@@ -1985,7 +2032,7 @@ func TestUpper_ShowErrorPodLog(t *testing.T) {
 	f.startPod(pod, name)
 	f.podLog(pod, name, "first string")
 
-	f.upper.store.Dispatch(newTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a.go"))
+	f.upper.store.Dispatch(fswatch.NewTargetFilesChangedAction(manifest.ImageTargetAt(0).ID(), "/go/a.go"))
 
 	f.waitForCompletedBuildCount(2)
 	f.podLog(pod, name, "second string")
@@ -2007,7 +2054,7 @@ func TestUpperPodLogInCrashLoopThirdInstanceStillUp(t *testing.T) {
 	name := model.ManifestName("foobar")
 	manifest := f.newManifest(name.String())
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pb := podbuilder.New(f.T(), manifest)
@@ -2040,7 +2087,7 @@ func TestUpperPodLogInCrashLoopPodCurrentlyDown(t *testing.T) {
 	name := model.ManifestName("foobar")
 	manifest := f.newManifest(name.String())
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pb := podbuilder.New(f.T(), manifest)
@@ -2072,7 +2119,7 @@ func TestUpperPodRestartsBeforeTiltStart(t *testing.T) {
 	name := model.ManifestName("fe")
 	manifest := f.newManifest(name.String())
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pb := podbuilder.New(f.T(), manifest).
@@ -2097,7 +2144,7 @@ func TestUpperBuildImmediatelyAfterCrashRebuild(t *testing.T) {
 	defer f.TearDown()
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	call := f.nextCall()
 	assert.Equal(t, manifest.ImageTargetAt(0), call.firstImgTarg())
@@ -2107,7 +2154,7 @@ func TestUpperBuildImmediatelyAfterCrashRebuild(t *testing.T) {
 	f.b.nextLiveUpdateContainerIDs = []container.ID{podbuilder.FakeContainerID()}
 	pod := podbuilder.New(f.T(), manifest).Build()
 	f.podEvent(pod, manifest.Name)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main.go"))
 
 	call = f.nextCall()
 	assert.Equal(t, pod.Name, call.oneState().OneContainerInfo().PodID.String())
@@ -2131,7 +2178,7 @@ func TestUpperBuildImmediatelyAfterCrashRebuild(t *testing.T) {
 	})
 
 	// kick off another build
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("main2.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("main2.go"))
 	call = f.nextCall()
 	// at this point we have not received a pod event for pod that was started by the crash-rebuild,
 	// so any known pod info would have to be invalid to use for a build and this BuildState should
@@ -2150,7 +2197,7 @@ func TestUpperRecordPodWithMultipleContainers(t *testing.T) {
 	name := model.ManifestName("foobar")
 	manifest := f.newManifest(name.String())
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pod := podbuilder.New(f.T(), manifest).Build()
@@ -2191,7 +2238,7 @@ func TestUpperProcessOtherContainersIfOneErrors(t *testing.T) {
 	name := model.ManifestName("foobar")
 	manifest := f.newManifest(name.String())
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pod := podbuilder.New(f.T(), manifest).Build()
@@ -2231,7 +2278,7 @@ func TestUpper_ServiceEvent(t *testing.T) {
 
 	manifest := f.newManifest("foobar")
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	result := f.b.resultsByID[manifest.K8sTarget().ID()]
@@ -2264,7 +2311,7 @@ func TestUpper_ServiceEventRemovesURL(t *testing.T) {
 
 	manifest := f.newManifest("foobar")
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	result := f.b.resultsByID[manifest.K8sTarget().ID()]
@@ -2302,7 +2349,7 @@ func TestUpper_PodLogs(t *testing.T) {
 	name := model.ManifestName("fe")
 	manifest := f.newManifest(string(name))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	pod := podbuilder.New(f.T(), manifest).Build()
@@ -2320,7 +2367,7 @@ func TestK8sEventGlobalLogAndManifestLog(t *testing.T) {
 	name := model.ManifestName("fe")
 	manifest := f.newManifest(string(name))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	objRef := v1.ObjectReference{UID: f.lastDeployedUID(name)}
@@ -2328,6 +2375,7 @@ func TestK8sEventGlobalLogAndManifestLog(t *testing.T) {
 		InvolvedObject: objRef,
 		Message:        "something has happened zomg",
 		Type:           v1.EventTypeWarning,
+		ObjectMeta:     metav1.ObjectMeta{CreationTimestamp: metav1.Time{Time: f.Now()}},
 	}
 	f.kClient.EmitEvent(f.ctx, warnEvt)
 
@@ -2350,13 +2398,14 @@ func TestK8sEventNotLoggedIfNoManifestForUID(t *testing.T) {
 	name := model.ManifestName("fe")
 	manifest := f.newManifest(string(name))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	warnEvt := &v1.Event{
 		InvolvedObject: v1.ObjectReference{UID: types.UID("someRandomUID")},
 		Message:        "something has happened zomg",
 		Type:           v1.EventTypeWarning,
+		ObjectMeta:     metav1.ObjectMeta{CreationTimestamp: metav1.Time{Time: f.Now()}},
 	}
 	f.kClient.EmitEvent(f.ctx, warnEvt)
 
@@ -2373,13 +2422,14 @@ func TestK8sEventDoNotLogNormalEvents(t *testing.T) {
 	name := model.ManifestName("fe")
 	manifest := f.newManifest(string(name))
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 	f.waitForCompletedBuildCount(1)
 
 	normalEvt := &v1.Event{
 		InvolvedObject: v1.ObjectReference{UID: f.lastDeployedUID(name)},
 		Message:        "all systems are go",
 		Type:           v1.EventTypeNormal, // we should NOT log this message
+		ObjectMeta:     metav1.ObjectMeta{CreationTimestamp: metav1.Time{Time: f.Now()}},
 	}
 	f.kClient.EmitEvent(f.ctx, normalEvt)
 
@@ -2393,20 +2443,9 @@ func TestK8sEventDoNotLogNormalEvents(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestInitSetsTiltfilePath(t *testing.T) {
-	f := newTestFixture(t)
-	f.Start([]model.Manifest{}, true)
-	f.store.Dispatch(InitAction{
-		TiltfilePath: "/Tiltfile",
-	})
-	f.WaitUntil("tiltfile path gets set on init", func(st store.EngineState) bool {
-		return st.TiltfilePath == "/Tiltfile"
-	})
-}
-
 func TestHudExitNoError(t *testing.T) {
 	f := newTestFixture(t)
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 	f.store.Dispatch(hud.NewExitAction(nil))
 	err := f.WaitForExit()
 	assert.NoError(t, err)
@@ -2414,7 +2453,7 @@ func TestHudExitNoError(t *testing.T) {
 
 func TestHudExitWithError(t *testing.T) {
 	f := newTestFixture(t)
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 	e := errors.New("helllllo")
 	f.store.Dispatch(hud.NewExitAction(e))
 	_ = f.WaitForNoExit()
@@ -2439,7 +2478,7 @@ func TestDockerComposeUp(t *testing.T) {
 	f := newTestFixture(t)
 	redis, server := f.setupDCFixture()
 
-	f.Start([]model.Manifest{redis, server}, true)
+	f.Start([]model.Manifest{redis, server})
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 	assert.False(t, call.dc().ID().Empty())
@@ -2454,14 +2493,14 @@ func TestDockerComposeRedeployFromFileChange(t *testing.T) {
 	f := newTestFixture(t)
 	_, m := f.setupDCFixture()
 
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 
 	// Initial build
 	call := f.nextCall()
 	assert.True(t, call.oneState().IsEmpty())
 
 	// Change a file -- should trigger build
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("package.json"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("package.json"))
 	call = f.nextCall()
 	assert.Equal(t, []string{f.JoinPath("package.json")}, call.oneState().FilesChanged())
 }
@@ -2472,45 +2511,36 @@ func TestDockerComposeEventSetsStatus(t *testing.T) {
 	f := newTestFixture(t)
 	_, m := f.setupDCFixture()
 
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 	f.waitForCompletedBuildCount(1)
 
 	// Send event corresponding to status = "In Progress"
-	err := f.dcc.SendEvent(dcContainerEvtForManifest(m, dockercompose.ActionCreate))
-	if err != nil {
-		f.T().Fatal(err)
-	}
+	f.dispatchDCEvent(m, dockercompose.ActionCreate, docker.NewCreatedContainerState())
 
 	f.WaitUntilManifestState("resource status = 'In Progress'", m.ManifestName(), func(ms store.ManifestState) bool {
-		return ms.DCRuntimeState().Status == dockercompose.StatusInProg
+		return ms.DCRuntimeState().RuntimeStatus() == model.RuntimeStatusPending
 	})
 
-	beforeStart := time.Now()
+	beforeStart := f.Now()
 
 	// Send event corresponding to status = "OK"
-	err = f.dcc.SendEvent(dcContainerEvtForManifest(m, dockercompose.ActionStart))
-	if err != nil {
-		f.T().Fatal(err)
-	}
+	f.dispatchDCEvent(m, dockercompose.ActionStart, docker.NewRunningContainerState())
 
 	f.WaitUntilManifestState("resource status = 'OK'", m.ManifestName(), func(ms store.ManifestState) bool {
-		return ms.DCRuntimeState().Status == dockercompose.StatusUp
+		return ms.DCRuntimeState().RuntimeStatus() == model.RuntimeStatusOK
 	})
 
 	f.withManifestState(m.ManifestName(), func(ms store.ManifestState) {
-		assert.True(t, ms.DCRuntimeState().StartTime.After(beforeStart))
-
+		startTime := ms.DCRuntimeState().StartTime
+		assert.True(t, store.AfterOrEqual(startTime, beforeStart))
 	})
 
 	// An event unrelated to status shouldn't change the status
-	err = f.dcc.SendEvent(dcContainerEvtForManifest(m, dockercompose.ActionExecCreate))
-	if err != nil {
-		f.T().Fatal(err)
-	}
+	f.dispatchDCEvent(m, dockercompose.ActionExecCreate, docker.NewRunningContainerState())
 
 	time.Sleep(10 * time.Millisecond)
 	f.WaitUntilManifestState("resource status = 'OK'", m.ManifestName(), func(ms store.ManifestState) bool {
-		return ms.DCRuntimeState().Status == dockercompose.StatusUp
+		return ms.DCRuntimeState().RuntimeStatus() == model.RuntimeStatusOK
 	})
 }
 
@@ -2520,20 +2550,20 @@ func TestDockerComposeStartsEventWatcher(t *testing.T) {
 
 	// Actual behavior is that we init with zero manifests, and add in manifests
 	// after Tiltfile loads. Mimic that here.
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 	time.Sleep(10 * time.Millisecond)
 
-	f.store.Dispatch(configs.ConfigsReloadedAction{Manifests: []model.Manifest{m}})
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		Manifests:  []model.Manifest{m},
+		FinishTime: f.Now(),
+	})
 	f.waitForCompletedBuildCount(1)
 
 	// Is DockerComposeEventWatcher watching for events??
-	err := f.dcc.SendEvent(dcContainerEvtForManifest(m, dockercompose.ActionCreate))
-	if err != nil {
-		f.T().Fatal(err)
-	}
+	f.dispatchDCEvent(m, dockercompose.ActionCreate, docker.NewCreatedContainerState())
 
 	f.WaitUntilManifestState("resource status = 'In Progress'", m.ManifestName(), func(ms store.ManifestState) bool {
-		return ms.DCRuntimeState().Status == dockercompose.StatusInProg
+		return ms.DCRuntimeState().RuntimeStatus() == model.RuntimeStatusPending
 	})
 }
 
@@ -2603,6 +2633,8 @@ func TestDockerComposeFiltersRunLogs(t *testing.T) {
 	})
 }
 
+// NOTE(nick): The weird structure of this test is vesigial from when
+// we inferred crash from ContainerState rather than sequences of events.
 func TestDockerComposeDetectsCrashes(t *testing.T) {
 	f := newTestFixture(t)
 	m1, m2 := f.setupDCFixture()
@@ -2611,11 +2643,11 @@ func TestDockerComposeDetectsCrashes(t *testing.T) {
 	f.waitForCompletedBuildCount(2)
 
 	f.withManifestState(m1.ManifestName(), func(st store.ManifestState) {
-		assert.NotEqual(t, dockercompose.StatusCrash, st.DCRuntimeState().Status)
+		assert.NotEqual(t, model.RuntimeStatusError, st.DCRuntimeState().RuntimeStatus())
 	})
 
 	f.withManifestState(m2.ManifestName(), func(st store.ManifestState) {
-		assert.NotEqual(t, dockercompose.StatusCrash, st.DCRuntimeState().Status)
+		assert.NotEqual(t, model.RuntimeStatusError, st.DCRuntimeState().RuntimeStatus())
 	})
 
 	for _, action := range []dockercompose.Action{
@@ -2628,16 +2660,19 @@ func TestDockerComposeDetectsCrashes(t *testing.T) {
 		dockercompose.ActionStart,
 		dockercompose.ActionDie,
 	} {
-		err := f.dcc.SendEvent(dcContainerEvtForManifest(m1, action))
-		require.NoError(t, err)
+		if action == dockercompose.ActionDie {
+			f.dispatchDCEvent(m1, action, docker.NewExitErrorContainerState())
+		} else {
+			f.dispatchDCEvent(m1, action, docker.NewCreatedContainerState())
+		}
 	}
 
 	f.WaitUntilManifestState("is crashing", m1.ManifestName(), func(st store.ManifestState) bool {
-		return st.DCRuntimeState().Status == dockercompose.StatusCrash
+		return st.DCRuntimeState().RuntimeStatus() == model.RuntimeStatusError
 	})
 
 	f.withManifestState(m2.ManifestName(), func(st store.ManifestState) {
-		assert.NotEqual(t, dockercompose.StatusCrash, st.DCRuntimeState().Status)
+		assert.NotEqual(t, model.RuntimeStatusError, st.DCRuntimeState().RuntimeStatus())
 	})
 
 	for _, action := range []dockercompose.Action{
@@ -2649,12 +2684,11 @@ func TestDockerComposeDetectsCrashes(t *testing.T) {
 		dockercompose.ActionCreate,
 		dockercompose.ActionStart,
 	} {
-		err := f.dcc.SendEvent(dcContainerEvtForManifest(m1, action))
-		require.NoError(t, err)
+		f.dispatchDCEvent(m1, action, docker.NewRunningContainerState())
 	}
 
 	f.WaitUntilManifestState("is not crashing", m1.ManifestName(), func(st store.ManifestState) bool {
-		return st.DCRuntimeState().Status == dockercompose.StatusUp
+		return st.DCRuntimeState().RuntimeStatus() == model.RuntimeStatusOK
 	})
 }
 
@@ -2664,6 +2698,10 @@ func TestDockerComposeBuildCompletedSetsStatusToUpIfSuccessful(t *testing.T) {
 
 	expected := container.ID("aaaaaa")
 	f.b.nextDockerComposeContainerID = expected
+
+	containerState := docker.NewRunningContainerState()
+	f.b.nextDockerComposeContainerState = &containerState
+
 	f.loadAndStart()
 
 	f.waitForCompletedBuildCount(2)
@@ -2674,16 +2712,20 @@ func TestDockerComposeBuildCompletedSetsStatusToUpIfSuccessful(t *testing.T) {
 			t.Fatal("expected RuntimeState to be docker compose, but it wasn't")
 		}
 		assert.Equal(t, expected, state.ContainerID)
-		assert.Equal(t, dockercompose.StatusUp, state.Status)
+		assert.Equal(t, model.RuntimeStatusOK, state.RuntimeStatus())
 	})
 }
 
 func TestEmptyTiltfile(t *testing.T) {
 	f := newTestFixture(t)
 	f.WriteFile("Tiltfile", "")
+
+	closeCh := make(chan error)
 	go func() {
-		err := f.upper.Start(f.ctx, []string{}, model.TiltBuild{}, false, f.JoinPath("Tiltfile"), true, analytics.OptIn, token.Token("unit test token"), "nonexistent.example.com")
-		testutils.FailOnNonCanceledErr(t, err, "upper.Start failed")
+		err := f.upper.Start(f.ctx, []string{}, model.TiltBuild{}, store.EngineModeUp,
+			f.JoinPath("Tiltfile"), true, analytics.OptIn, token.Token("unit test token"),
+			"nonexistent.example.com")
+		closeCh <- err
 	}()
 	f.WaitUntil("build is set", func(st store.EngineState) bool {
 		return !st.TiltfileState.LastBuild().Empty()
@@ -2696,6 +2738,11 @@ func TestEmptyTiltfile(t *testing.T) {
 		buildRecord := st.TiltfileState.LastBuild()
 		assertContainsOnce(t, st.LogStore.SpanLog(buildRecord.SpanID), "No resources found. Check out ")
 	})
+
+	f.cancel()
+
+	err := <-closeCh
+	testutils.FailOnNonCanceledErr(t, err, "upper.Start failed")
 }
 
 func TestUpperStart(t *testing.T) {
@@ -2705,10 +2752,13 @@ func TestUpperStart(t *testing.T) {
 	tok := token.Token("unit test token")
 	cloudAddress := "nonexistent.example.com"
 
+	closeCh := make(chan error)
+
 	f.WriteFile("Tiltfile", "")
 	go func() {
-		err := f.upper.Start(f.ctx, []string{"foo", "bar"}, model.TiltBuild{}, false, f.JoinPath("Tiltfile"), true, analytics.OptIn, tok, cloudAddress)
-		testutils.FailOnNonCanceledErr(t, err, "upper.Start failed")
+		err := f.upper.Start(f.ctx, []string{"foo", "bar"}, model.TiltBuild{},
+			store.EngineModeUp, f.JoinPath("Tiltfile"), true, analytics.OptIn, tok, cloudAddress)
+		closeCh <- err
 	}()
 	f.WaitUntil("init action processed", func(state store.EngineState) bool {
 		return !state.TiltStartTime.IsZero()
@@ -2721,12 +2771,17 @@ func TestUpperStart(t *testing.T) {
 		require.Equal(t, analytics.OptIn, state.AnalyticsEffectiveOpt())
 		require.Equal(t, cloudAddress, state.CloudAddress)
 	})
+
+	f.cancel()
+
+	err := <-closeCh
+	testutils.FailOnNonCanceledErr(t, err, "upper.Start failed")
 }
 
 func TestWatchManifestsWithCommonAncestor(t *testing.T) {
 	f := newTestFixture(t)
 	m1, m2 := NewManifestsWithCommonAncestor(f)
-	f.Start([]model.Manifest{m1, m2}, true)
+	f.Start([]model.Manifest{m1, m2})
 
 	f.waitForCompletedBuildCount(2)
 
@@ -2737,7 +2792,7 @@ func TestWatchManifestsWithCommonAncestor(t *testing.T) {
 	assert.Equal(t, m2.K8sTarget(), call.k8s())
 
 	f.WriteFile("common/a.txt", "hello world")
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("common/a.txt"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("common/a.txt"))
 
 	f.waitForCompletedBuildCount(4)
 
@@ -2752,6 +2807,9 @@ func TestWatchManifestsWithCommonAncestor(t *testing.T) {
 }
 
 func TestConfigChangeThatChangesManifestIsIncludedInManifestsChangedFile(t *testing.T) {
+	// https://app.clubhouse.io/windmill/story/5701/test-testconfigchangethatchangesmanifestisincludedinmanifestschangedfile-is-flaky
+	t.Skip("TODO(nick): fix this")
+
 	f := newTestFixture(t)
 	defer f.TearDown()
 
@@ -2767,49 +2825,21 @@ k8s_yaml('snack.yaml')`
 	f.waitForCompletedBuildCount(1)
 
 	f.WriteFile("snack.yaml", testyaml.Deployment("snack", "gcr.io/windmill-public-containers/servantes/snack:new"))
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("snack.yaml"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("snack.yaml"))
 
-	f.WaitUntilManifestState("done", "snack", func(ms store.ManifestState) bool {
-		return sliceutils.StringSliceEquals(ms.LastBuild().Edits, []string{f.JoinPath("snack.yaml")})
+	f.waitForCompletedBuildCount(2)
+
+	f.withManifestState("snack", func(ms store.ManifestState) {
+		require.Equal(t, []string{f.JoinPath("snack.yaml")}, ms.LastBuild().Edits)
 	})
 
 	f.WriteFile("Dockerfile", `FROM iron/go:foobar`)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("Dockerfile"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("Dockerfile"))
 
-	f.WaitUntilManifestState("done", "snack", func(ms store.ManifestState) bool {
-		return sliceutils.StringSliceEquals(ms.LastBuild().Edits, []string{f.JoinPath("Dockerfile")})
-	})
-}
+	f.waitForCompletedBuildCount(3)
 
-func TestTiltVersionCheck(t *testing.T) {
-	f := newTestFixture(t)
-	defer f.TearDown()
-
-	versions := []model.TiltBuild{
-		{
-			Version: "v1000.10.1",
-			Date:    "2019-03-11",
-		},
-		{
-			Version: "v1000.10.2",
-			Date:    "2019-03-13",
-		},
-	}
-
-	f.ghc.LatestReleaseErr = nil
-	f.ghc.LatestReleaseRet = versions[0]
-	f.tiltVersionCheckDelay = time.Millisecond
-
-	manifest := f.newManifest("foobar")
-	f.Start([]model.Manifest{manifest}, true)
-
-	f.WaitUntil("latest version is updated the first time", func(state store.EngineState) bool {
-		return state.LatestTiltBuild == versions[0]
-	})
-
-	f.ghc.LatestReleaseRet = versions[1]
-	f.WaitUntil("latest version is updated the second time", func(state store.EngineState) bool {
-		return state.LatestTiltBuild == versions[1]
+	f.withManifestState("snack", func(ms store.ManifestState) {
+		require.Equal(t, []string{f.JoinPath("Dockerfile")}, ms.LastBuild().Edits)
 	})
 }
 
@@ -2822,7 +2852,7 @@ func TestSetAnalyticsOpt(t *testing.T) {
 		return ia
 	}
 
-	f.Start([]model.Manifest{}, true, opt)
+	f.Start([]model.Manifest{}, opt)
 	f.store.Dispatch(store.AnalyticsUserOptAction{Opt: analytics.OptOut})
 	f.WaitUntil("opted out", func(state store.EngineState) bool {
 		return state.AnalyticsEffectiveOpt() == analytics.OptOut
@@ -2849,36 +2879,48 @@ func TestSetAnalyticsOpt(t *testing.T) {
 func TestFeatureFlagsStoredOnState(t *testing.T) {
 	f := newTestFixture(t)
 
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 
-	f.store.Dispatch(configs.ConfigsReloadedAction{Features: map[string]bool{"foo": true}})
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		FinishTime: f.Now(),
+		Features:   map[string]bool{"foo": true},
+	})
 
 	f.WaitUntil("feature is enabled", func(state store.EngineState) bool {
 		return state.Features["foo"] == true
 	})
 
-	f.store.Dispatch(configs.ConfigsReloadedAction{Features: map[string]bool{"foo": false}})
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		FinishTime: f.Now(),
+		Features:   map[string]bool{"foo": false},
+	})
 
 	f.WaitUntil("feature is disabled", func(state store.EngineState) bool {
 		return state.Features["foo"] == false
 	})
 }
 
-func TestTeamNameStoredOnState(t *testing.T) {
+func TestTeamIDStoredOnState(t *testing.T) {
 	f := newTestFixture(t)
 
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 
-	f.store.Dispatch(configs.ConfigsReloadedAction{TeamName: "sharks"})
-
-	f.WaitUntil("teamName is set to sharks", func(state store.EngineState) bool {
-		return state.TeamName == "sharks"
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		FinishTime: f.Now(),
+		TeamID:     "sharks",
 	})
 
-	f.store.Dispatch(configs.ConfigsReloadedAction{TeamName: "jets"})
+	f.WaitUntil("teamID is set to sharks", func(state store.EngineState) bool {
+		return state.TeamID == "sharks"
+	})
 
-	f.WaitUntil("teamName is set to jets", func(state store.EngineState) bool {
-		return state.TeamName == "jets"
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		FinishTime: f.Now(),
+		TeamID:     "jets",
+	})
+
+	f.WaitUntil("teamID is set to jets", func(state store.EngineState) bool {
+		return state.TeamID == "jets"
 	})
 }
 
@@ -2888,11 +2930,11 @@ func TestBuildLogAction(t *testing.T) {
 	f.bc.DisableForTesting()
 
 	manifest := f.newManifest("alert-injester")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	f.store.Dispatch(buildcontrol.BuildStartedAction{
 		ManifestName: manifest.Name,
-		StartTime:    time.Now(),
+		StartTime:    f.Now(),
 		SpanID:       SpanIDForBuildLog(1),
 	})
 
@@ -2926,7 +2968,7 @@ func TestBuildErrorLoggedOnceByUpper(t *testing.T) {
 	err := errors.New("cats and dogs, living together")
 	f.b.nextBuildFailure = err
 
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	f.waitForCompletedBuildCount(1)
 
@@ -2961,14 +3003,14 @@ k8s_yaml('snack.yaml')`)
 	f.WriteFile("Tiltfile", `
 docker_build('gcr.io/windmill-public-containers/servantes/snack', './src', dockerfile='Dockerfile', ignore='foo')
 k8s_yaml('snack.yaml')`)
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("Tiltfile"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("Tiltfile"))
 
 	f.WaitUntil("Tiltfile reloaded", func(state store.EngineState) bool {
 		return len(state.TiltfileState.BuildHistory) == 2
 	})
 
 	f.withState(func(state store.EngineState) {
-		expectedMessage := fmt.Sprintf("1 changed: [%s]", f.JoinPath("Tiltfile"))
+		expectedMessage := fmt.Sprintf("1 File Changed: [%s]", f.JoinPath("Tiltfile"))
 		require.Contains(t, state.LogStore.String(), expectedMessage)
 	})
 }
@@ -2981,7 +3023,7 @@ func TestDeployUIDsInEngineState(t *testing.T) {
 	f.b.nextDeployedUID = uid
 
 	manifest := f.newManifest("fe")
-	f.Start([]model.Manifest{manifest}, true)
+	f.Start([]model.Manifest{manifest})
 
 	_ = f.nextCall()
 	f.WaitUntilManifestState("UID in ManifestState", "fe", func(state store.ManifestState) bool {
@@ -3116,7 +3158,7 @@ func TestHasEverBeenReadyK8s(t *testing.T) {
 	defer f.TearDown()
 
 	m := f.newManifest("foobar")
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 
 	f.waitForCompletedBuildCount(1)
 	f.withManifestState(m.Name, func(ms store.ManifestState) {
@@ -3135,7 +3177,7 @@ func TestHasEverBeenCompleteK8s(t *testing.T) {
 	defer f.TearDown()
 
 	m := f.newManifest("foobar")
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 
 	f.waitForCompletedBuildCount(1)
 	f.withManifestState(m.Name, func(ms store.ManifestState) {
@@ -3155,7 +3197,7 @@ func TestHasEverBeenReadyLocal(t *testing.T) {
 
 	m := manifestbuilder.New(f, "foobar").WithLocalResource("foo", []string{f.Path()}).Build()
 	f.b.nextBuildFailure = errors.New("failure!")
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 
 	// first build will fail, HasEverBeenReadyOrSucceeded should be false
 	f.waitForCompletedBuildCount(1)
@@ -3164,7 +3206,7 @@ func TestHasEverBeenReadyLocal(t *testing.T) {
 	})
 
 	// second build will succeed, HasEverBeenReadyOrSucceeded should be true
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("bar", "main.go"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("bar", "main.go"))
 	f.WaitUntilManifestState("flagged ready", m.Name, func(state store.ManifestState) bool {
 		return state.RuntimeState.HasEverBeenReadyOrSucceeded()
 	})
@@ -3175,7 +3217,7 @@ func TestHasEverBeenReadyDC(t *testing.T) {
 	defer f.TearDown()
 
 	m, _ := f.setupDCFixture()
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 
 	f.waitForCompletedBuildCount(1)
 	f.withManifestState(m.Name, func(ms store.ManifestState) {
@@ -3184,8 +3226,8 @@ func TestHasEverBeenReadyDC(t *testing.T) {
 	})
 
 	// second build will succeed, HasEverBeenReadyOrSucceeded should be true
-	err := f.dcc.SendEvent(dcContainerEvtForManifest(m, dockercompose.ActionStart))
-	require.NoError(t, err)
+	f.dispatchDCEvent(m, dockercompose.ActionStart, docker.NewRunningContainerState())
+
 	f.WaitUntilManifestState("flagged ready", m.Name, func(state store.ManifestState) bool {
 		return state.RuntimeState.HasEverBeenReadyOrSucceeded()
 	})
@@ -3195,12 +3237,15 @@ func TestVersionSettingsStoredOnState(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 
 	vs := model.VersionSettings{
 		CheckUpdates: false,
 	}
-	f.store.Dispatch(configs.ConfigsReloadedAction{VersionSettings: vs})
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		FinishTime:      f.Now(),
+		VersionSettings: vs,
+	})
 
 	f.WaitUntil("CheckVersionUpdates is set to false", func(state store.EngineState) bool {
 		return state.VersionSettings.CheckUpdates == false
@@ -3211,13 +3256,16 @@ func TestAnalyticsTiltfileOpt(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 
 	f.withState(func(state store.EngineState) {
 		assert.Equal(t, analytics.OptDefault, state.AnalyticsEffectiveOpt())
 	})
 
-	f.store.Dispatch(configs.ConfigsReloadedAction{AnalyticsTiltfileOpt: analytics.OptIn})
+	f.store.Dispatch(configs.ConfigsReloadedAction{
+		FinishTime:           f.Now(),
+		AnalyticsTiltfileOpt: analytics.OptIn,
+	})
 
 	f.WaitUntil("analytics tiltfile opt-in", func(state store.EngineState) bool {
 		return state.AnalyticsTiltfileOpt == analytics.OptIn
@@ -3269,7 +3317,7 @@ func TestTelemetryLogAction(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 
-	f.Start([]model.Manifest{}, true)
+	f.Start([]model.Manifest{})
 
 	f.store.Dispatch(store.NewLogAction(model.TiltfileManifestName, "0", logger.InfoLvl, nil, []byte("testing")))
 
@@ -3287,7 +3335,7 @@ func TestLocalResourceServeWithNoUpdate(t *testing.T) {
 		WithLocalServeCmd("true").
 		Build()
 
-	f.Start([]model.Manifest{m}, true)
+	f.Start([]model.Manifest{m})
 
 	f.WaitUntil("resource is served", func(state store.EngineState) bool {
 		return strings.Contains(state.LogStore.ManifestLog(m.Name), "Starting cmd true")
@@ -3310,7 +3358,7 @@ func TestLocalResourceServeChangeCmd(t *testing.T) {
 	})
 
 	f.WriteFile("Tiltfile", "local_resource('foo', serve_cmd='false')")
-	f.fsWatcher.events <- watch.NewFileEvent(f.JoinPath("Tiltfile"))
+	f.fsWatcher.Events <- watch.NewFileEvent(f.JoinPath("Tiltfile"))
 
 	f.WaitUntil("false is served", func(state store.EngineState) bool {
 		return strings.Contains(state.LogStore.ManifestLog("foo"), "Starting cmd false")
@@ -3322,7 +3370,7 @@ func TestLocalResourceServeChangeCmd(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestDefaultMaxBuildSlots(t *testing.T) {
+func TestDefaultUpdateSettings(t *testing.T) {
 	f := newTestFixture(t)
 	defer f.TearDown()
 
@@ -3337,7 +3385,27 @@ func TestDefaultMaxBuildSlots(t *testing.T) {
 		return len(state.TiltfileState.BuildHistory) == 1
 	})
 	f.withState(func(state store.EngineState) {
-		assert.Equal(t, model.DefaultMaxParallelUpdates, state.MaxParallelUpdates)
+		assert.Equal(t, model.DefaultUpdateSettings(), state.UpdateSettings)
+	})
+}
+
+func TestSetK8sUpsertTimeout(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.TearDown()
+
+	f.WriteFile("Dockerfile", `FROM iron/go:prod`)
+	f.WriteFile("snack.yaml", simpleYAML)
+
+	f.WriteFile("Tiltfile", `
+update_settings(k8s_upsert_timeout_secs=123)
+`+simpleTiltfile)
+	f.loadAndStart()
+
+	f.WaitUntil("Tiltfile loaded", func(state store.EngineState) bool {
+		return len(state.TiltfileState.BuildHistory) == 1
+	})
+	f.withState(func(state store.EngineState) {
+		assert.Equal(t, 123*time.Second, state.UpdateSettings.K8sUpsertTimeout())
 	})
 }
 
@@ -3357,46 +3425,8 @@ update_settings(max_parallel_updates=123)
 		return len(state.TiltfileState.BuildHistory) == 1
 	})
 	f.withState(func(state store.EngineState) {
-		assert.Equal(t, 123, state.MaxParallelUpdates)
+		assert.Equal(t, 123, state.UpdateSettings.MaxParallelUpdates())
 	})
-}
-
-type fakeTimerMaker struct {
-	restTimerLock *sync.Mutex
-	maxTimerLock  *sync.Mutex
-	t             *testing.T
-}
-
-func (f fakeTimerMaker) maker() timerMaker {
-	return func(d time.Duration) <-chan time.Time {
-		var lock *sync.Mutex
-		// we have separate locks for the separate uses of timer so that tests can control the timers independently
-		switch d {
-		case watchBufferMinRestDuration:
-			lock = f.restTimerLock
-		case watchBufferMaxDuration:
-			lock = f.maxTimerLock
-		default:
-			// if you hit this, someone (you!?) might have added a new timer with a new duration, and you probably
-			// want to add a case above
-			f.t.Error("makeTimer called on unsupported duration")
-		}
-		ret := make(chan time.Time, 1)
-		go func() {
-			lock.Lock()
-			ret <- time.Unix(0, 0)
-			lock.Unlock()
-			close(ret)
-		}()
-		return ret
-	}
-}
-
-func makeFakeTimerMaker(t *testing.T) fakeTimerMaker {
-	restTimerLock := new(sync.Mutex)
-	maxTimerLock := new(sync.Mutex)
-
-	return fakeTimerMaker{restTimerLock, maxTimerLock, t}
 }
 
 type testFixture struct {
@@ -3404,10 +3434,11 @@ type testFixture struct {
 	t                          *testing.T
 	ctx                        context.Context
 	cancel                     func()
+	clock                      clockwork.Clock
 	upper                      Upper
 	b                          *fakeBuildAndDeployer
-	fsWatcher                  *fakeMultiWatcher
-	timerMaker                 *fakeTimerMaker
+	fsWatcher                  *fswatch.FakeMultiWatcher
+	timerMaker                 *fswatch.FakeTimerMaker
 	docker                     *docker.FakeClient
 	kClient                    *k8s.FakeK8sClient
 	hud                        hud.HeadsUpDisplay // so fixture may use either FakeHud or DisabledHud. See: f.FakeHud()/f.DisabledHud()
@@ -3415,15 +3446,13 @@ type testFixture struct {
 	log                        *bufsync.ThreadSafeBuffer
 	store                      *store.Store
 	bc                         *BuildController
-	fwm                        *WatchManager
+	fwm                        *fswatch.WatchManager
 	cc                         *configs.ConfigsController
 	dcc                        *dockercompose.FakeDCClient
 	tfl                        tiltfile.TiltfileLoader
-	ghc                        *github.FakeClient
 	opter                      *tiltanalytics.FakeOpter
 	dp                         *dockerprune.DockerPruner
 	fe                         *local.FakeExecer
-	tiltVersionCheckDelay      time.Duration
 	overrideMaxParallelUpdates int
 
 	onchangeCh chan bool
@@ -3441,10 +3470,10 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 	ctx, _, ta := testutils.ForkedCtxAndAnalyticsWithOpterForTest(log, to)
 	ctx, cancel := context.WithCancel(ctx)
 
-	watcher := newFakeMultiWatcher()
+	watcher := fswatch.NewFakeMultiWatcher()
 	b := newFakeBuildAndDeployer(t)
 
-	timerMaker := makeFakeTimerMaker(t)
+	timerMaker := fswatch.MakeFakeTimerMaker(t)
 
 	dockerClient := docker.NewFakeClient()
 
@@ -3465,16 +3494,18 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 		t.Fatal(err)
 	}
 
+	clock := clockwork.NewRealClock()
 	env := k8s.EnvDockerDesktop
-	fwm := NewWatchManager(watcher.newSub, timerMaker.maker())
-	pfc := NewPortForwardController(kCli)
-	au := engineanalytics.NewAnalyticsUpdater(ta, engineanalytics.CmdUpTags{})
+	fwm := fswatch.NewWatchManager(watcher.NewSub, timerMaker.Maker())
+	pfc := portforward.NewController(kCli)
+	au := engineanalytics.NewAnalyticsUpdater(ta, engineanalytics.CmdTags{})
 	ar := engineanalytics.ProvideAnalyticsReporter(ta, st, kCli, env)
 	fakeDcc := dockercompose.NewFakeDockerComposeClient(t, ctx)
 	k8sContextExt := k8scontext.NewExtension("fake-context", env)
-	tfl := tiltfile.ProvideTiltfileLoader(ta, kCli, k8sContextExt, fakeDcc, "localhost", feature.MainDefaults, env)
+	versionExt := version.NewExtension(model.TiltBuild{Version: "0.5.0"})
+	tfl := tiltfile.ProvideTiltfileLoader(ta, kCli, k8sContextExt, versionExt, fakeDcc, "localhost", feature.MainDefaults, env)
 	cc := configs.NewConfigsController(tfl, dockerClient)
-	dcw := NewDockerComposeEventWatcher(fakeDcc)
+	dcw := dcwatch.NewEventWatcher(fakeDcc, dockerClient)
 	dclm := runtimelog.NewDockerComposeLogManager(fakeDcc)
 	pm := NewProfilerManager()
 	sCli := synclet.NewTestSyncletClient(dockerClient)
@@ -3482,9 +3513,8 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 	assert.NoError(t, err)
 	sm := containerupdate.NewSyncletManagerForTests(kCli, sGRPCCli, sCli)
 	hudsc := server.ProvideHeadsUpServerController("localhost", 0, &server.HeadsUpServer{}, assets.NewFakeServer(), model.WebURL{}, false)
-	ghc := &github.FakeClient{}
 	ewm := k8swatch.NewEventWatchManager(kCli, of)
-	tcum := cloud.NewUsernameManager(httptest.NewFakeClient())
+	tcum := cloud.NewStatusManager(httptest.NewFakeClientEmptyJSON(), clock)
 	cuu := cloud.NewUpdateUploader(httptest.NewFakeClient(), "cloud-test.tilt.dev")
 	fe := local.NewFakeExecer()
 	lc := local.NewController(fe)
@@ -3493,41 +3523,37 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 	dp.DisabledForTesting(true)
 
 	ret := &testFixture{
-		TempDirFixture:        f,
-		t:                     t,
-		ctx:                   ctx,
-		cancel:                cancel,
-		b:                     b,
-		fsWatcher:             watcher,
-		timerMaker:            &timerMaker,
-		docker:                dockerClient,
-		kClient:               kCli,
-		hud:                   h,
-		log:                   log,
-		store:                 st,
-		bc:                    bc,
-		onchangeCh:            fSub.ch,
-		fwm:                   fwm,
-		cc:                    cc,
-		dcc:                   fakeDcc,
-		tfl:                   tfl,
-		ghc:                   ghc,
-		opter:                 to,
-		dp:                    dp,
-		fe:                    fe,
-		tiltVersionCheckDelay: versionCheckInterval,
+		TempDirFixture: f,
+		t:              t,
+		ctx:            ctx,
+		cancel:         cancel,
+		clock:          clock,
+		b:              b,
+		fsWatcher:      watcher,
+		timerMaker:     &timerMaker,
+		docker:         dockerClient,
+		kClient:        kCli,
+		hud:            h,
+		log:            log,
+		store:          st,
+		bc:             bc,
+		onchangeCh:     fSub.ch,
+		fwm:            fwm,
+		cc:             cc,
+		dcc:            fakeDcc,
+		tfl:            tfl,
+		opter:          to,
+		dp:             dp,
+		fe:             fe,
 	}
 
 	ret.disableEnvAnalyticsOpt()
 
-	tiltVersionCheckTimerMaker := func(d time.Duration) <-chan time.Time {
-		return time.After(ret.tiltVersionCheckDelay)
-	}
-	tvc := NewTiltVersionChecker(func() github.Client { return ghc }, tiltVersionCheckTimerMaker)
-	tc := telemetry.NewController(fakeClock{}, tracer.NewSpanCollector(ctx))
+	tc := telemetry.NewController(clock, tracer.NewSpanCollector(ctx))
 	podm := k8srollout.NewPodMonitor()
+	ec := exit.NewController()
 
-	subs := ProvideSubscribers(h, pw, sw, plm, pfc, fwm, bc, cc, dcw, dclm, pm, sm, ar, hudsc, tvc, au, ewm, tcum, cuu, dp, tc, lc, podm)
+	subs := ProvideSubscribers(h, pw, sw, plm, pfc, fwm, bc, cc, dcw, dclm, pm, sm, ar, hudsc, au, ewm, tcum, cuu, dp, tc, lc, podm, ec)
 	ret.upper = NewUpper(ctx, st, subs)
 
 	go func() {
@@ -3536,6 +3562,10 @@ func newTestFixtureWithHud(t *testing.T, h hud.HeadsUpDisplay) *testFixture {
 	}()
 
 	return ret
+}
+
+func (f *testFixture) Now() time.Time {
+	return f.clock.Now()
 }
 
 func (f *testFixture) fakeHud() *hud.FakeHud {
@@ -3555,19 +3585,14 @@ func (f *testFixture) disabledHud() *hud.DisabledHud {
 }
 
 // starts the upper with the given manifests, bypassing normal tiltfile loading
-func (f *testFixture) Start(manifests []model.Manifest, watchFiles bool, initOptions ...initOption) {
-	f.startWithInitManifests(nil, manifests, watchFiles, initOptions...)
-}
-
-// starts the upper with the given manifests, bypassing normal tiltfile loading
-// Empty `initManifests` will run start ALL manifests
-func (f *testFixture) startWithInitManifests(initManifests []model.ManifestName, manifests []model.Manifest, watchFiles bool, initOptions ...initOption) {
+func (f *testFixture) Start(manifests []model.Manifest, initOptions ...initOption) {
 	f.setManifests(manifests)
 
 	ia := InitAction{
-		WatchFiles:   watchFiles,
+		EngineMode:   store.EngineModeUp,
 		TiltfilePath: f.JoinPath("Tiltfile"),
 		HUDEnabled:   true,
+		StartTime:    f.Now(),
 	}
 	for _, o := range initOptions {
 		ia = o(ia)
@@ -3586,7 +3611,7 @@ func (f *testFixture) setMaxParallelUpdates(n int) {
 	f.overrideMaxParallelUpdates = n
 
 	state := f.store.LockMutableStateForTesting()
-	state.MaxParallelUpdates = n
+	state.UpdateSettings = state.UpdateSettings.WithMaxParallelUpdates(n)
 	f.store.UnlockMutableState()
 }
 
@@ -3599,7 +3624,7 @@ func (f *testFixture) disableEnvAnalyticsOpt() {
 type initOption func(ia InitAction) InitAction
 
 func (f *testFixture) Init(action InitAction) {
-	watchFiles := action.WatchFiles
+	watchFiles := action.EngineMode.WatchesFiles()
 	f.upperInitResult = make(chan error, 10)
 
 	go func() {
@@ -3622,20 +3647,18 @@ func (f *testFixture) Init(action InitAction) {
 	})
 
 	state := f.store.LockMutableStateForTesting()
-	expectedWatchCount := len(watchableTargetsForManifests(state.Manifests()))
+	expectedWatchCount := len(fswatch.WatchableTargetsForManifests(state.Manifests()))
 	if len(state.ConfigFiles) > 0 {
 		// watchmanager also creates a watcher for config files
 		expectedWatchCount++
 	}
 	if f.overrideMaxParallelUpdates > 0 {
-		state.MaxParallelUpdates = f.overrideMaxParallelUpdates
+		state.UpdateSettings = state.UpdateSettings.WithMaxParallelUpdates(f.overrideMaxParallelUpdates)
 	}
 	f.store.UnlockMutableState()
 
 	f.PollUntil("watches set up", func() bool {
-		f.fwm.mu.Lock()
-		defer f.fwm.mu.Unlock()
-		return !watchFiles || len(f.fwm.targetWatches) == expectedWatchCount
+		return !watchFiles || f.fwm.TargetWatchCount() == expectedWatchCount
 	})
 }
 
@@ -3698,8 +3721,12 @@ func (f *testFixture) WaitUntilHUDResource(msg string, name model.ManifestName, 
 
 // Wait until the given engine state test passes.
 func (f *testFixture) WaitUntil(msg string, isDone func(store.EngineState) bool) {
+	f.T().Helper()
+
 	ctx, cancel := context.WithTimeout(f.ctx, time.Second)
 	defer cancel()
+
+	isCanceled := false
 
 	for {
 		state := f.upper.store.RLockState()
@@ -3709,9 +3736,14 @@ func (f *testFixture) WaitUntil(msg string, isDone func(store.EngineState) bool)
 			return
 		}
 
+		if isCanceled {
+			f.T().Fatalf("Timed out waiting for: %s", msg)
+		}
+
 		select {
 		case <-ctx.Done():
-			f.T().Fatalf("Timed out waiting for: %s", msg)
+			// Let the loop run the isDone test one more time
+			isCanceled = true
 		case <-f.onchangeCh:
 		}
 	}
@@ -3896,8 +3928,8 @@ func (f *testFixture) TearDown() {
 	}
 	f.TempDirFixture.TearDown()
 	f.kClient.TearDown()
-	close(f.fsWatcher.events)
-	close(f.fsWatcher.errors)
+	close(f.fsWatcher.Events)
+	close(f.fsWatcher.Errors)
 	f.cancel()
 }
 
@@ -3955,9 +3987,10 @@ func (f *testFixture) assertAllBuildsConsumed() {
 
 func (f *testFixture) loadAndStart(initOptions ...initOption) {
 	ia := InitAction{
-		WatchFiles:   true,
+		EngineMode:   store.EngineModeUp,
 		TiltfilePath: f.JoinPath("Tiltfile"),
 		HUDEnabled:   true,
+		StartTime:    f.Now(),
 	}
 	for _, opt := range initOptions {
 		ia = opt(ia)
@@ -3978,7 +4011,7 @@ func (f *testFixture) WriteConfigFiles(args ...string) {
 		filenames = append(filenames, filename)
 
 		// Fire an FS event thru the normal pipeline, so that manifests get marked dirty.
-		f.fsWatcher.events <- watch.NewFileEvent(filename)
+		f.fsWatcher.Events <- watch.NewFileEvent(filename)
 	}
 
 	// The test harness was written for a time when most tests didn't
@@ -3987,7 +4020,7 @@ func (f *testFixture) WriteConfigFiles(args ...string) {
 	// 2) Because the Tiltfile isn't executed, ConfigFiles isn't populated
 	// 3) Because ConfigFiles isn't populated, ConfigsTargetID watches aren't set up properly
 	// So just fire a change action manually.
-	f.store.Dispatch(newTargetFilesChangedAction(ConfigsTargetID, filenames...))
+	f.store.Dispatch(fswatch.NewTargetFilesChangedAction(fswatch.ConfigsTargetID, filenames...))
 }
 
 func (f *testFixture) setupDCFixture() (redis, server model.Manifest) {
@@ -4104,12 +4137,17 @@ func (s fixtureSub) OnChange(ctx context.Context, st store.RStore) {
 	s.ch <- true
 }
 
-func dcContainerEvtForManifest(m model.Manifest, action dockercompose.Action) dockercompose.Event {
-	return dockercompose.Event{
-		Type:    dockercompose.TypeContainer,
-		Action:  action,
-		Service: m.ManifestName().String(),
-	}
+func (f *testFixture) dispatchDCEvent(m model.Manifest, action dockercompose.Action, containerState dockertypes.ContainerState) {
+	f.store.Dispatch(dcwatch.EventAction{
+		Event: dockercompose.Event{
+			ID:      "fake-container-id",
+			Type:    dockercompose.TypeContainer,
+			Action:  action,
+			Service: m.ManifestName().String(),
+		},
+		Time:           f.clock.Now(),
+		ContainerState: containerState,
+	})
 }
 
 func deployResultSet(manifest model.Manifest, uid types.UID, hashes []k8s.PodTemplateSpecHash) store.BuildResultSet {

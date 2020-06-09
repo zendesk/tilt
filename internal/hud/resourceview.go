@@ -2,15 +2,17 @@ package hud
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell"
+	"github.com/rivo/tview"
 
-	"github.com/windmilleng/tilt/internal/hud/view"
-	"github.com/windmilleng/tilt/internal/rty"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	"github.com/tilt-dev/tilt/internal/hud/view"
+	"github.com/tilt-dev/tilt/internal/rty"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 )
 
 // These widths are determined experimentally, to see what shows up in a typical UX.
@@ -70,41 +72,48 @@ func (v *ResourceView) resourceTitle() rty.Component {
 	return rty.OneLine(l)
 }
 
-func statusColor(res view.Resource) tcell.Color {
-	if res.IsTiltfile {
-		if !res.CurrentBuild.Empty() {
-			return cPending
-		} else if res.CrashLog.Empty() {
-			return cGood
-		} else {
-			return cBad
-		}
+type statusDisplay struct {
+	color   tcell.Color
+	spinner bool
+}
+
+// NOTE: This should be in-sync with combinedStatus in the web UI
+func combinedStatus(res view.Resource) statusDisplay {
+	currentBuild := res.CurrentBuild
+	hasCurrentBuild := !currentBuild.Empty()
+	hasPendingBuild := !res.PendingBuildSince.IsZero() && res.TriggerMode.AutoOnChange()
+	buildHistory := res.BuildHistory
+	lastBuild := res.LastBuild()
+	lastBuildError := lastBuild.Error != nil
+
+	if hasCurrentBuild {
+		return statusDisplay{color: cPending, spinner: true}
+	} else if hasPendingBuild {
+		return statusDisplay{color: cPending}
+	} else if lastBuildError {
+		return statusDisplay{color: cBad}
 	}
 
-	if !res.CurrentBuild.Empty() && !res.CurrentBuild.Reason.IsCrashOnly() {
-		return cPending
-	} else if !res.PendingBuildSince.IsZero() && !res.PendingBuildReason.IsCrashOnly() {
-		if res.TriggerMode.AutoOnChange() {
-			return cPending
-		} else {
-			return cLightText
-		}
-	} else if isCrashing(res) {
-		return cBad
-	} else if res.LastBuild().Error != nil {
-		return cBad
-	} else if res.IsYAML() && !res.LastDeployTime.IsZero() {
-		return cGood
-	} else if !res.LastBuild().FinishTime.IsZero() && res.ResourceInfo.Status() == "" {
-		return cPending // pod status hasn't shown up yet
-	} else {
-		if res.ResourceInfo != nil {
-			if statusColor, ok := statusColors[res.ResourceInfo.Status()]; ok {
-				return statusColor
-			}
-		}
-		return cLightText
+	runtimeStatus := model.RuntimeStatusUnknown
+	if res.ResourceInfo != nil {
+		runtimeStatus = res.ResourceInfo.RuntimeStatus()
 	}
+
+	switch runtimeStatus {
+	case model.RuntimeStatusError:
+		return statusDisplay{color: cBad}
+	case model.RuntimeStatusPending:
+		return statusDisplay{color: cPending, spinner: true}
+	case model.RuntimeStatusOK:
+		return statusDisplay{color: cGood}
+	case model.RuntimeStatusNotApplicable:
+		if len(buildHistory) > 0 {
+			return statusDisplay{color: cGood}
+		} else {
+			return statusDisplay{color: cPending}
+		}
+	}
+	return statusDisplay{color: cPending}
 }
 
 func (v *ResourceView) titleTextName() rty.Component {
@@ -114,17 +123,32 @@ func (v *ResourceView) titleTextName() rty.Component {
 	p := " "
 	if selected {
 		p = "▼"
+		if runtime.GOOS == "windows" {
+			// Windows default fonts support fewer symbols.
+			p = "↓"
+		}
 	}
 	if selected && v.res.IsCollapsed(v.rv) {
 		p = "▶"
+		if runtime.GOOS == "windows" {
+			p = "→"
+		}
 	}
 
-	color := statusColor(v.res)
+	display := combinedStatus(v.res)
 	sb.Text(p)
-	sb.Fg(color).Textf(" ● ")
+
+	switch display.color {
+	case cGood:
+		sb.Fg(display.color).Textf(" ● ")
+	case cBad:
+		sb.Fg(display.color).Textf(" %s ", xMark())
+	default:
+		sb.Fg(display.color).Textf(" ○ ")
+	}
 
 	name := v.res.Name.String()
-	if color == cPending {
+	if display.spinner {
 		name = fmt.Sprintf("%s %s", v.res.Name, v.spinner())
 	}
 	if len(v.warnings()) > 0 {
@@ -208,7 +232,7 @@ func (v *ResourceView) resourceExpanded() rty.Component {
 func (v *ResourceView) resourceExpandedYAML() rty.Component {
 	yi := v.res.YAMLInfo()
 
-	if !v.res.IsYAML() || len(yi.K8sResources) == 0 {
+	if !v.res.IsYAML() || len(yi.K8sDisplayNames) == 0 {
 		return rty.EmptyLayout
 	}
 
@@ -216,7 +240,7 @@ func (v *ResourceView) resourceExpandedYAML() rty.Component {
 	l.Add(rty.TextString(strings.Repeat(" ", 2)))
 	rhs := rty.NewConcatLayout(rty.DirVert)
 	rhs.Add(rty.NewStringBuilder().Fg(cLightText).Text("(Kubernetes objects that don't match a group)").Build())
-	rhs.Add(rty.TextString(strings.Join(yi.K8sResources, "\n")))
+	rhs.Add(rty.TextString(strings.Join(yi.K8sDisplayNames, "\n")))
 	l.AddDynamic(rhs)
 	return l
 }
@@ -482,7 +506,24 @@ func (v *ResourceView) resourceExpandedBuildError() (rty.Component, bool) {
 
 var spinnerChars = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+var spinnerCharsWindows = []string{
+	string(tview.BoxDrawingsLightDownAndRight),
+	string(tview.BoxDrawingsLightHorizontal),
+	string(tview.BoxDrawingsLightHorizontal),
+	string(tview.BoxDrawingsLightDownAndLeft),
+	string(tview.BoxDrawingsLightVertical),
+	string(tview.BoxDrawingsLightUpAndLeft),
+	string(tview.BoxDrawingsLightHorizontal),
+	string(tview.BoxDrawingsLightHorizontal),
+	string(tview.BoxDrawingsLightUpAndRight),
+	string(tview.BoxDrawingsLightVertical),
+}
+
 func (v *ResourceView) spinner() string {
+	chars := spinnerChars
+	if runtime.GOOS == "windows" {
+		chars = spinnerCharsWindows
+	}
 	decisecond := v.clock().Nanosecond() / int(time.Second/10)
-	return spinnerChars[decisecond%len(spinnerChars)] // tick spinner every 10x/second
+	return chars[decisecond%len(chars)] // tick spinner every 10x/second
 }

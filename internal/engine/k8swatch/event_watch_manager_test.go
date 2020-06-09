@@ -13,15 +13,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/windmilleng/tilt/internal/k8s/testyaml"
-	"github.com/windmilleng/tilt/internal/testutils"
-	"github.com/windmilleng/tilt/internal/testutils/manifestbuilder"
-	"github.com/windmilleng/tilt/internal/testutils/podbuilder"
-	"github.com/windmilleng/tilt/internal/testutils/tempdir"
+	"github.com/tilt-dev/tilt/internal/k8s/testyaml"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/testutils/manifestbuilder"
+	"github.com/tilt-dev/tilt/internal/testutils/podbuilder"
+	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
 
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func TestEventWatchManager_dispatchesEvent(t *testing.T) {
@@ -69,7 +69,7 @@ func TestEventWatchManager_watchError(t *testing.T) {
 	expectedErr := errors.Wrap(err, "Error watching k8s events\n")
 	expected := store.ErrorAction{Error: expectedErr}
 	f.assertActions(expected)
-	f.storeLoopErr = nil
+	f.store.ClearActions()
 }
 
 func TestEventWatchManager_eventBeforeUID(t *testing.T) {
@@ -136,15 +136,13 @@ func (f *ewmFixture) makeEvent(obj k8s.K8sEntity) *v1.Event {
 
 type ewmFixture struct {
 	*tempdir.TempDirFixture
-	t            *testing.T
-	kClient      *k8s.FakeK8sClient
-	ewm          *EventWatchManager
-	ctx          context.Context
-	cancel       func()
-	store        *store.Store
-	storeLoopErr error
-	getActions   func() []store.Action
-	clock        clockwork.FakeClock
+	t       *testing.T
+	kClient *k8s.FakeK8sClient
+	ewm     *EventWatchManager
+	ctx     context.Context
+	cancel  func()
+	store   *store.TestingStore
+	clock   clockwork.FakeClock
 }
 
 func newEWMFixture(t *testing.T) *ewmFixture {
@@ -156,6 +154,7 @@ func newEWMFixture(t *testing.T) *ewmFixture {
 	of := k8s.ProvideOwnerFetcher(kClient)
 
 	clock := clockwork.NewFakeClock()
+	st := store.NewTestingStore()
 
 	ret := &ewmFixture{
 		TempDirFixture: tempdir.NewTempDirFixture(t),
@@ -165,29 +164,25 @@ func newEWMFixture(t *testing.T) *ewmFixture {
 		cancel:         cancel,
 		t:              t,
 		clock:          clock,
+		store:          st,
 	}
 
-	ret.store, ret.getActions = store.NewStoreForTesting()
 	state := ret.store.LockMutableStateForTesting()
 	state.TiltStartTime = clock.Now()
 	ret.store.UnlockMutableState()
-	go func() {
-		ret.storeLoopErr = ret.store.Loop(ctx)
-	}()
 
 	return ret
 }
 
 func (f *ewmFixture) TearDown() {
-	testutils.FailOnNonCanceledErr(f.t, f.storeLoopErr, "store.Loop returned an error")
+	f.cancel()
 	f.TempDirFixture.TearDown()
 	f.kClient.TearDown()
-	f.cancel()
+	f.store.AssertNoErrorActions(f.t)
 }
 
 func (f *ewmFixture) addManifest(manifestName model.ManifestName) model.Manifest {
 	state := f.store.LockMutableStateForTesting()
-	state.WatchFiles = true
 
 	m := manifestbuilder.New(f, manifestName).
 		WithK8sYAML(testyaml.SanchoYAML).
@@ -216,8 +211,8 @@ func (f *ewmFixture) assertNoActions() {
 
 func (f *ewmFixture) assertActions(expected ...store.Action) {
 	start := time.Now()
-	for time.Since(start) < 200*time.Millisecond {
-		actions := f.getActions()
+	for time.Since(start) < time.Second {
+		actions := f.store.Actions()
 		if len(actions) >= len(expected) {
 			break
 		}
@@ -228,7 +223,7 @@ func (f *ewmFixture) assertActions(expected ...store.Action) {
 
 	// NOTE(maia): this test will break if this the code ever returns other
 	// correct-but-incidental-to-this-test actions, but for now it's fine.
-	actual := f.getActions()
+	actual := f.store.Actions()
 	if !assert.Len(f.t, actual, len(expected)) {
 		f.t.FailNow()
 	}

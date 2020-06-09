@@ -7,11 +7,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	"github.com/tilt-dev/tilt/internal/dockercompose"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 )
 
 // Collects logs from running docker-compose services.
@@ -33,8 +33,7 @@ func (m *DockerComposeLogManager) diff(ctx context.Context, st store.RStore) (se
 	state := st.RLockState()
 	defer st.RUnlockState()
 
-	// If we're not watching the FS for changes, then don't bother watching logs.
-	if !state.WatchFiles {
+	if !state.EngineMode.WatchesRuntime() {
 		return nil, nil
 	}
 

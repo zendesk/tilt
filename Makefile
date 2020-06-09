@@ -16,7 +16,7 @@ SYNCLET_DEV_IMAGE_TAG_FILE := .synclet-dev-image-tag
 
 CIRCLECI := $(if $(CIRCLECI),$(CIRCLECI),false)
 
-GOIMPORTS_LOCAL_ARG := -local github.com/windmilleng/tilt
+GOIMPORTS_LOCAL_ARG := -local github.com/tilt-dev/tilt
 
 proto:
 	toast synclet-proto
@@ -24,12 +24,12 @@ proto:
 
 # Build a binary that uses the synclet tag specified in sidecar.go
 install:
-	go install -mod vendor -ldflags "-X 'github.com/windmilleng/tilt/internal/cli.commitSHA=$$(git merge-base master HEAD)'" ./cmd/tilt/...
+	go install -mod vendor -ldflags "-X 'github.com/tilt-dev/tilt/internal/cli.commitSHA=$$(git merge-base master HEAD)'" ./cmd/tilt/...
 
 # Build a binary that uses a dev synclet image produced by `make synclet-dev`
 install-dev:
 	@if ! [[ -e "$(SYNCLET_DEV_IMAGE_TAG_FILE)" ]]; then echo "No dev synclet found. Run make synclet-dev."; exit 1; fi
-	go install -mod vendor -ldflags "-X 'github.com/windmilleng/tilt/internal/synclet/sidecar.SyncletTag=$$(<$(SYNCLET_DEV_IMAGE_TAG_FILE))'" ./...
+	go install -mod vendor -ldflags "-X 'github.com/tilt-dev/tilt/internal/synclet/sidecar.SyncletTag=$$(<$(SYNCLET_DEV_IMAGE_TAG_FILE))'" ./...
 
 # disable optimizations and inlining, to allow more complete information when attaching a debugger or capturing a profile
 install-debug:
@@ -71,13 +71,18 @@ endif
 test: test-go test-js
 
 # skip some tests that are slow and not always relevant
+# TODO(matt) skipdockercomposetests only skips the tiltfile DC tests at the moment
+# we might also want to skip the ones in engine
 shorttest:
-	# TODO(matt) skipdockercomposetests only skips the tiltfile DC tests at the moment
-	# we might also want to skip the ones in engine
 	go test -mod vendor -p $(GO_PARALLEL_JOBS) -tags skipcontainertests,skipdockercomposetests -timeout 60s ./...
 
 shorttestsum:
+ifneq ($(CIRCLECI),true)
 	gotestsum -- -mod vendor -p $(GO_PARALLEL_JOBS) -tags skipcontainertests,skipdockercomposetests -timeout 60s ./...
+else
+	mkdir -p test-results
+	gotestsum --format standard-quiet --junitfile test-results/unit-tests.xml -- ./... -mod vendor -count 1 -p $(GO_PARALLEL_JOBS) -tags skipcontainertests,skipdockercomposetests -timeout 60s
+endif
 
 integration:
 ifneq ($(CIRCLECI),true)
@@ -98,6 +103,8 @@ dev-js:
 
 check-js:
 	cd web && yarn install --frozen-lockfile
+	# make sure there are no compilation errors or lint warnings
+	cd web && CI=true yarn build
 	cd web && yarn run check
 
 build-js:
@@ -113,17 +120,19 @@ else
 endif
 
 goimports:
-	goimports -w -l $(GOIMPORTS_LOCAL_ARG) $$(go list -f {{.Dir}} ./...)
+	goimports -w -l $(GOIMPORTS_LOCAL_ARG) internal
+	goimports -w -l $(GOIMPORTS_LOCAL_ARG) pkg
+	goimports -w -l $(GOIMPORTS_LOCAL_ARG) cmd
 
 benchmark:
 	go test -mod vendor -run=XXX -bench=. ./...
 
 golangci-lint:
 ifneq ($(CIRCLECI),true)
-	GOFLAGS="-mod=vendor" golangci-lint run -v --timeout 90s
+	GOFLAGS="-mod=vendor" golangci-lint run -v --timeout 120s
 else
 	mkdir -p test-results
-	GOFLAGS="-mod=vendor" golangci-lint run -v --timeout 90s --out-format junit-xml > test-results/lint.xml
+	GOFLAGS="-mod=vendor" golangci-lint run -v --timeout 120s --out-format junit-xml > test-results/lint.xml
 endif
 
 wire:
@@ -167,6 +176,7 @@ custom-synclet-release:
 
 release:
 	goreleaser --rm-dist
+	scripts/record-release.sh "$$(git describe --abbrev=0 --tags)"
 
 prettier:
 	cd web && yarn install

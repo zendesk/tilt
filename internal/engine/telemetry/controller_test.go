@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,10 +15,10 @@ import (
 
 	exporttrace "go.opentelemetry.io/otel/sdk/export/trace"
 
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/testutils/tempdir"
-	"github.com/windmilleng/tilt/internal/tracer"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
+	"github.com/tilt-dev/tilt/internal/tracer"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func TestTelNoScriptTimeIsUpNoInvocation(t *testing.T) {
@@ -94,6 +95,7 @@ func TestTelScriptFailsTimeIsUpShouldDeleteFileAndSetTime(t *testing.T) {
 	f.failCmd()
 	f.run()
 
+	f.assertInvocation()
 	f.assertLog("exit status 1")
 	f.assertSpansPresent()
 	f.assertTelemetryScriptRanAtIs(t1)
@@ -131,10 +133,27 @@ func newTCFixture(t *testing.T) *tcFixture {
 }
 
 func (tcf *tcFixture) workCmd() {
-	tcf.cmd = fmt.Sprintf("touch %s; cat > %s", tcf.temp.JoinPath("ran.txt"), tcf.temp.JoinPath("scriptstdout"))
+	ranTxt := tcf.temp.JoinPath("ran.txt")
+	out := tcf.temp.JoinPath("scriptstdout")
+
+	// A little python script that touches the ran.txt file
+	// and sends stdin to a file.
+	tcf.temp.WriteFile("work.py", fmt.Sprintf(`
+import sys
+
+open(%q, 'w').close()
+out = open(%q, 'w')
+out.write(sys.stdin.read())
+out.close()
+`, ranTxt, out))
+	tcf.cmd = fmt.Sprintf("python %s", tcf.temp.JoinPath("work.py"))
 }
 
 func (tcf *tcFixture) failCmd() {
+	if runtime.GOOS == "windows" {
+		tcf.cmd = fmt.Sprintf("type nul > %s && exit 1", tcf.temp.JoinPath("ran.txt"))
+		return
+	}
 	tcf.cmd = fmt.Sprintf("touch %s; false", tcf.temp.JoinPath("ran.txt"))
 }
 
@@ -162,7 +181,7 @@ func (tcf *tcFixture) run() {
 	}
 
 	ts := model.TelemetrySettings{
-		Cmd:     model.ToShellCmd(tcf.cmd),
+		Cmd:     model.ToHostCmd(tcf.cmd),
 		Workdir: tcf.temp.Path(),
 	}
 	tcf.st.SetState(store.EngineState{
@@ -208,7 +227,11 @@ func (tcf *tcFixture) assertCmdOutput(expected string) {
 		tcf.t.Fatal(err)
 	}
 
-	assert.Equal(tcf.t, expected, string(bs))
+	assert.Equal(tcf.t, normalize(expected), normalize(string(bs)))
+}
+
+func normalize(s string) string {
+	return strings.Replace(s, "\r\n", "\n", -1)
 }
 
 func (tcf *tcFixture) assertSpansPresent() {

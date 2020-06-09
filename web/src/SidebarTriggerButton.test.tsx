@@ -5,9 +5,10 @@ import SidebarTriggerButton, {
 } from "./SidebarTriggerButton"
 import { ResourceView, TriggerMode } from "./types"
 import { oneResource, twoResourceView } from "./testdata"
-import Sidebar, { SidebarItem } from "./Sidebar"
+import SidebarResources, { SidebarItem } from "./SidebarResources"
 import { MemoryRouter } from "react-router"
 import PathBuilder from "./PathBuilder"
+import fetchMock from "jest-fetch-mock"
 
 type Resource = Proto.webviewResource
 
@@ -57,9 +58,12 @@ describe("SidebarTriggerButton", () => {
 
     expect(fetchMock.mock.calls.length).toEqual(1)
     expect(fetchMock.mock.calls[0][0]).toEqual("//localhost/api/trigger")
-    expect(fetchMock.mock.calls[0][1].method).toEqual("post")
-    expect(fetchMock.mock.calls[0][1].body).toEqual(
-      JSON.stringify({ manifest_names: ["doggos"] })
+    expect(fetchMock.mock.calls[0][1]?.method).toEqual("post")
+    expect(fetchMock.mock.calls[0][1]?.body).toEqual(
+      JSON.stringify({
+        manifest_names: ["doggos"],
+        build_reason: 16 /* BuildReasonFlagTriggerWeb */,
+      })
     )
   })
 
@@ -127,11 +131,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -168,11 +170,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected="selected resource"
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -204,11 +204,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -237,11 +235,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -268,11 +264,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -296,11 +290,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -326,11 +318,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />
@@ -358,11 +348,9 @@ describe("SidebarTriggerButton", () => {
 
     const root = mount(
       <MemoryRouter initialEntries={["/"]}>
-        <Sidebar
-          isClosed={false}
+        <SidebarResources
           items={items}
           selected=""
-          toggleSidebar={null}
           resourceView={ResourceView.Log}
           pathBuilder={pathBuilder}
         />

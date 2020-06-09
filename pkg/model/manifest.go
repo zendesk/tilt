@@ -2,14 +2,15 @@ package model
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/docker/distribution/reference"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/sliceutils"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/sliceutils"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -111,8 +112,11 @@ func (m Manifest) IsK8s() bool {
 	return ok
 }
 
-func (m Manifest) IsUnresourcedYAMLManifest() bool {
-	return m.Name == UnresourcedYAMLManifestName
+func (m Manifest) NonWorkloadManifest() bool {
+	if k8sTarget, ok := m.deployTarget.(K8sTarget); ok {
+		return k8sTarget.NonWorkload
+	}
+	return false
 }
 
 func (m Manifest) DeployTarget() TargetSpec {
@@ -301,6 +305,10 @@ func (c Cmd) IsShellStandardForm() bool {
 	return len(c.Argv) == 3 && c.Argv[0] == "sh" && c.Argv[1] == "-c" && !strings.Contains(c.Argv[2], "\n")
 }
 
+func (c Cmd) IsWindowsStandardForm() bool {
+	return len(c.Argv) == 4 && c.Argv[0] == "cmd" && c.Argv[1] == "/S" && c.Argv[2] == "/C"
+}
+
 // Get the script when the shell is in standard form.
 // Panics if the command is not in shell standard form.
 func (c Cmd) ShellStandardScript() string {
@@ -338,6 +346,10 @@ func (c Cmd) String() string {
 		return c.Argv[2]
 	}
 
+	if c.IsWindowsStandardForm() {
+		return c.Argv[3]
+	}
+
 	quoted := make([]string, len(c.Argv))
 	for i, arg := range c.Argv {
 		if strings.Contains(arg, " ") {
@@ -353,17 +365,39 @@ func (c Cmd) Empty() bool {
 	return len(c.Argv) == 0
 }
 
-func ToShellCmd(cmd string) Cmd {
+// Create a shell command for running on the Host OS
+func ToHostCmd(cmd string) Cmd {
+	if cmd == "" {
+		return Cmd{}
+	}
+	if runtime.GOOS == "windows" {
+		return ToBatCmd(cmd)
+	}
+	return ToUnixCmd(cmd)
+}
+
+// 🦇🦇🦇
+// Named in honor of Bazel
+// https://docs.bazel.build/versions/master/be/general.html#genrule.cmd_bat
+func ToBatCmd(cmd string) Cmd {
+	if cmd == "" {
+		return Cmd{}
+	}
+	// from https://docs.docker.com/engine/reference/builder/#run
+	return Cmd{Argv: []string{"cmd", "/S", "/C", cmd}}
+}
+
+func ToUnixCmd(cmd string) Cmd {
 	if cmd == "" {
 		return Cmd{}
 	}
 	return Cmd{Argv: []string{"sh", "-c", cmd}}
 }
 
-func ToShellCmds(cmds []string) []Cmd {
+func ToUnixCmds(cmds []string) []Cmd {
 	res := make([]Cmd, len(cmds))
 	for i, cmd := range cmds {
-		res[i] = ToShellCmd(cmd)
+		res[i] = ToUnixCmd(cmd)
 	}
 	return res
 }

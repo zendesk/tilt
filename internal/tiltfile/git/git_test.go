@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.starlark.net/starlark"
 
-	"github.com/windmilleng/tilt/internal/tiltfile/starkit"
+	"github.com/tilt-dev/tilt/internal/tiltfile/starkit"
 )
 
 func TestGitRepoPath(t *testing.T) {
@@ -21,7 +21,7 @@ print(local_git_repo('.').paths('.git/index'))
 
 	_, err := f.ExecFile("Tiltfile")
 	assert.NoError(t, err)
-	assert.Contains(t, f.PrintOutput(), "/.git/index")
+	assert.Contains(t, f.PrintOutput(), f.JoinPath(".git", "index"))
 }
 
 func TestGitRepoBadMethodCall(t *testing.T) {

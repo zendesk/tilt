@@ -19,6 +19,7 @@ func ExecFile(path string, extensions ...Extension) (Model, error) {
 const argUnpackerKey = "starkit.ArgUnpacker"
 const modelKey = "starkit.Model"
 const ctxKey = "starkit.Ctx"
+const execingTiltfileKey = "starkit.ExecingTiltfile"
 
 // Unpacks args, using the arg unpacker on the current thread.
 func UnpackArgs(t *starlark.Thread, fnName string, args starlark.Tuple, kwargs []starlark.Tuple, pairs ...interface{}) error {
@@ -82,36 +83,34 @@ func (e *Environment) AddBuiltin(name string, f Function) error {
 func (e *Environment) AddValue(name string, val starlark.Value) error {
 	split := strings.Split(name, ".")
 
-	// Handle the simple case first.
-	if len(split) == 1 {
-		if _, ok := e.predeclared[name]; ok {
-			return fmt.Errorf("multiple values added named %s", name)
-		}
-		e.predeclared[name] = val
-		return nil
-	}
+	var attrMap = e.predeclared
 
-	if len(split) == 2 {
+	// Iterate thru the module tree.
+	for i := 0; i < len(split)-1; i++ {
 		var currentModule Module
-		predeclaredVal, ok := e.predeclared[split[0]]
+		currentPart := split[i]
+		fullName := strings.Join(split[:i+1], ".")
+		predeclaredVal, ok := attrMap[currentPart]
 		if ok {
 			predeclaredDict, ok := predeclaredVal.(Module)
 			if !ok {
-				return fmt.Errorf("Module conflict at %s. Existing: %s", name, predeclaredVal)
+				return fmt.Errorf("Module conflict at %s. Existing: %s", fullName, predeclaredVal)
 			}
 			currentModule = predeclaredDict
 		} else {
-			currentModule = Module{name: split[0], attrs: starlark.StringDict{}}
-			e.predeclared[split[0]] = currentModule
+			currentModule = Module{fullName: fullName, attrs: starlark.StringDict{}}
+			attrMap[currentPart] = currentModule
 		}
-		if _, ok := currentModule.attrs[split[1]]; ok {
-			return fmt.Errorf("multiple values added named %s", name)
-		}
-		currentModule.attrs[split[1]] = val
-		return nil
+
+		attrMap = currentModule.attrs
 	}
 
-	return fmt.Errorf("multi-level modules not supported yet")
+	baseName := split[len(split)-1]
+	if _, ok := attrMap[baseName]; ok {
+		return fmt.Errorf("multiple values added named %s", name)
+	}
+	attrMap[baseName] = val
+	return nil
 }
 
 func (e *Environment) SetPrint(print func(thread *starlark.Thread, msg string)) {
@@ -192,7 +191,13 @@ func (e *Environment) exec(t *starlark.Thread, path string) (starlark.StringDict
 		status: loadStatusExecuting,
 	}
 
+	oldPath := t.Local(execingTiltfileKey)
+	t.SetLocal(execingTiltfileKey, localPath)
+
 	exports, err := e.doLoad(t, localPath)
+
+	t.SetLocal(execingTiltfileKey, oldPath)
+
 	e.loadCache[localPath] = loadCacheEntry{
 		status:  loadStatusDone,
 		exports: exports,

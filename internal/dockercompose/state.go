@@ -1,40 +1,15 @@
 package dockercompose
 
 import (
+	"fmt"
 	"time"
 
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/docker/docker/api/types"
 
-	"github.com/windmilleng/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/model"
+
+	"github.com/tilt-dev/tilt/internal/container"
 )
-
-type Status string
-
-// Three hacky states just for now to get something into the hud.
-const (
-	StatusDown   = Status("Down")
-	StatusInProg = Status("In Progress")
-	StatusUp     = Status("OK")
-	StatusCrash  = Status("Crash")
-)
-
-var containerActionToStatus = map[Action]Status{
-	ActionCreate:  StatusInProg,
-	ActionDie:     StatusDown,
-	ActionKill:    StatusDown,
-	ActionRename:  StatusInProg,
-	ActionRestart: StatusUp, // ??
-	ActionStart:   StatusUp,
-	ActionStop:    StatusDown,
-	ActionUpdate:  StatusUp, // ??
-}
-
-func (evt Event) GuessStatus() Status {
-	if evt.Type != TypeContainer {
-		return ""
-	}
-	return containerActionToStatus[evt.Action]
-}
 
 func (evt Event) IsStartupEvent() bool {
 	if evt.Type != TypeContainer {
@@ -43,20 +18,16 @@ func (evt Event) IsStartupEvent() bool {
 	return evt.Action == ActionStart || evt.Action == ActionRestart || evt.Action == ActionUpdate
 }
 
-func (evt Event) IsStopEvent() bool {
-	if evt.Type != TypeContainer {
-		return false
-	}
-
-	return evt.Action == ActionKill
-}
-
 type State struct {
-	Status      Status
-	ContainerID container.ID
+	ContainerState types.ContainerState
+	ContainerID    container.ID
 
-	StartTime     time.Time
-	IsStopping    bool
+	// TODO(nick): It might make since to get rid of StartTime
+	// and parse it out of the ContainerState.StartedAt string,
+	// though we would have to decide how to treat containers
+	// started before Tilt start.
+	StartTime time.Time
+
 	LastReadyTime time.Time
 
 	SpanID model.LogSpanID
@@ -64,13 +35,44 @@ type State struct {
 
 func (State) RuntimeState() {}
 
-func (s State) WithSpanID(spanID model.LogSpanID) State {
-	s.SpanID = spanID
+func (s State) RuntimeStatus() model.RuntimeStatus {
+	if s.ContainerState.Error != "" || s.ContainerState.ExitCode != 0 {
+		return model.RuntimeStatusError
+	}
+	if s.ContainerState.Running ||
+		// Status strings taken from comments on:
+		// https://godoc.org/github.com/docker/docker/api/types#ContainerState
+		s.ContainerState.Status == "running" ||
+		s.ContainerState.Status == "exited" {
+		return model.RuntimeStatusOK
+	}
+	if s.ContainerState.Status == "" {
+		return model.RuntimeStatusUnknown
+	}
+	return model.RuntimeStatusPending
+}
+
+func (s State) RuntimeStatusError() error {
+	status := s.RuntimeStatus()
+	if status != model.RuntimeStatusError {
+		return nil
+	}
+	if s.ContainerState.Error != "" {
+		return fmt.Errorf("Container %s: %s", s.ContainerID, s.ContainerState.Error)
+	}
+	if s.ContainerState.ExitCode != 0 {
+		return fmt.Errorf("Container %s exited with %d", s.ContainerID, s.ContainerState.ExitCode)
+	}
+	return fmt.Errorf("Container %s error status: %s", s.ContainerID, s.ContainerState.Status)
+}
+
+func (s State) WithContainerState(state types.ContainerState) State {
+	s.ContainerState = state
 	return s
 }
 
-func (s State) WithStatus(status Status) State {
-	s.Status = status
+func (s State) WithSpanID(spanID model.LogSpanID) State {
+	s.SpanID = spanID
 	return s
 }
 
@@ -86,11 +88,6 @@ func (s State) WithStartTime(time time.Time) State {
 
 func (s State) WithLastReadyTime(time time.Time) State {
 	s.LastReadyTime = time
-	return s
-}
-
-func (s State) WithStopping(stopping bool) State {
-	s.IsStopping = stopping
 	return s
 }
 

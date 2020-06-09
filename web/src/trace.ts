@@ -9,8 +9,7 @@ function traceData(
   index: number
 ): LogTrace {
   let url = pb.path(`/r/${span.manifestName}/trace/${span.spanId}`)
-  let label = `Build #${index + 1}`
-  return { url, label }
+  return { url, index }
 }
 
 // Build navigational data for the trace we're currently looking at.
@@ -25,12 +24,13 @@ function traceNav(
   }
 
   let spans = logStore.getOrderedBuildSpans(spanId)
-  let currentIndex = spans.findIndex(span => span.spanId == spanId)
+  let currentIndex = spans.findIndex(span => span.spanId === spanId)
   let span = spans[currentIndex]
   if (!span) {
     return null
   }
   let nav: LogTraceNav = {
+    count: spans.length,
     current: traceData(pb, span, currentIndex),
   }
 

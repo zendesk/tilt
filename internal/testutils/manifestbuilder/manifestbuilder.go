@@ -5,7 +5,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // Builds Manifest objects for testing.
@@ -111,9 +112,11 @@ func (b ManifestBuilder) Build() model.Manifest {
 	}
 
 	if b.k8sYAML != "" {
+		k8sTarget := k8s.MustTarget(model.TargetName(b.name), b.k8sYAML)
+		k8sTarget.ExtraPodSelectors = b.k8sPodSelectors
 		return assembleK8s(
 			model.Manifest{Name: b.name, ResourceDependencies: rds},
-			model.K8sTarget{YAML: b.k8sYAML, ExtraPodSelectors: b.k8sPodSelectors},
+			k8sTarget,
 			b.iTargets...)
 	}
 
@@ -130,8 +133,8 @@ func (b ManifestBuilder) Build() model.Manifest {
 	if b.localCmd != "" || b.localServeCmd != "" {
 		lt := model.NewLocalTarget(
 			model.TargetName(b.name),
-			model.ToShellCmd(b.localCmd),
-			model.ToShellCmd(b.localServeCmd),
+			model.ToHostCmd(b.localCmd),
+			model.ToHostCmd(b.localServeCmd),
 			b.localDeps,
 			b.f.Path())
 		return model.Manifest{Name: b.name, ResourceDependencies: rds}.WithDeployTarget(lt)

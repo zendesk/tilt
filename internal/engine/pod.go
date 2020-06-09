@@ -8,14 +8,15 @@ import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/engine/k8swatch"
-	"github.com/windmilleng/tilt/internal/engine/runtimelog"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/synclet/sidecar"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/engine/k8swatch"
+	"github.com/tilt-dev/tilt/internal/engine/portforward"
+	"github.com/tilt-dev/tilt/internal/engine/runtimelog"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/synclet/sidecar"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func handlePodDeleteAction(ctx context.Context, state *store.EngineState, action k8swatch.PodDeleteAction) {
@@ -57,7 +58,8 @@ func handlePodChangeAction(ctx context.Context, state *store.EngineState, action
 	prunePods(ms)
 
 	oldRestartTotal := podInfo.AllContainerRestarts()
-	podInfo.Containers = podContainers(ctx, pod)
+	podInfo.Containers = podContainers(ctx, pod, pod.Status.ContainerStatuses)
+	podInfo.InitContainers = podContainers(ctx, pod, pod.Status.InitContainerStatuses)
 	if isNew {
 		// This is the first time we've seen this pod.
 		// Ignore any restarts that happened before Tilt saw it.
@@ -79,7 +81,7 @@ func handlePodChangeAction(ctx context.Context, state *store.EngineState, action
 		ms.RuntimeState = runtime
 	}
 
-	fwdsValid := portForwardsAreValid(manifest, *podInfo)
+	fwdsValid := portforward.PortForwardsAreValid(manifest, *podInfo)
 	if !fwdsValid {
 		logger.Get(ctx).Warnf(
 			"Resource %s is using port forwards, but no container ports on pod %s",
@@ -169,12 +171,12 @@ func maybeTrackPod(ms *store.ManifestState, action k8swatch.PodChangeAction) (*s
 }
 
 // Convert a Kubernetes Pod into a list if simpler Container models to store in the engine state.
-func podContainers(ctx context.Context, pod *v1.Pod) []store.Container {
-	result := make([]store.Container, 0, len(pod.Status.ContainerStatuses))
-	for _, cStatus := range pod.Status.ContainerStatuses {
+func podContainers(ctx context.Context, pod *v1.Pod, containerStatuses []v1.ContainerStatus) []store.Container {
+	result := make([]store.Container, 0, len(containerStatuses))
+	for _, cStatus := range containerStatuses {
 		c, err := containerForStatus(ctx, pod, cStatus)
 		if err != nil {
-			logger.Get(ctx).Debugf(err.Error())
+			logger.Get(ctx).Debugf("%s", err.Error())
 			continue
 		}
 
@@ -216,14 +218,21 @@ func containerForStatus(ctx context.Context, pod *v1.Pod, cStatus v1.ContainerSt
 		isRunning = true
 	}
 
+	isTerminated := false
+	if cStatus.State.Terminated != nil && !cStatus.State.Terminated.StartedAt.IsZero() {
+		isTerminated = true
+	}
+
 	return store.Container{
-		Name:     cName,
-		ID:       cID,
-		Ports:    ports,
-		Ready:    cStatus.Ready,
-		Running:  isRunning,
-		ImageRef: cRef,
-		Restarts: int(cStatus.RestartCount),
+		Name:       cName,
+		ID:         cID,
+		Ports:      ports,
+		Ready:      cStatus.Ready,
+		Running:    isRunning,
+		Terminated: isTerminated,
+		ImageRef:   cRef,
+		Restarts:   int(cStatus.RestartCount),
+		Status:     k8swatch.ContainerStatusToRuntimeState(cStatus),
 	}, nil
 }
 

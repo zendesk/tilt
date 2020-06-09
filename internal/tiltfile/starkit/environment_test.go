@@ -2,6 +2,8 @@ package starkit
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,7 +24,7 @@ y = x // 0
 	_, err := f.ExecFile("Tiltfile")
 	if assert.Error(t, err) {
 		backtrace := err.(*starlark.EvalError).Backtrace()
-		assert.Contains(t, backtrace, fmt.Sprintf("%s/Tiltfile:2:1: in <toplevel>", f.Path()))
+		assert.Contains(t, backtrace, fmt.Sprintf("%s:2:1: in <toplevel>", f.JoinPath("Tiltfile")))
 		assert.Contains(t, backtrace, "cannot load ./foo/Tiltfile")
 	}
 }
@@ -74,18 +76,51 @@ func (failLoadInterceptor) LocalPath(t *starlark.Thread, path string) (string, e
 	return "", fmt.Errorf("I'm an error look at me!")
 }
 
-func NewExtensionWithIdentifier(id string) Extension {
-	return TestExtension{id}
+func NewExtensionWithIdentifier(id string) *TestExtension {
+	return &TestExtension{identifier: id, callCount: 0}
 }
 
 type TestExtension struct {
 	identifier string
+
+	// Generally, extensions shouldn't store state this way.
+	// They should store it on the Thread object with SetState and friends.
+	// But this is OK for testing.
+	callCount int
 }
 
-func (te TestExtension) OnStart(e *Environment) error {
+func (te *TestExtension) OnStart(e *Environment) error {
 	return e.AddBuiltin(te.identifier, func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (value starlark.Value, err error) {
+		te.callCount++
 		return starlark.None, nil
 	})
+}
+
+func TestTopLevelBuiltin(t *testing.T) {
+	e := NewExtensionWithIdentifier("hi")
+	f := NewFixture(t, e)
+	f.File("Tiltfile", "hi()")
+	_, err := f.ExecFile("Tiltfile")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, e.callCount)
+}
+
+func TestModuleBuiltin(t *testing.T) {
+	e := NewExtensionWithIdentifier("oh.hai")
+	f := NewFixture(t, e)
+	f.File("Tiltfile", "oh.hai()")
+	_, err := f.ExecFile("Tiltfile")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, e.callCount)
+}
+
+func TestNestedModuleBuiltin(t *testing.T) {
+	e := NewExtensionWithIdentifier("oh.hai.cat")
+	f := NewFixture(t, e)
+	f.File("Tiltfile", "oh.hai.cat()")
+	_, err := f.ExecFile("Tiltfile")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, e.callCount)
 }
 
 func TestDuplicateGlobalName(t *testing.T) {
@@ -97,7 +132,7 @@ func TestDuplicateGlobalName(t *testing.T) {
 	_, err := f.ExecFile("Tiltfile")
 	require.Errorf(t, err, "Tiltfile exec should fail")
 	require.Contains(t, err.Error(), "multiple values added named foo")
-	require.Contains(t, err.Error(), "internal error: starkit.TestExtension")
+	require.Contains(t, err.Error(), "internal error: *starkit.TestExtension")
 }
 
 func TestDuplicateNameWithinModule(t *testing.T) {
@@ -109,5 +144,57 @@ func TestDuplicateNameWithinModule(t *testing.T) {
 	_, err := f.ExecFile("Tiltfile")
 	require.Errorf(t, err, "Tiltfile exec should fail")
 	require.Contains(t, err.Error(), "multiple values added named bar.foo")
-	require.Contains(t, err.Error(), "internal error: starkit.TestExtension")
+	require.Contains(t, err.Error(), "internal error: *starkit.TestExtension")
+}
+
+type PwdExtension struct{}
+
+func (e PwdExtension) OnStart(env *Environment) error {
+	return env.AddBuiltin("pwd", pwd)
+}
+
+func pwd(t *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	t.Print(t, CurrentExecPath(t))
+	return starlark.None, nil
+}
+
+// foo loads bar
+// bar defines `hello` and finishes loading
+// foo calls `hello`, which prints foo
+func TestUsePwdOfCallSiteLoadingTiltfile(t *testing.T) {
+	f := NewFixture(t, PwdExtension{})
+	f.File("bar/Tiltfile", `
+def hello():
+	pwd()
+`)
+	f.File("foo/Tiltfile", `
+load('../bar/Tiltfile', 'hello')
+hello()
+`)
+
+	_, err := f.ExecFile("foo/Tiltfile")
+	require.NoError(t, err)
+
+	path := strings.TrimSpace(f.out.String())
+	require.Equal(t, "foo", filepath.Base(filepath.Dir(path)))
+}
+
+// foo loads bar
+// bar calls pwd while it's loading, which prints bar
+func TestUsePwdOfCallSiteLoadedTiltfile(t *testing.T) {
+	f := NewFixture(t, PwdExtension{})
+	f.File("bar/Tiltfile", `
+def unused():
+  pass
+pwd()
+`)
+	f.File("foo/Tiltfile", `
+load('../bar/Tiltfile', 'unused')
+`)
+
+	_, err := f.ExecFile("foo/Tiltfile")
+	require.NoError(t, err)
+
+	path := strings.TrimSpace(f.out.String())
+	require.Equal(t, "bar", filepath.Base(filepath.Dir(path)))
 }

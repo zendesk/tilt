@@ -3,16 +3,17 @@ package configs
 import (
 	"time"
 
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 )
 
 type ConfigsReloadStartedAction struct {
-	FilesChanged map[string]bool
+	FilesChanged []string
 	StartTime    time.Time
 	SpanID       logstore.SpanID
+	Reason       model.BuildReason
 }
 
 func (ConfigsReloadStartedAction) Action() {}
@@ -26,7 +27,7 @@ type ConfigsReloadedAction struct {
 	Err                  error
 	Warnings             []string
 	Features             map[string]bool
-	TeamName             string
+	TeamID               string
 	TelemetrySettings    model.TelemetrySettings
 	Secrets              model.SecretSet
 	DockerPruneSettings  model.DockerPruneSettings

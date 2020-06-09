@@ -29,10 +29,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/docker/buildkit"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/docker/buildkit"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // Label that we attach to all of the images we build.
@@ -88,6 +88,7 @@ type Client interface {
 	// which can talk to either the Local or in-cluster docker daemon.
 	SetOrchestrator(orc model.Orchestrator)
 
+	ContainerInspect(ctx context.Context, contianerID string) (types.ContainerJSON, error)
 	ContainerList(ctx context.Context, options types.ContainerListOptions) ([]types.Container, error)
 	ContainerRestartNoWait(ctx context.Context, containerID string) error
 	CopyToContainerRoot(ctx context.Context, container string, content io.Reader) error
@@ -217,10 +218,9 @@ func getDockerBuilderVersion(v types.Version, env Env) (types.BuilderVersion, er
 // Inferred from release notes
 // https://docs.docker.com/engine/release-notes/
 func SupportsBuildkit(v types.Version, env Env) bool {
-	if env.IsMinikube {
-		// Buildkit for Minikube is currently busted. Follow
+	if env.IsOldMinikube {
+		// Buildkit for Minikube is busted on some versions. See
 		// https://github.com/kubernetes/minikube/issues/4143
-		// for updates.
 		return false
 	}
 

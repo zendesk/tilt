@@ -6,7 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/windmilleng/tilt/internal/tiltfile/io"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/tiltfile/io"
 )
 
 func TestReadYAML(t *testing.T) {
@@ -45,7 +46,7 @@ assert.equals(expected, observed)
 
 	rs, err := io.GetState(result)
 	require.NoError(t, err)
-	require.Contains(t, rs.Files, f.JoinPath("options.yaml"))
+	require.Contains(t, rs.Paths, f.JoinPath("options.yaml"))
 }
 
 func TestReadYAMLDefaultValue(t *testing.T) {
@@ -91,11 +92,12 @@ func TestYAMLDoesNotExist(t *testing.T) {
 	f.File("Tiltfile", `result = read_yaml("dne.yaml")`)
 	result, err := f.ExecFile("Tiltfile")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "dne.yaml: no such file or directory")
+	require.Contains(t, err.Error(), "dne.yaml")
+	testutils.AssertIsNotExist(t, err)
 
 	rs, err := io.GetState(result)
 	require.NoError(t, err)
-	require.Contains(t, rs.Files, f.JoinPath("dne.yaml"))
+	require.Contains(t, rs.Paths, f.JoinPath("dne.yaml"))
 }
 
 func TestMalformedYAML(t *testing.T) {
@@ -120,7 +122,7 @@ key5: 3
 
 	rs, err := io.GetState(result)
 	require.NoError(t, err)
-	require.Contains(t, rs.Files, f.JoinPath("options.yaml"))
+	require.Contains(t, rs.Paths, f.JoinPath("options.yaml"))
 
 }
 

@@ -3,16 +3,14 @@ package hud
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/gdamore/tcell"
 
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/hud/view"
-	"github.com/windmilleng/tilt/internal/rty"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/hud/view"
+	"github.com/tilt-dev/tilt/internal/rty"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 const defaultLogPaneHeight = 8
@@ -31,46 +29,21 @@ func NewRenderer(clock func() time.Time) *Renderer {
 	}
 }
 
-func (r *Renderer) Render(v view.View, vs view.ViewState) error {
+func (r *Renderer) Render(v view.View, vs view.ViewState) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	rty := r.rty
 	if rty != nil {
 		layout := r.layout(v, vs)
-		err := rty.Render(layout)
-		if err != nil {
-			return err
-		}
+		rty.Render(layout)
 	}
-	return nil
 }
 
 var cText = tcell.Color232
 var cLightText = tcell.Color243
 var cGood = tcell.ColorGreen
 var cBad = tcell.ColorRed
-var cPending = tcell.ColorYellow
-
-var statusColors = map[string]tcell.Color{
-	"Running":                                cGood,
-	string(model.RuntimeStatusOK):            cGood,
-	string(model.RuntimeStatusNotApplicable): cGood,
-	"ContainerCreating":                      cPending,
-	"Pending":                                cPending,
-	"PodInitializing":                        cPending,
-	string(model.RuntimeStatusPending):       cPending,
-	"Error":                                  cBad,
-	"CrashLoopBackOff":                       cBad,
-	"ErrImagePull":                           cBad,
-	"ImagePullBackOff":                       cBad,
-	"RunContainerError":                      cBad,
-	"StartError":                             cBad,
-	string(model.RuntimeStatusError):         cBad,
-	string(dockercompose.StatusInProg):       cPending,
-	string(dockercompose.StatusUp):           cGood,
-	string(dockercompose.StatusDown):         cBad,
-	"Completed":                              cGood,
-}
+var cPending = tcell.Color243
 
 func (r *Renderer) layout(v view.View, vs view.ViewState) rty.Component {
 	l := rty.NewFlexLayout(rty.DirVert)
@@ -162,20 +135,19 @@ func renderPaneHeader(isMax bool) rty.Component {
 	return l
 }
 
-func (r *Renderer) renderStatusBar(v view.View) rty.Component {
-	sb := rty.NewStringBuilder()
-	sb.Text(" ") // Indent
+func (r *Renderer) renderStatusMessage(v view.View) rty.Component {
 	errorCount := 0
 	for _, res := range v.Resources {
 		if isInError(res) {
 			errorCount++
 		}
 	}
+
+	sb := rty.NewStringBuilder()
 	if errorCount == 0 && v.TiltfileErrorMessage() == "" {
-		sb.Fg(cGood).Text("✓").Fg(tcell.ColorDefault).Fg(cText).Text(" OK").Fg(tcell.ColorDefault)
+		sb.Fg(cGood).Text("✓").Fg(cText).Text(" OK")
 	} else {
 		var errorCountMessage string
-		var tiltfileError strings.Builder
 		s := "error"
 		if errorCount > 1 {
 			s = "errors"
@@ -185,12 +157,22 @@ func (r *Renderer) renderStatusBar(v view.View) rty.Component {
 			errorCountMessage = fmt.Sprintf(" %d %s", errorCount, s)
 		}
 
-		if v.TiltfileErrorMessage() != "" {
-			_, _ = tiltfileError.WriteString(" • Tiltfile error")
-		}
-		sb.Fg(cBad).Text("✖").Fg(tcell.ColorDefault).Fg(cText).Textf("%s%s", errorCountMessage, tiltfileError.String()).Fg(tcell.ColorDefault)
+		sb.Fg(cBad).Text(xMark()).
+			Fg(cText).Textf("%s", errorCountMessage)
 	}
-	return rty.Bg(rty.OneLine(sb.Build()), tcell.ColorWhiteSmoke)
+	return sb.Build()
+}
+
+func (r *Renderer) renderStatusBar(v view.View) rty.Component {
+	l := rty.NewConcatLayout(rty.DirHor)
+	l.Add(rty.TextString(" "))
+	l.Add(r.renderStatusMessage(v))
+	l.Add(rty.TextString(" "))
+	l.AddDynamic(rty.NewFillerString(' '))
+
+	msg := " To explore, open web view (enter) • terminal is limited "
+	l.Add(rty.ColoredString(msg, cText))
+	return rty.Bg(rty.OneLine(l), tcell.ColorWhiteSmoke)
 }
 
 func (r *Renderer) renderFooter(v view.View, keys string) rty.Component {
@@ -206,7 +188,7 @@ func (r *Renderer) renderFooter(v view.View, keys string) rty.Component {
 }
 
 func keyLegend(v view.View, vs view.ViewState) string {
-	defaultKeys := "Browse (↓ ↑), Expand (→) ┊ (enter) log, (b)rowser ┊ (ctrl-C) quit  "
+	defaultKeys := "Browse (↓ ↑), Expand (→) ┊ (enter) log ┊ (ctrl-C) quit  "
 	if vs.AlertMessage != "" {
 		return "Tilt (l)og ┊ (esc) close alert "
 	}
@@ -214,7 +196,7 @@ func keyLegend(v view.View, vs view.ViewState) string {
 }
 
 func isInError(res view.Resource) bool {
-	return statusColor(res) == cBad
+	return combinedStatus(res).color == cBad
 }
 
 func isCrashing(res view.Resource) bool {
@@ -222,7 +204,7 @@ func isCrashing(res view.Resource) bool {
 		res.LastBuild().Reason.Has(model.BuildReasonFlagCrash) ||
 		res.CurrentBuild.Reason.Has(model.BuildReasonFlagCrash) ||
 		res.PendingBuildReason.Has(model.BuildReasonFlagCrash) ||
-		res.IsDC() && res.DockerComposeTarget().Status() == string(dockercompose.StatusCrash)
+		res.IsDC() && res.DockerComposeTarget().RuntimeStatus() == model.RuntimeStatusError
 }
 
 func (r *Renderer) renderModal(fg rty.Component, bg rty.Component, fixed bool) rty.Component {
@@ -313,7 +295,7 @@ func (r *Renderer) SetUp() (chan tcell.Event, error) {
 		}
 	}()
 
-	r.rty = rty.NewRTY(screen)
+	r.rty = rty.NewRTY(screen, rty.SkipErrorHandler{})
 
 	r.screen = screen
 

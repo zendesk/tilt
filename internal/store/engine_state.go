@@ -8,18 +8,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 
-	"github.com/windmilleng/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/k8s"
 
-	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/hud/view"
-	"github.com/windmilleng/tilt/internal/ospath"
-	"github.com/windmilleng/tilt/internal/token"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/dockercompose"
+	"github.com/tilt-dev/tilt/internal/hud/view"
+	"github.com/tilt-dev/tilt/internal/ospath"
+	"github.com/tilt-dev/tilt/internal/token"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 )
 
 type EngineState struct {
@@ -33,7 +33,7 @@ type EngineState struct {
 	ManifestTargets map[model.ManifestName]*ManifestTarget
 
 	CurrentlyBuilding map[model.ManifestName]bool
-	WatchFiles        bool
+	EngineMode        EngineMode
 
 	// For synchronizing BuildController -- wait until engine records all builds started
 	// so far before starting another build
@@ -42,9 +42,14 @@ type EngineState struct {
 	// How many builds have been completed (pass or fail) since starting tilt
 	CompletedBuildCount int
 
-	MaxParallelUpdates int
+	// For synchronizing ConfigsController -- wait until engine records all builds started
+	// so far before starting another build
+	StartedTiltfileLoadCount int
+
+	UpdateSettings model.UpdateSettings
 
 	FatalError error
+
 	HUDEnabled bool
 
 	// The user has indicated they want to exit
@@ -53,11 +58,27 @@ type EngineState struct {
 	// We recovered from a panic(). We need to clean up the RTY and print the error.
 	PanicExited error
 
+	// Normal process termination. Either Tilt completed all its work,
+	// or it determined that it was unable to complete the work it was assigned.
+	//
+	// Note that ExitSignal/ExitError is never triggered in normal
+	// 'tilt up`/dev mode. It's more for CI modes and tilt up --watch=false modes.
+	//
+	// We don't provide the ability to customize exit codes. Either the
+	// process exited successfully, or with an error. In the future, we might
+	// add the ability to put an exit code in the error.
+	ExitSignal bool
+	ExitError  error
+
 	// All logs in Tilt, stored in a structured format.
 	LogStore *logstore.LogStore `testdiff:"ignore"`
 
-	TiltfilePath             string
-	ConfigFiles              []string
+	TiltfilePath string
+
+	// TODO(nick): This should be called "ConfigPaths", not "ConfigFiles",
+	// because this could refer to directories that are watched recursively.
+	ConfigFiles []string
+
 	TiltIgnoreContents       string
 	PendingConfigFileChanges map[string]time.Time
 	// ConfigReloadRequested    bool
@@ -68,8 +89,8 @@ type EngineState struct {
 
 	TiltfileState ManifestState
 
-	LatestTiltBuild model.TiltBuild // from GitHub
-	VersionSettings model.VersionSettings
+	SuggestedTiltVersion string
+	VersionSettings      model.VersionSettings
 
 	// Analytics Info
 	AnalyticsEnvOpt        analytics.Opt
@@ -83,17 +104,22 @@ type EngineState struct {
 
 	CloudAddress string
 	Token        token.Token
-	TeamName     string
+	TeamID       string
 
-	TiltCloudUsername                           string
-	TokenKnownUnregistered                      bool // to distinguish whether an empty TiltCloudUsername means "we haven't checked" or "we checked and the token isn't registered"
-	WaitingForTiltCloudUsernamePostRegistration bool
+	CloudStatus CloudStatus
 
 	DockerPruneSettings model.DockerPruneSettings
 
 	TelemetrySettings model.TelemetrySettings
 
 	UserConfigState model.UserConfigState
+}
+
+type CloudStatus struct {
+	Username                         string
+	TeamName                         string
+	TokenKnownUnregistered           bool // to distinguish whether an empty Username means "we haven't checked" or "we checked and the token isn't registered"
+	WaitingForStatusPostRegistration bool
 }
 
 // Merge analytics opt-in status from different sources.
@@ -148,12 +174,12 @@ func (e *EngineState) BuildStatus(id model.TargetID) BuildStatus {
 
 func (e *EngineState) AvailableBuildSlots() int {
 	currentlyBuilding := len(e.CurrentlyBuilding)
-	if currentlyBuilding >= e.MaxParallelUpdates {
+	if currentlyBuilding >= e.UpdateSettings.MaxParallelUpdates() {
 		// this could happen if user decreases max build slots while
 		// multiple builds are in progress, no big deal
 		return 0
 	}
-	return e.MaxParallelUpdates - currentlyBuilding
+	return e.UpdateSettings.MaxParallelUpdates() - currentlyBuilding
 }
 
 func (e *EngineState) UpsertManifestTarget(mt *ManifestTarget) {
@@ -326,6 +352,9 @@ type ManifestState struct {
 
 	// If this manifest was changed, which config files led to the most recent change in manifest definition
 	ConfigFilesThatCausedChange []string
+
+	// If the build was manually triggered, record why.
+	TriggerReason model.BuildReason
 }
 
 func NewState() *EngineState {
@@ -338,7 +367,7 @@ func NewState() *EngineState {
 	ret.VersionSettings = model.VersionSettings{
 		CheckUpdates: true,
 	}
-	ret.MaxParallelUpdates = 1
+	ret.UpdateSettings = model.DefaultUpdateSettings()
 	ret.CurrentlyBuilding = make(map[model.ManifestName]bool)
 
 	if ok, _ := tiltanalytics.IsAnalyticsDisabledFromEnv(); ok {
@@ -391,14 +420,17 @@ func (ms *ManifestState) IsDC() bool {
 }
 
 func (ms *ManifestState) K8sRuntimeState() K8sRuntimeState {
-	ret, _ := ms.RuntimeState.(K8sRuntimeState)
+	ret, ok := ms.RuntimeState.(K8sRuntimeState)
+	if !ok {
+		return NewK8sRuntimeState(ms.Name)
+	}
 	return ret
 }
 
 func (ms *ManifestState) GetOrCreateK8sRuntimeState() K8sRuntimeState {
 	ret, ok := ms.RuntimeState.(K8sRuntimeState)
 	if !ok {
-		ret = NewK8sRuntimeState()
+		ret = NewK8sRuntimeState(ms.Name)
 		ms.RuntimeState = ret
 	}
 	return ret
@@ -472,7 +504,8 @@ func (ms *ManifestState) HasPendingFileChanges() bool {
 }
 
 func (mt *ManifestTarget) NextBuildReason() model.BuildReason {
-	reason := model.BuildReasonNone
+	state := mt.State
+	reason := state.TriggerReason
 	if mt.State.HasPendingFileChanges() {
 		reason = reason.With(model.BuildReasonFlagChangedFiles)
 	}
@@ -488,13 +521,6 @@ func (mt *ManifestTarget) NextBuildReason() model.BuildReason {
 	return reason
 }
 
-// Whether a change at the given time should trigger a build.
-// Used to determine if changes to synced files or config files
-// should kick off a new build.
-func (ms *ManifestState) IsPendingTime(t time.Time) bool {
-	return !t.IsZero() && t.After(ms.LastBuild().StartTime)
-}
-
 // Whether changes have been made to this Manifest's synced files
 // or config since the last build.
 //
@@ -502,22 +528,22 @@ func (ms *ManifestState) IsPendingTime(t time.Time) bool {
 // bool: whether changes have been made
 // Time: the time of the earliest change
 func (ms *ManifestState) HasPendingChanges() (bool, time.Time) {
-	return ms.HasPendingChangesBefore(time.Now())
+	return ms.HasPendingChangesBeforeOrEqual(time.Now())
 }
 
 // Like HasPendingChanges, but relative to a particular time.
-func (ms *ManifestState) HasPendingChangesBefore(highWaterMark time.Time) (bool, time.Time) {
+func (ms *ManifestState) HasPendingChangesBeforeOrEqual(highWaterMark time.Time) (bool, time.Time) {
 	ok := false
 	earliest := highWaterMark
 	t := ms.PendingManifestChange
-	if t.Before(earliest) && ms.IsPendingTime(t) {
+	if !t.IsZero() && BeforeOrEqual(t, earliest) {
 		ok = true
 		earliest = t
 	}
 
 	for _, status := range ms.BuildStatuses {
 		for _, t := range status.PendingFileChanges {
-			if t.Before(earliest) && ms.IsPendingTime(t) {
+			if !t.IsZero() && BeforeOrEqual(t, earliest) {
 				ok = true
 				earliest = t
 			}
@@ -693,6 +719,7 @@ func tiltfileResourceView(s EngineState) view.Resource {
 		IsTiltfile:   true,
 		CurrentBuild: s.TiltfileState.CurrentBuild,
 		BuildHistory: s.TiltfileState.BuildHistory,
+		ResourceInfo: view.TiltfileResourceInfo{},
 	}
 	if !s.TiltfileState.CurrentBuild.Empty() {
 		tr.PendingBuildSince = s.TiltfileState.CurrentBuild.StartTime
@@ -709,16 +736,21 @@ func tiltfileResourceView(s EngineState) view.Resource {
 }
 
 func resourceInfoView(mt *ManifestTarget) view.ResourceInfoView {
-	if mt.Manifest.IsUnresourcedYAMLManifest() {
+	runStatus := model.RuntimeStatusUnknown
+	if mt.State.RuntimeState != nil {
+		runStatus = mt.State.RuntimeState.RuntimeStatus()
+	}
+
+	if mt.Manifest.NonWorkloadManifest() {
 		return view.YAMLResourceInfo{
-			K8sResources: mt.Manifest.K8sTarget().DisplayNames,
+			K8sDisplayNames: mt.Manifest.K8sTarget().DisplayNames,
 		}
 	}
 
 	switch state := mt.State.RuntimeState.(type) {
 	case dockercompose.State:
 		return view.NewDCResourceInfo(mt.Manifest.DockerComposeTarget().ConfigPaths,
-			state.Status, state.ContainerID, state.SpanID, state.StartTime)
+			state.ContainerState.Status, state.ContainerID, state.SpanID, state.StartTime, runStatus)
 	case K8sRuntimeState:
 		pod := state.MostRecentPod()
 		return view.K8sResourceInfo{
@@ -728,9 +760,11 @@ func resourceInfoView(mt *ManifestTarget) view.ResourceInfoView {
 			PodStatus:          pod.Status,
 			PodRestarts:        pod.VisibleContainerRestarts(),
 			SpanID:             pod.SpanID,
+			RunStatus:          runStatus,
+			DisplayNames:       mt.Manifest.K8sTarget().DisplayNames,
 		}
 	case LocalRuntimeState:
-		return view.NewLocalResourceInfo(state.Status, state.PID, state.SpanID)
+		return view.NewLocalResourceInfo(runStatus, state.PID, state.SpanID)
 	default:
 		// This is silly but it was the old behavior.
 		return view.K8sResourceInfo{}

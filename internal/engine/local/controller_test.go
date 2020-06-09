@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/testutils/bufsync"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/testutils/bufsync"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func TestNoop(t *testing.T) {
@@ -140,7 +140,7 @@ func (f *fixture) resource(name string, cmd string, lastDeploy time.Time) {
 	m := model.Manifest{
 		Name: n,
 	}.WithDeployTarget(model.NewLocalTarget(
-		model.TargetName(name), model.Cmd{}, model.ToShellCmd(cmd), nil, ""))
+		model.TargetName(name), model.Cmd{}, model.ToHostCmd(cmd), nil, ""))
 	f.state.UpsertManifestTarget(&store.ManifestTarget{
 		Manifest: m,
 		State: &store.ManifestState{

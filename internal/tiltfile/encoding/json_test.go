@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/windmilleng/tilt/internal/tiltfile/io"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/tiltfile/io"
 
 	"github.com/stretchr/testify/require"
 )
@@ -54,7 +55,7 @@ test()
 
 	rs, err := io.GetState(result)
 	require.NoError(t, err)
-	require.Contains(t, rs.Files, f.JoinPath("options.json"))
+	require.Contains(t, rs.Paths, f.JoinPath("options.json"))
 }
 
 func TestJSONDoesNotExist(t *testing.T) {
@@ -64,11 +65,12 @@ func TestJSONDoesNotExist(t *testing.T) {
 	f.File("Tiltfile", `result = read_json("dne.json")`)
 	result, err := f.ExecFile("Tiltfile")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "dne.json: no such file or directory")
+	require.Contains(t, err.Error(), "dne.json")
+	testutils.AssertIsNotExist(t, err)
 
 	rs, err := io.GetState(result)
 	require.NoError(t, err)
-	require.Contains(t, rs.Files, f.JoinPath("dne.json"))
+	require.Contains(t, rs.Paths, f.JoinPath("dne.json"))
 }
 
 func TestMalformedJSON(t *testing.T) {
@@ -86,7 +88,7 @@ func TestMalformedJSON(t *testing.T) {
 
 	rs, err := io.GetState(result)
 	require.NoError(t, err)
-	require.Contains(t, rs.Files, f.JoinPath("options.json"))
+	require.Contains(t, rs.Paths, f.JoinPath("options.json"))
 }
 
 func TestDecodeJSON(t *testing.T) {

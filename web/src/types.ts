@@ -1,6 +1,3 @@
-import { Alert } from "./alerts"
-import { Facet } from "./facets"
-
 export enum SocketState {
   Loading,
   Reconnecting,
@@ -51,6 +48,11 @@ export enum ShowFatalErrorModal {
   Hide,
 }
 
+export enum ShowErrorModal {
+  Default,
+  Show,
+}
+
 export type Snapshot = {
   view: Proto.webviewView
   isSidebarClosed: boolean
@@ -75,11 +77,12 @@ export type LogLine = {
 // Display data about the current log trace.
 export type LogTrace = {
   url: string
-  label: string
+  index: number
 }
 
 // Display data that lets us navigate between log traces.
 export type LogTraceNav = {
+  count: number // The total number of traces
   current: LogTrace
   prev?: LogTrace
   next?: LogTrace

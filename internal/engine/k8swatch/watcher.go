@@ -3,8 +3,8 @@ package k8swatch
 import (
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // Common utility methods for watching kubernetes resources
@@ -37,7 +37,7 @@ func createWatcherTaskList(state store.EngineState, knownDeployedUIDs map[types.
 		}
 	}
 
-	needsWatch := atLeastOneK8s && state.WatchFiles
+	needsWatch := atLeastOneK8s && state.EngineMode.WatchesRuntime()
 	return watcherTaskList{
 		needsWatch: needsWatch,
 		newUIDs:    newUIDs,

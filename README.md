@@ -2,18 +2,20 @@
 
 <img src="assets/logo-wordmark.png" width="250">
 
-[![Build Status](https://circleci.com/gh/windmilleng/tilt/tree/master.svg?style=shield)](https://circleci.com/gh/windmilleng/tilt)
-[![GoDoc](https://godoc.org/github.com/windmilleng/tilt?status.svg)](https://godoc.org/github.com/windmilleng/tilt)
+[![Build Status](https://circleci.com/gh/tilt-dev/tilt/tree/master.svg?style=shield)](https://circleci.com/gh/tilt-dev/tilt)
+[![GoDoc](https://godoc.org/github.com/tilt-dev/tilt?status.svg)](https://pkg.go.dev/github.com/tilt-dev/tilt)
 
-Local Kubernetes development with no stress.
+Kubernetes for Prod, Tilt for Dev
 
-[Tilt](https://tilt.dev) helps you develop your microservices locally.
-Run `tilt up` to start working on your services in a complete dev environment
-configured for your team.
+Modern apps are made of too many services. They're everywhere and in constant
+communication.
 
-Tilt watches your files for edits, automatically builds your container images,
-and applies any changes to bring your environment
-up-to-date in real-time. Think `docker build && kubectl apply` or `docker-compose up`.
+[Tilt](https://tilt.dev) powers multi-service development and makes sure they behave!
+Run `tilt up` to work in a complete dev environment configured for your team.
+
+Tilt automates all the steps from a code change to a new process: watching
+files, building container images, and bringing your environment
+up-to-date. Think `docker build && kubectl apply` or `docker-compose up`.
 
 ## Watch: Tilt in Two Minutes
 
@@ -21,26 +23,36 @@ up-to-date in real-time. Think `docker build && kubectl apply` or `docker-compos
 
 ## Install Tilt
 
-Installing the `tilt` binary is a one-step command:
+Installing the `tilt` binary is a one-step command.
+
+### macOS/Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/windmilleng/tilt/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash
+```
+
+### Windows
+
+```powershell
+iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.ps1')
 ```
 
 For other installation options, see the [Installation Guide](https://docs.tilt.dev/install.html).
 
 ## Run Tilt
 
-Use [this guide](https://docs.tilt.dev/tutorial.html) to run Tilt on your project.
+**New to Tilt?** Our tutorial will [get you started](https://docs.tilt.dev/tutorial.html).
 
-Tilt automatically handles all the expert tricks for working in a Kubernetes dev environment:
+**Configuring a Service?** We have best practice guides for 
+[HTML](https://docs.tilt.dev/example_static_html.html), 
+[NodeJS](https://docs.tilt.dev/example_nodejs.html), 
+[Python](https://docs.tilt.dev/example_python.html), 
+[Go](https://docs.tilt.dev/example_go.html),
+[Java](https://docs.tilt.dev/example_java.html),
+and [C#](https://docs.tilt.dev/example_csharp.html).
 
-- Stands up any constellation of services, no matter how complex
-
-- Watches your file system and update servers in seconds
-
-- Streams logs, events, and pod changes so that it can show you the problem when
-something breaks
+**Optimizing a Tiltfile?** Search for the function you need in our 
+[complete API reference](https://docs.tilt.dev/api.html).
 
 ## Don’t Tilt Alone, Take This
 
@@ -58,7 +70,7 @@ status of running services, errors, logs, and more.
 
 **Questions and feedback:** Join [the Kubernetes slack](http://slack.k8s.io) and
  find us in the [#tilt](https://kubernetes.slack.com/messages/CESBL84MV/)
- channel. Or [file an issue](https://github.com/windmilleng/tilt/issues).
+ channel. Or [file an issue](https://github.com/tilt-dev/tilt/issues).
 
 **Contribute:** Check out our [contribution](CONTRIBUTING.md) guidelines.
 

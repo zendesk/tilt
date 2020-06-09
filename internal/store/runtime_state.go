@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"net/url"
 	"time"
 
@@ -8,9 +9,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 type RuntimeState interface {
@@ -25,6 +26,12 @@ type RuntimeState interface {
 	// and alter the behavior based on whether the underlying resource is a server
 	// or a task.
 	HasEverBeenReadyOrSucceeded() bool
+
+	RuntimeStatus() model.RuntimeStatus
+
+	// If the runtime status is in Error mode,
+	// RuntimeStatusError() should report a reason.
+	RuntimeStatusError() error
 }
 
 type LocalRuntimeState struct {
@@ -35,6 +42,18 @@ type LocalRuntimeState struct {
 }
 
 func (LocalRuntimeState) RuntimeState() {}
+
+func (l LocalRuntimeState) RuntimeStatus() model.RuntimeStatus {
+	return l.Status
+}
+
+func (l LocalRuntimeState) RuntimeStatusError() error {
+	status := l.RuntimeStatus()
+	if status != model.RuntimeStatusError {
+		return nil
+	}
+	return fmt.Errorf("Process %d exited with non-zero status", l.PID)
+}
 
 func (l LocalRuntimeState) HasEverBeenReadyOrSucceeded() bool {
 	return l.HasSucceededAtLeastOnce
@@ -54,19 +73,27 @@ type K8sRuntimeState struct {
 	DeployedPodTemplateSpecHashSet PodTemplateSpecHashSet // for the most recent successful deploy
 
 	LastReadyOrSucceededTime time.Time
+
+	// NOTE(nick): This is a dumb hack to handle the UnresourcedYAML
+	// case. Long-term, a better way to handle this would be to watch
+	// all K8s resources we deploy and have some notion of health for
+	// each type.
+	IsUnresourced bool
 }
 
 func (K8sRuntimeState) RuntimeState() {}
 
 var _ RuntimeState = K8sRuntimeState{}
 
-func NewK8sRuntimeState(pods ...Pod) K8sRuntimeState {
+func NewK8sRuntimeState(mn model.ManifestName, pods ...Pod) K8sRuntimeState {
+
 	podMap := make(map[k8s.PodID]*Pod, len(pods))
 	for _, pod := range pods {
 		p := pod
 		podMap[p.PodID] = &p
 	}
 	return K8sRuntimeState{
+		IsUnresourced:                  mn == model.UnresourcedYAMLManifestName,
 		Pods:                           podMap,
 		LBs:                            make(map[k8s.ServiceName]*url.URL),
 		DeployedUIDSet:                 NewUIDSet(),
@@ -74,7 +101,49 @@ func NewK8sRuntimeState(pods ...Pod) K8sRuntimeState {
 	}
 }
 
+func (s K8sRuntimeState) RuntimeStatusError() error {
+	status := s.RuntimeStatus()
+	if status != model.RuntimeStatusError {
+		return nil
+	}
+	pod := s.MostRecentPod()
+	return fmt.Errorf("Pod %s in error state: %s", pod.PodID, pod.Status)
+}
+
+func (s K8sRuntimeState) RuntimeStatus() model.RuntimeStatus {
+	if s.IsUnresourced {
+		return model.RuntimeStatusOK
+	}
+
+	pod := s.MostRecentPod()
+
+	switch pod.Phase {
+	case v1.PodRunning:
+		if pod.AllContainersReady() {
+			return model.RuntimeStatusOK
+		}
+		return model.RuntimeStatusPending
+
+	case v1.PodSucceeded:
+		return model.RuntimeStatusOK
+
+	case v1.PodFailed:
+		return model.RuntimeStatusError
+	}
+
+	for _, container := range pod.AllContainers() {
+		if container.Status == model.RuntimeStatusError {
+			return model.RuntimeStatusError
+		}
+	}
+
+	return model.RuntimeStatusPending
+}
+
 func (s K8sRuntimeState) HasEverBeenReadyOrSucceeded() bool {
+	if s.IsUnresourced {
+		return true
+	}
 	return !s.LastReadyOrSucceededTime.IsZero()
 }
 
@@ -142,7 +211,8 @@ type Pod struct {
 
 	HasSynclet bool
 
-	Containers []Container
+	Containers     []Container
+	InitContainers []Container
 
 	// We want to show the user # of restarts since some baseline time
 	// i.e. Total Restarts - BaselineRestarts
@@ -153,14 +223,23 @@ type Pod struct {
 	SpanID model.LogSpanID
 }
 
+func (p Pod) AllContainers() []Container {
+	result := []Container{}
+	result = append(result, p.InitContainers...)
+	result = append(result, p.Containers...)
+	return result
+}
+
 type Container struct {
-	Name     container.Name
-	ID       container.ID
-	Ports    []int32
-	Ready    bool
-	Running  bool
-	ImageRef reference.Named
-	Restarts int
+	Name       container.Name
+	ID         container.ID
+	Ports      []int32
+	Ready      bool
+	Running    bool
+	Terminated bool
+	ImageRef   reference.Named
+	Restarts   int
+	Status     model.RuntimeStatus
 }
 
 func (c Container) Empty() bool {

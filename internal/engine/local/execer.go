@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/procutil"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/procutil"
 )
 
 type Execer interface {
@@ -167,8 +167,10 @@ func processRun(ctx context.Context, cmd model.Cmd, w io.Writer, statusCh chan s
 		}
 		statusCh <- statusAndMetadata{status: Error, spanID: spanID}
 	case <-ctx.Done():
+		logger.Get(ctx).Debugf("About to gracefully shut down process %d", c.Process.Pid)
 		err := procutil.GracefullyShutdownProcess(c.Process)
 		if err != nil {
+			logger.Get(ctx).Debugf("Unable to gracefully kill process %d, sending SIGKILL to the process group", c.Process.Pid)
 			procutil.KillProcessGroup(c)
 		} else {
 			// wait and then send SIGKILL to the process group, unless the command finished

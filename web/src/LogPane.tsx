@@ -1,11 +1,11 @@
-import React, { Component, PureComponent } from "react"
+import React, { Component } from "react"
 import { ReactComponent as LogoWordmarkSvg } from "./assets/svg/logo-wordmark-gray.svg"
 import ReactDOM from "react-dom"
 import { LogLine, SnapshotHighlight } from "./types"
 import LogPaneLine from "./LogPaneLine"
 import findLogLineID from "./findLogLine"
 import styled, { keyframes } from "styled-components"
-import { Color, ColorRGBA, ColorAlpha, SizeUnit } from "./style-helpers"
+import { SizeUnit } from "./style-helpers"
 import selection from "./selection"
 import "./LogPane.scss"
 
@@ -143,7 +143,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
   }
 
   componentDidUpdate(prevProps: LogPaneProps) {
-    if (prevProps.manifestName != this.props.manifestName) {
+    if (prevProps.manifestName !== this.props.manifestName) {
       this.setState({ renderWindow: renderWindowDefault })
       this.autoscroll = true
       this.pageYOffset = -1
@@ -154,6 +154,15 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
       this.scrollLastElementIntoView()
     } else if (this.autoscroll) {
       this.scrollLastElementIntoView()
+    }
+
+    if (
+      prevProps.highlight !== this.props.highlight &&
+      this.props.highlight &&
+      this.props.isSnapshot &&
+      this.highlightRef.current
+    ) {
+      this.highlightRef.current.scrollIntoView()
     }
 
     this.maybeExpandRenderWindow()
@@ -202,10 +211,12 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
         let endingLogLine = findLogLineID(end)
 
         if (beginningLogLine && endingLogLine) {
+          let s = logText(sel.getRangeAt(0).cloneContents())
+
           this.props.handleSetHighlight({
             beginningLogID: beginningLogLine,
             endingLogID: endingLogLine,
-            text: selection.toString(),
+            text: s,
           })
         }
       }
@@ -345,7 +356,7 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
         }
       }
 
-      let isContextChange = i > 0 && l.manifestName != lastManifestName
+      let isContextChange = i > 0 && l.manifestName !== lastManifestName
       let el = (
         <LogPaneLine
           ref={maybeHighlightRef}
@@ -374,5 +385,18 @@ class LogPane extends Component<LogPaneProps, LogPaneState> {
     return <LogPaneRoot className="LogPane">{logLineEls}</LogPaneRoot>
   }
 }
+
+// get log text w/o resource prefixes
+// 1. lining up multiple resource name prefixes in a way consistent with the UI is likely to be annoying
+// 2. presumably most highlights are from a single resource anyway
+// potentially we should pass prefix + logline as structured data in the future
+function logText(n: ParentNode): string {
+  let nodes = n.querySelectorAll("code.LogPaneLine-content span")
+  return Array.from(nodes)
+    .map(node => node.textContent)
+    .join("")
+}
+
+export { logText }
 
 export default LogPane

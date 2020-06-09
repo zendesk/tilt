@@ -8,9 +8,10 @@ import (
 )
 
 type FakeClient struct {
-	Requests []http.Request
-	Response http.Response
-	Err      error
+	requests     []http.Request
+	responseCode int
+	responseBody string
+	Err          error
 
 	mu sync.Mutex
 }
@@ -19,32 +20,45 @@ func (fc *FakeClient) Do(req *http.Request) (*http.Response, error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
 
-	fc.Requests = append(fc.Requests, *req)
-	r := fc.Response
+	fc.requests = append(fc.requests, *req)
+	r := http.Response{
+		StatusCode: fc.responseCode,
+		Body:       ioutil.NopCloser(strings.NewReader(fc.responseBody)),
+	}
 
 	return &r, fc.Err
 }
 
 func (fc *FakeClient) SetResponse(s string) {
-	fc.Response = http.Response{
-		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(s)),
-	}
+	fc.responseCode = http.StatusOK
+	fc.responseBody = s
 }
 
-func (fc *FakeClient) RequestURLs() []string {
-	var ret []string
-	for _, req := range fc.Requests {
-		ret = append(ret, req.URL.String())
-	}
+func (fc *FakeClient) ClearRequests() {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+
+	fc.requests = nil
+}
+
+func (fc *FakeClient) Requests() []http.Request {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+
+	ret := append([]http.Request{}, fc.requests...)
 	return ret
 }
 
 func NewFakeClient() *FakeClient {
 	return &FakeClient{
-		Response: http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       ioutil.NopCloser(strings.NewReader("FakeClient response uninitialized")),
-		},
+		responseCode: http.StatusInternalServerError,
+		responseBody: "FakeClient response uninitialized",
+	}
+}
+
+func NewFakeClientEmptyJSON() *FakeClient {
+	return &FakeClient{
+		responseCode: http.StatusOK,
+		responseBody: "{}",
 	}
 }

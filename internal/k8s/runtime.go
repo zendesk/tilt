@@ -9,8 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/logger"
 )
 
 type runtimeAsync struct {
@@ -28,7 +28,7 @@ func newRuntimeAsync(core apiv1.CoreV1Interface) *runtimeAsync {
 
 func (r *runtimeAsync) Runtime(ctx context.Context) container.Runtime {
 	r.once.Do(func() {
-		nodeList, err := r.core.Nodes().List(metav1.ListOptions{
+		nodeList, err := r.core.Nodes().List(ctx, metav1.ListOptions{
 			Limit: 1,
 		})
 		if err != nil {
@@ -38,14 +38,15 @@ func (r *runtimeAsync) Runtime(ctx context.Context) container.Runtime {
 			if isStatusErr {
 				status := statusErr.ErrStatus
 				if status.Code == http.StatusForbidden {
-					logger.Get(ctx).Infof(
-						"ERROR: Tilt could not read your node configuration\n"+
+					logger.Get(ctx).Debugf(
+						"Tilt could not read your node configuration\n"+
 							"  Ask your Kubernetes admin for access to run `kubectl get nodes`.\n"+
 							"  Detail: %v", err)
 				}
 			}
 		}
 		if nodeList == nil || len(nodeList.Items) == 0 {
+			r.runtime = container.RuntimeReadFailure
 			return
 		}
 

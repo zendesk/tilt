@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func TestLiveUpdateStepNotUsed(t *testing.T) {
@@ -229,7 +229,7 @@ func TestLiveUpdateRun(t *testing.T) {
 		tiltfileText string
 		expectedCmd  model.Cmd
 	}{
-		{"string cmd", `"echo hi"`, model.ToShellCmd("echo hi")},
+		{"string cmd", `"echo hi"`, model.ToUnixCmd("echo hi")},
 		{"array cmd", `["echo", "hi"]`, model.Cmd{Argv: []string{"echo", "hi"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -350,7 +350,7 @@ func newLiveUpdateFixture(t *testing.T) *liveUpdateFixture {
 		},
 		model.LiveUpdateSyncStep{Source: f.JoinPath("foo", "b"), Dest: "/c"},
 		model.LiveUpdateRunStep{
-			Command:  model.ToShellCmd("f"),
+			Command:  model.ToUnixCmd("f"),
 			Triggers: model.NewPathSet([]string{"g", "h"}, f.Path()),
 		},
 		model.LiveUpdateRestartContainerStep{},

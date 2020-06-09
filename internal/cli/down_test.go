@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/k8s/testyaml"
-	"github.com/windmilleng/tilt/internal/testutils"
-	"github.com/windmilleng/tilt/internal/tiltfile"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/dockercompose"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/k8s/testyaml"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/tiltfile"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 func TestDown(t *testing.T) {
@@ -26,6 +26,38 @@ func TestDown(t *testing.T) {
 	err := f.cmd.down(f.ctx, f.deps, nil)
 	assert.NoError(t, err)
 	assert.Contains(t, f.kCli.DeletedYaml, "sancho")
+}
+
+func TestDownPreservesNamespacesByDefault(t *testing.T) {
+	f := newDownFixture(t)
+	defer f.TearDown()
+
+	manifests := append([]model.Manifest{}, newK8sManifest()...)
+	manifests = append(manifests, newK8sNamespaceManifest("foo"), newK8sNamespaceManifest("bar"))
+
+	f.tfl.Result = tiltfile.TiltfileLoadResult{Manifests: manifests}
+	err := f.cmd.down(f.ctx, f.deps, nil)
+	require.NoError(t, err)
+	require.Contains(t, f.kCli.DeletedYaml, "sancho")
+	for _, ns := range []string{"foo", "bar"} {
+		require.NotContains(t, f.kCli.DeletedYaml, ns)
+	}
+}
+
+func TestDownDeletesNamespacesIfSpecified(t *testing.T) {
+	f := newDownFixture(t)
+	defer f.TearDown()
+
+	manifests := append([]model.Manifest{}, newK8sManifest()...)
+	manifests = append(manifests, newK8sNamespaceManifest("foo"), newK8sNamespaceManifest("bar"))
+
+	f.tfl.Result = tiltfile.TiltfileLoadResult{Manifests: manifests}
+	f.cmd.deleteNamespaces = true
+	err := f.cmd.down(f.ctx, f.deps, nil)
+	require.NoError(t, err)
+	for _, ns := range []string{"sancho", "foo", "bar"} {
+		require.Contains(t, f.kCli.DeletedYaml, ns)
+	}
 }
 
 func TestDownK8sFails(t *testing.T) {
@@ -70,7 +102,7 @@ func TestDownArgs(t *testing.T) {
 }
 
 func newK8sManifest() []model.Manifest {
-	return []model.Manifest{model.Manifest{Name: "fe"}.WithDeployTarget(model.K8sTarget{YAML: testyaml.SanchoYAML})}
+	return []model.Manifest{model.Manifest{Name: "fe"}.WithDeployTarget(k8s.MustTarget("fe", testyaml.SanchoYAML))}
 }
 
 func newDCManifest() []model.Manifest {
@@ -78,6 +110,17 @@ func newDCManifest() []model.Manifest {
 		Name:        "fe",
 		ConfigPaths: []string{"dc.yaml"},
 	})}
+}
+
+func newK8sNamespaceManifest(name string) model.Manifest {
+	yaml := fmt.Sprintf(`
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+spec: {}
+status: {}`, name)
+	return model.Manifest{Name: model.ManifestName(name)}.WithDeployTarget(model.K8sTarget{YAML: yaml})
 }
 
 type downFixture struct {

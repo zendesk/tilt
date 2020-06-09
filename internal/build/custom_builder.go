@@ -9,10 +9,10 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/docker"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/docker"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 type CustomBuilder interface {
@@ -35,6 +35,7 @@ func (b *ExecCustomBuilder) Build(ctx context.Context, refs container.RefSet, cb
 	workDir := cb.WorkDir
 	expectedTag := cb.Tag
 	command := cb.Command
+
 	skipsLocalDocker := cb.SkipsLocalDocker
 
 	var expectedBuildRefs container.TaggedRefs
@@ -57,7 +58,7 @@ func (b *ExecCustomBuilder) Build(ctx context.Context, refs container.RefSet, cb
 
 	expectedBuildResult := expectedBuildRefs.LocalRef
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := exec.CommandContext(ctx, command.Argv[0], command.Argv[1:]...)
 	cmd.Dir = workDir
 
 	l := logger.Get(ctx)

@@ -17,16 +17,16 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 
-	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/cloud"
-	"github.com/windmilleng/tilt/internal/hud/webview"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/pkg/assets"
-	"github.com/windmilleng/tilt/pkg/model"
-	proto_webview "github.com/windmilleng/tilt/pkg/webview"
+	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/cloud"
+	"github.com/tilt-dev/tilt/internal/hud/webview"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/assets"
+	"github.com/tilt-dev/tilt/pkg/model"
+	proto_webview "github.com/tilt-dev/tilt/pkg/webview"
 )
 
 const httpTimeOut = 5 * time.Second
@@ -43,7 +43,8 @@ type analyticsOptPayload struct {
 }
 
 type triggerPayload struct {
-	ManifestNames []string `json:"manifest_names"`
+	ManifestNames []string          `json:"manifest_names"`
+	BuildReason   model.BuildReason `json:"build_reason"`
 }
 
 type actionPayload struct {
@@ -271,14 +272,14 @@ func (s *HeadsUpServer) HandleTrigger(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	err = SendToTriggerQueue(s.store, payload.ManifestNames[0])
+	err = SendToTriggerQueue(s.store, payload.ManifestNames[0], payload.BuildReason)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 }
 
-func SendToTriggerQueue(st store.RStore, name string) error {
+func SendToTriggerQueue(st store.RStore, name string, buildReason model.BuildReason) error {
 	mName := model.ManifestName(name)
 
 	// if mName == "(Tiltfile)" {
@@ -293,7 +294,7 @@ func SendToTriggerQueue(st store.RStore, name string) error {
 		return fmt.Errorf("no manifest found with name '%s'", mName)
 	}
 
-	st.Dispatch(AppendToTriggerQueueAction{Name: mName})
+	st.Dispatch(AppendToTriggerQueueAction{Name: mName, Reason: buildReason})
 	return nil
 }
 
@@ -323,7 +324,7 @@ func (codec timeAllowEmptyDecoder) Decode(ptr unsafe.Pointer, iter *jsoniter.Ite
 func (s *HeadsUpServer) HandleNewSnapshot(w http.ResponseWriter, req *http.Request) {
 	st := s.store.RLockState()
 	token := st.Token
-	teamID := st.TeamName
+	teamID := st.TeamID
 	s.store.RUnlockState()
 
 	b, err := ioutil.ReadAll(req.Body)

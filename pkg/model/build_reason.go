@@ -14,6 +14,13 @@ const (
 	BuildReasonFlagCrash
 
 	BuildReasonFlagInit
+
+	BuildReasonFlagTriggerWeb
+	BuildReasonFlagTriggerCLI
+	BuildReasonFlagTriggerUnknown
+
+	// An external process called `tilt args`
+	BuildReasonFlagTiltfileArgs
 )
 
 func (r BuildReason) With(flag BuildReason) BuildReason {
@@ -24,15 +31,34 @@ func (r BuildReason) Has(flag BuildReason) bool {
 	return r&flag == flag
 }
 
+func (r BuildReason) HasTrigger() bool {
+	for _, v := range triggerBuildReasons {
+		if r.Has(v) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r BuildReason) IsCrashOnly() bool {
 	return r == BuildReasonFlagCrash
 }
 
 var translations = map[BuildReason]string{
-	BuildReasonFlagChangedFiles: "Changed Files",
-	BuildReasonFlagConfig:       "Config Changed",
-	BuildReasonFlagCrash:        "Pod Crashed, Lost live_update Changes",
-	BuildReasonFlagInit:         "Initial Build",
+	BuildReasonFlagChangedFiles:   "Changed Files",
+	BuildReasonFlagConfig:         "Config Changed",
+	BuildReasonFlagCrash:          "Pod Crashed, Lost live_update Changes",
+	BuildReasonFlagInit:           "Initial Build",
+	BuildReasonFlagTriggerWeb:     "Web Trigger",
+	BuildReasonFlagTriggerCLI:     "CLI Trigger",
+	BuildReasonFlagTriggerUnknown: "Unknown Trigger",
+	BuildReasonFlagTiltfileArgs:   "Tilt Args",
+}
+
+var triggerBuildReasons = []BuildReason{
+	BuildReasonFlagTriggerWeb,
+	BuildReasonFlagTriggerCLI,
+	BuildReasonFlagTriggerUnknown,
 }
 
 var allBuildReasons = []BuildReason{
@@ -40,10 +66,22 @@ var allBuildReasons = []BuildReason{
 	BuildReasonFlagChangedFiles,
 	BuildReasonFlagConfig,
 	BuildReasonFlagCrash,
+	BuildReasonFlagTriggerWeb,
+	BuildReasonFlagTriggerCLI,
+	BuildReasonFlagTriggerUnknown,
+	BuildReasonFlagTiltfileArgs,
 }
 
 func (r BuildReason) String() string {
 	rs := []string{}
+
+	// The trigger build reasons should never be used in conjunction with another
+	// build reason, because it was explicitly specified by the user rather than implicit.
+	for _, v := range triggerBuildReasons {
+		if r.Has(v) {
+			return translations[v]
+		}
+	}
 
 	// Use an array to iterate over the translations to ensure the iteration order
 	// is consistent.

@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/windmilleng/tilt/internal/cloud/cloudurl"
-	"github.com/windmilleng/tilt/internal/feature"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/token"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/cloud/cloudurl"
+	"github.com/tilt-dev/tilt/internal/feature"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/token"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 type UpdateUploader struct {
@@ -97,7 +97,7 @@ func (u *UpdateUploader) makeUpdates(ctx context.Context, st store.RStore) updat
 
 	// If we don't have an authenticated token or team-name,
 	// we won't be able to upload anything anyway.
-	if state.Token == "" || state.TeamName == "" || state.TiltCloudUsername == "" {
+	if state.Token == "" || state.TeamID == "" || state.CloudStatus.Username == "" {
 		return updateTask{}
 	}
 
@@ -154,7 +154,7 @@ func (u *UpdateUploader) makeUpdates(ctx context.Context, st store.RStore) updat
 	return updateTask{
 		token: state.Token,
 		updatePayload: updatePayload{
-			TeamID:  teamID{ID: state.TeamName},
+			TeamID:  teamID{ID: state.TeamID},
 			Updates: updates,
 		},
 	}

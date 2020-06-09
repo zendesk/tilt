@@ -51,6 +51,7 @@ export enum FontSize {
 }
 
 let unit = 32
+let heightUnit = unit // For cases when `Height.unit` shadows `unit`
 
 export function SizeUnit(multiplier: number) {
   return `${unit * multiplier}px`
@@ -58,19 +59,22 @@ export function SizeUnit(multiplier: number) {
 
 // Set sizes expressed in pixels:
 export enum Height {
-  unit = unit,
-  HUDheader = unit * 3,
+  unit = heightUnit,
+  statusHeader = unit * 1.8, // The bar at the top with Pod ID and status
   secondaryNav = unit * 1.2,
-  sidebarItem = unit * 1.4, // sync with constants.scss > $sidebar-item
-  resourceBar = unit * 1.5,
+  secondaryNavLower = unit * 0.8,
+  secondaryNavOverlap = unit * -0.2,
+  secondaryNavTwoLevel = unit * 1.8,
+  sidebarItem = unit * 1.4,
   statusbar = unit * 1.5,
 }
 export enum Width {
-  sidebar = unit * 10.5, // Sync with constants.scss > $sidebar-width
+  badge = unit * 0.6,
   secondaryNavItem = unit * 5,
   sidebarTriggerButton = unit * 1.4,
-  sidebarCollapsed = unit, // sync with constants.scss > $sidebar-collapsed-width
-  badge = unit * 0.6,
+  sidebar = unit * 10.5, // Sync with constants.scss > $sidebar-width
+  sidebarCollapsed = unit,
+  statusbar = unit * 1.5, // sync with constants.scss > $statusbar-height
   smallScreen = 1500,
 }
 
@@ -80,9 +84,13 @@ export const mixinHideOnSmallScreen = `
 }`
 
 export enum ZIndex {
-  HUDheader = 500,
+  SidebarMenu = 2000,
+  Sidebar = 1000,
+  HUDHeader = 500,
 }
 
 export enum AnimDuration {
+  short = "0.15s",
   default = "0.3s",
+  long = "0.6s",
 }

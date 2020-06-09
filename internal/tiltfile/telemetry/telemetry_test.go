@@ -3,11 +3,11 @@ package telemetry
 import (
 	"testing"
 
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model"
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/windmilleng/tilt/internal/tiltfile/starkit"
+	"github.com/tilt-dev/tilt/internal/tiltfile/starkit"
 )
 
 func TestTelemetryCmdString(t *testing.T) {
@@ -17,7 +17,7 @@ func TestTelemetryCmdString(t *testing.T) {
 	result, err := f.ExecFile("Tiltfile")
 
 	assert.NoError(t, err)
-	assert.Equal(t, model.ToShellCmd("foo.sh"), MustState(result).Cmd)
+	assert.Equal(t, model.ToHostCmd("foo.sh"), MustState(result).Cmd)
 }
 
 func TestTelemetryCmdArray(t *testing.T) {

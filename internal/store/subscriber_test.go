@@ -9,7 +9,7 @@ import (
 )
 
 func TestSubscriber(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	s := newFakeSubscriber()
 	st.AddSubscriber(ctx, s)
@@ -20,7 +20,7 @@ func TestSubscriber(t *testing.T) {
 }
 
 func TestSubscriberInterleavedCalls(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	s := newFakeSubscriber()
 	st.AddSubscriber(ctx, s)
@@ -43,7 +43,7 @@ func TestSubscriberInterleavedCalls(t *testing.T) {
 }
 
 func TestAddSubscriberToAlreadySetUpListCallsSetUp(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	st.subscribers.SetUp(ctx)
 
@@ -54,7 +54,7 @@ func TestAddSubscriberToAlreadySetUpListCallsSetUp(t *testing.T) {
 }
 
 func TestAddSubscriberBeforeSetupNoop(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 
 	s := newFakeSubscriber()
@@ -65,7 +65,7 @@ func TestAddSubscriberBeforeSetupNoop(t *testing.T) {
 }
 
 func TestRemoveSubscriber(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	s := newFakeSubscriber()
 
@@ -80,7 +80,7 @@ func TestRemoveSubscriber(t *testing.T) {
 }
 
 func TestRemoveSubscriberNotFound(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	s := newFakeSubscriber()
 	ctx := context.Background()
 	err := st.RemoveSubscriber(ctx, s)
@@ -90,7 +90,7 @@ func TestRemoveSubscriberNotFound(t *testing.T) {
 }
 
 func TestSubscriberSetup(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	s := newFakeSubscriber()
 	st.AddSubscriber(ctx, s)
@@ -101,7 +101,7 @@ func TestSubscriberSetup(t *testing.T) {
 }
 
 func TestSubscriberTeardown(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	s := newFakeSubscriber()
 	st.AddSubscriber(ctx, s)
@@ -116,7 +116,7 @@ func TestSubscriberTeardown(t *testing.T) {
 }
 
 func TestSubscriberTeardownOnRemove(t *testing.T) {
-	st, _ := NewStoreForTesting()
+	st, _ := NewStoreWithFakeReducer()
 	ctx := context.Background()
 	s := newFakeSubscriber()
 	st.AddSubscriber(ctx, s)
@@ -145,62 +145,4 @@ func TestSubscriberTeardownOnRemove(t *testing.T) {
 		assert.Contains(t, err.Error(), "context canceled")
 	}
 	assert.Equal(t, 1, s.teardownCount)
-}
-
-type fakeSubscriber struct {
-	onChange      chan onChangeCall
-	setupCount    int
-	teardownCount int
-}
-
-func newFakeSubscriber() *fakeSubscriber {
-	return &fakeSubscriber{
-		onChange: make(chan onChangeCall),
-	}
-}
-
-type onChangeCall struct {
-	done chan bool
-}
-
-func (f *fakeSubscriber) assertOnChangeCount(t *testing.T, count int) {
-	t.Helper()
-
-	for i := 0; i < count; i++ {
-		f.assertOnChange(t)
-	}
-
-	select {
-	case <-time.After(50 * time.Millisecond):
-		return
-
-	case call := <-f.onChange:
-		close(call.done)
-		t.Fatalf("Expected only %d OnChange calls. Got: %d", count, count+1)
-	}
-}
-
-func (f *fakeSubscriber) assertOnChange(t *testing.T) {
-	t.Helper()
-
-	select {
-	case <-time.After(50 * time.Millisecond):
-		t.Fatalf("timed out waiting for subscriber.OnChange")
-	case call := <-f.onChange:
-		close(call.done)
-	}
-}
-
-func (f *fakeSubscriber) OnChange(ctx context.Context, st RStore) {
-	call := onChangeCall{done: make(chan bool)}
-	f.onChange <- call
-	<-call.done
-}
-
-func (f *fakeSubscriber) SetUp(ctx context.Context) {
-	f.setupCount++
-}
-
-func (f *fakeSubscriber) TearDown(ctx context.Context) {
-	f.teardownCount++
 }

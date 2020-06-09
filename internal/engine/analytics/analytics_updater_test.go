@@ -7,18 +7,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 
-	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/store"
+	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/store"
 )
 
 func TestOnChange(t *testing.T) {
 	to := tiltanalytics.NewFakeOpter(analytics.OptIn)
 	_, a := tiltanalytics.NewMemoryTiltAnalyticsForTest(to)
-	cmdUpTags := CmdUpTags(map[string]string{"watch": "true"})
+	cmdUpTags := CmdTags(map[string]string{"watch": "true"})
 	au := NewAnalyticsUpdater(a, cmdUpTags)
-	st, _ := store.NewStoreForTesting()
+	st := store.NewTestingStore()
 	setUserOpt(st, analytics.OptOut)
 	au.OnChange(context.Background(), st)
 
@@ -31,9 +31,9 @@ func TestReportOnOptIn(t *testing.T) {
 	err := a.SetUserOpt(analytics.OptOut)
 	require.NoError(t, err)
 
-	cmdUpTags := CmdUpTags(map[string]string{"watch": "true"})
+	cmdUpTags := CmdTags(map[string]string{"watch": "true"})
 	au := NewAnalyticsUpdater(a, cmdUpTags)
-	st, _ := store.NewStoreForTesting()
+	st := store.NewTestingStore()
 	setUserOpt(st, analytics.OptIn)
 	au.OnChange(context.Background(), st)
 
@@ -52,7 +52,7 @@ func TestReportOnOptIn(t *testing.T) {
 	assert.Equal(t, 1, len(mem.Counts))
 }
 
-func setUserOpt(st *store.Store, opt analytics.Opt) {
+func setUserOpt(st *store.TestingStore, opt analytics.Opt) {
 	state := st.LockMutableStateForTesting()
 	defer st.UnlockMutableState()
 	state.AnalyticsUserOpt = opt

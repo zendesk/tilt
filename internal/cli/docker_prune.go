@@ -7,14 +7,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 
-	"github.com/windmilleng/tilt/internal/docker"
-	"github.com/windmilleng/tilt/internal/tiltfile"
+	"github.com/tilt-dev/tilt/internal/docker"
+	"github.com/tilt-dev/tilt/internal/tiltfile"
 
-	"github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/engine/dockerprune"
+	"github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/engine/dockerprune"
 )
 
 type dockerPruneCmd struct {
@@ -39,7 +39,7 @@ func (c *dockerPruneCmd) register() *cobra.Command {
 		Short: "Run docker prune as Tilt does",
 	}
 
-	cmd.Flags().StringVar(&c.fileName, "file", tiltfile.FileName, "Path to Tiltfile")
+	addTiltfileFlag(cmd, &c.fileName)
 
 	return cmd
 }
@@ -68,7 +68,7 @@ func (c *dockerPruneCmd) run(ctx context.Context, args []string) error {
 	dp := dockerprune.NewDockerPruner(deps.dCli)
 
 	// TODO: print the commands being run
-	dp.Prune(ctx, tlr.DockerPruneSettings.MaxAge, imgSelectors)
+	dp.Prune(ctx, tlr.DockerPruneSettings.MaxAge, tlr.DockerPruneSettings.KeepRecent, imgSelectors)
 
 	return nil
 }

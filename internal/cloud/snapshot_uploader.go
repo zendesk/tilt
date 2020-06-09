@@ -10,14 +10,22 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/pkg/errors"
 
-	"github.com/windmilleng/tilt/internal/cloud/cloudurl"
-	"github.com/windmilleng/tilt/internal/hud/webview"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/token"
-	proto_webview "github.com/windmilleng/tilt/pkg/webview"
+	"github.com/tilt-dev/tilt/internal/cloud/cloudurl"
+	"github.com/tilt-dev/tilt/internal/hud/webview"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/token"
+	proto_webview "github.com/tilt-dev/tilt/pkg/webview"
 )
 
 type SnapshotID string
+
+func ToSnapshot(state store.EngineState) (*proto_webview.Snapshot, error) {
+	view, err := webview.StateToProtoView(state, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &proto_webview.Snapshot{View: view}, nil
+}
 
 type SnapshotUploader interface {
 	TakeAndUpload(state store.EngineState) (SnapshotID, error)
@@ -54,11 +62,11 @@ type snapshotIDResponse struct {
 }
 
 func (s snapshotUploader) TakeAndUpload(state store.EngineState) (SnapshotID, error) {
-	view, err := webview.StateToProtoView(state, 0)
+	snapshot, err := ToSnapshot(state)
 	if err != nil {
 		return "", err
 	}
-	return s.Upload(state.Token, state.TeamName, &proto_webview.Snapshot{View: view})
+	return s.Upload(state.Token, state.TeamID, snapshot)
 }
 
 func (s snapshotUploader) Upload(token token.Token, teamID string, snapshot *proto_webview.Snapshot) (SnapshotID, error) {

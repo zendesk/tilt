@@ -6,15 +6,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/windmilleng/tilt/internal/cloud/cloudurl"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/feature"
-	"github.com/windmilleng/tilt/internal/ospath"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	"github.com/tilt-dev/tilt/internal/cloud/cloudurl"
+	"github.com/tilt-dev/tilt/internal/ospath"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 
-	proto_webview "github.com/windmilleng/tilt/pkg/webview"
+	proto_webview "github.com/tilt-dev/tilt/pkg/webview"
 )
 
 func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*proto_webview.View, error) {
@@ -73,10 +71,7 @@ func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*
 
 		podID := ms.MostRecentPod().PodID
 
-		var facets []model.Facet
-		if s.Features[feature.Facets] {
-			facets = mt.Facets(s.Secrets)
-		}
+		facets := mt.Facets(s.Secrets)
 
 		bh, err := ToProtoBuildRecords(buildHistory, s.LogStore)
 		if err != nil {
@@ -148,19 +143,15 @@ func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*
 		Dev:       s.TiltBuildInfo.Dev,
 		Date:      s.TiltBuildInfo.Date,
 	}
-	ret.LatestTiltBuild = &proto_webview.TiltBuild{
-		Version:   s.LatestTiltBuild.Version,
-		CommitSHA: s.LatestTiltBuild.CommitSHA,
-		Dev:       s.LatestTiltBuild.Dev,
-		Date:      s.LatestTiltBuild.Date,
-	}
+	ret.SuggestedTiltVersion = s.SuggestedTiltVersion
 	ret.FeatureFlags = make(map[string]bool)
 	for k, v := range s.Features {
 		ret.FeatureFlags[k] = v
 	}
-	ret.TiltCloudUsername = s.TiltCloudUsername
+	ret.TiltCloudUsername = s.CloudStatus.Username
+	ret.TiltCloudTeamName = s.CloudStatus.TeamName
 	ret.TiltCloudSchemeHost = cloudurl.URL(s.CloudAddress).String()
-	ret.TiltCloudTeamID = s.TeamName
+	ret.TiltCloudTeamID = s.TeamID
 	if s.FatalError != nil {
 		ret.FatalError = s.FatalError.Error()
 	}
@@ -220,7 +211,7 @@ func tiltfileResourceProtoView(s store.EngineState) (*proto_webview.Resource, er
 func protoPopulateResourceInfoView(mt *store.ManifestTarget, r *proto_webview.Resource) error {
 	r.RuntimeStatus = string(model.RuntimeStatusNotApplicable)
 
-	if mt.Manifest.IsUnresourcedYAMLManifest() {
+	if mt.Manifest.NonWorkloadManifest() {
 		r.YamlResourceInfo = &proto_webview.YAMLResourceInfo{
 			K8SResources: mt.Manifest.K8sTarget().DisplayNames,
 		}
@@ -230,23 +221,18 @@ func protoPopulateResourceInfoView(mt *store.ManifestTarget, r *proto_webview.Re
 	if mt.Manifest.IsDC() {
 		dc := mt.Manifest.DockerComposeTarget()
 		dcState := mt.State.DCRuntimeState()
-		info, err := NewProtoDCResourceInfo(dc.ConfigPaths, dcState.Status, dcState.ContainerID, dcState.StartTime)
+		info, err := NewProtoDCResourceInfo(dc.ConfigPaths, dcState.ContainerState.Status, dcState.ContainerID, dcState.StartTime)
 		if err != nil {
 			return err
 		}
 		r.DcResourceInfo = info
-
-		runtimeStatus, ok := runtimeStatusMap[string(dcState.Status)]
-		if !ok {
-			r.RuntimeStatus = string(model.RuntimeStatusError)
-		}
-		r.RuntimeStatus = string(runtimeStatus)
+		r.RuntimeStatus = string(dcState.RuntimeStatus())
 		return nil
 	}
 	if mt.Manifest.IsLocal() {
 		lState := mt.State.LocalRuntimeState()
 		r.LocalResourceInfo = &proto_webview.LocalResourceInfo{Pid: int64(lState.PID)}
-		r.RuntimeStatus = string(lState.Status)
+		r.RuntimeStatus = string(lState.RuntimeStatus())
 		return nil
 	}
 	if mt.Manifest.IsK8s() {
@@ -260,40 +246,12 @@ func protoPopulateResourceInfoView(mt *store.ManifestTarget, r *proto_webview.Re
 			PodStatusMessage:   strings.Join(pod.StatusMessages, "\n"),
 			AllContainersReady: pod.AllContainersReady(),
 			PodRestarts:        int32(pod.VisibleContainerRestarts()),
+			DisplayNames:       mt.Manifest.K8sTarget().DisplayNames,
 		}
 
-		status := pod.Status
-		if status == "Running" && !pod.AllContainersReady() {
-			status = "Pending"
-		}
-
-		runtimeStatus, ok := runtimeStatusMap[status]
-		if !ok {
-			r.RuntimeStatus = string(model.RuntimeStatusError)
-		}
-		r.RuntimeStatus = string(runtimeStatus)
+		r.RuntimeStatus = string(kState.RuntimeStatus())
 		return nil
 	}
 
 	panic("Unrecognized manifest type (not one of: k8s, DC, local)")
-}
-
-var runtimeStatusMap = map[string]model.RuntimeStatus{
-	"Running":                          model.RuntimeStatusOK,
-	"ContainerCreating":                model.RuntimeStatusPending,
-	"Pending":                          model.RuntimeStatusPending,
-	"PodInitializing":                  model.RuntimeStatusPending,
-	"Error":                            model.RuntimeStatusError,
-	"CrashLoopBackOff":                 model.RuntimeStatusError,
-	"ErrImagePull":                     model.RuntimeStatusError,
-	"ImagePullBackOff":                 model.RuntimeStatusError,
-	"RunContainerError":                model.RuntimeStatusError,
-	"StartError":                       model.RuntimeStatusError,
-	string(dockercompose.StatusInProg): model.RuntimeStatusPending,
-	string(dockercompose.StatusUp):     model.RuntimeStatusOK,
-	string(dockercompose.StatusDown):   model.RuntimeStatusError,
-	"Completed":                        model.RuntimeStatusOK,
-
-	// If the runtime status hasn't shown up yet, we assume it's pending.
-	"": model.RuntimeStatusPending,
 }

@@ -4,10 +4,12 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/windmilleng/wmclient/pkg/os/temp"
+	"github.com/tilt-dev/wmclient/pkg/os/temp"
 )
 
 type TempDirFixture struct {
@@ -16,10 +18,15 @@ type TempDirFixture struct {
 	oldDir string
 }
 
+// everything not listed in this character class will get replaced by _, so that it's a safe filename
+var sanitizeForFilenameRe = regexp.MustCompile("[^a-zA-Z0-9.]")
+
+func SanitizeFileName(name string) string {
+	return sanitizeForFilenameRe.ReplaceAllString(name, "_")
+}
+
 func NewTempDirFixture(t testing.TB) *TempDirFixture {
-	name := t.Name()
-	name = strings.Replace(name, "/", "-", -1)
-	dir, err := temp.NewDir(name)
+	dir, err := temp.NewDir(SanitizeFileName(t.Name()))
 	if err != nil {
 		t.Fatalf("Error making temp dir: %v", err)
 	}
@@ -146,12 +153,20 @@ func (f *TempDirFixture) TempDir(prefix string) string {
 }
 
 func (f *TempDirFixture) TearDown() {
-	defer func() {
-		_ = os.Chdir(f.oldDir)
-	}()
+	if f.oldDir != "" {
+		err := os.Chdir(f.oldDir)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+	}
 
 	err := f.dir.TearDown()
-	if err != nil {
+	if err != nil && runtime.GOOS == "windows" &&
+		(strings.Contains(err.Error(), "The process cannot access the file") ||
+			strings.Contains(err.Error(), "Access is denied")) {
+		// NOTE(nick): I'm not convinced that this is a real problem.
+		// I think it might just be clean up of file notification I/O.
+	} else if err != nil {
 		f.t.Fatal(err)
 	}
 }

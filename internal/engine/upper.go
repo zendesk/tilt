@@ -7,45 +7,32 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/windmilleng/tilt/internal/engine/local"
-
 	"github.com/davecgh/go-spew/spew"
 	"github.com/opentracing/opentracing-go"
-	"github.com/pkg/errors"
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 	v1 "k8s.io/api/core/v1"
 
-	tiltanalytics "github.com/windmilleng/tilt/internal/analytics"
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/engine/buildcontrol"
-	"github.com/windmilleng/tilt/internal/engine/configs"
-	"github.com/windmilleng/tilt/internal/engine/k8swatch"
-	"github.com/windmilleng/tilt/internal/engine/runtimelog"
-	"github.com/windmilleng/tilt/internal/hud"
-	"github.com/windmilleng/tilt/internal/hud/server"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/sliceutils"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/token"
-	"github.com/windmilleng/tilt/internal/watch"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/docker"
+	"github.com/tilt-dev/tilt/internal/dockercompose"
+	"github.com/tilt-dev/tilt/internal/engine/buildcontrol"
+	"github.com/tilt-dev/tilt/internal/engine/configs"
+	"github.com/tilt-dev/tilt/internal/engine/dcwatch"
+	"github.com/tilt-dev/tilt/internal/engine/exit"
+	"github.com/tilt-dev/tilt/internal/engine/fswatch"
+	"github.com/tilt-dev/tilt/internal/engine/k8swatch"
+	"github.com/tilt-dev/tilt/internal/engine/local"
+	"github.com/tilt-dev/tilt/internal/engine/runtimelog"
+	"github.com/tilt-dev/tilt/internal/hud"
+	"github.com/tilt-dev/tilt/internal/hud/server"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/sliceutils"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/token"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
-
-// When we see a file change, wait this long to see if any other files have changed, and bundle all changes together.
-// 200ms is not the result of any kind of research or experimentation
-// it might end up being a significant part of deployment delay, if we get the total latency <2s
-// it might also be long enough that it misses some changes if the user has some operation involving a large file
-//   (e.g., a binary dependency in git), but that's hopefully less of a problem since we'd get it in the next build
-const watchBufferMinRestInMs = 200
-
-// When waiting for a `watchBufferDurationInMs`-long break in file modifications to aggregate notifications,
-// if we haven't seen a break by the time `watchBufferMaxTimeInMs` has passed, just send off whatever we've got
-const watchBufferMaxTimeInMs = 10000
-
-var watchBufferMinRestDuration = watchBufferMinRestInMs * time.Millisecond
-var watchBufferMaxDuration = watchBufferMaxTimeInMs * time.Millisecond
 
 // TODO(nick): maybe this should be called 'BuildEngine' or something?
 // Upper seems like a poor and undescriptive name.
@@ -53,22 +40,8 @@ type Upper struct {
 	store *store.Store
 }
 
-type FsWatcherMaker func(paths []string, ignore watch.PathMatcher, l logger.Logger) (watch.Notify, error)
 type ServiceWatcherMaker func(context.Context, *store.Store) error
 type PodWatcherMaker func(context.Context, *store.Store) error
-type timerMaker func(d time.Duration) <-chan time.Time
-
-func ProvideFsWatcherMaker() FsWatcherMaker {
-	return func(paths []string, ignore watch.PathMatcher, l logger.Logger) (watch.Notify, error) {
-		return watch.NewWatcher(paths, ignore, l)
-	}
-}
-
-func ProvideTimerMaker() timerMaker {
-	return func(t time.Duration) <-chan time.Time {
-		return time.After(t)
-	}
-}
 
 func NewUpper(ctx context.Context, st *store.Store, subs []store.Subscriber) Upper {
 	// There's not really a good reason to add all the subscribers
@@ -90,7 +63,7 @@ func (u Upper) Start(
 	ctx context.Context,
 	args []string,
 	b model.TiltBuild,
-	watch bool,
+	engineMode store.EngineMode,
 	fileName string,
 	hudEnabled bool,
 	analyticsUserOpt analytics.Opt,
@@ -111,7 +84,7 @@ func (u Upper) Start(
 	configFiles := []string{absTfPath}
 
 	return u.Init(ctx, InitAction{
-		WatchFiles:       watch,
+		EngineMode:       engineMode,
 		TiltfilePath:     absTfPath,
 		ConfigFiles:      configFiles,
 		UserArgs:         args,
@@ -132,7 +105,7 @@ func (u Upper) Init(ctx context.Context, action InitAction) error {
 func upperReducerFn(ctx context.Context, state *store.EngineState, action store.Action) {
 	// Allow exitAction and dumpEngineStateAction even if there's a fatal error
 	if exitAction, isExitAction := action.(hud.ExitAction); isExitAction {
-		handleExitAction(state, exitAction)
+		handleHudExitAction(state, exitAction)
 		return
 	}
 	if _, isDumpEngineStateAction := action.(hud.DumpEngineStateAction); isDumpEngineStateAction {
@@ -144,15 +117,14 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		return
 	}
 
-	var err error
 	switch action := action.(type) {
 	case InitAction:
-		err = handleInitAction(ctx, state, action)
+		handleInitAction(ctx, state, action)
 	case store.ErrorAction:
-		err = action.Error
+		state.FatalError = action.Error
 	case hud.ExitAction:
-		handleExitAction(state, action)
-	case targetFilesChangedAction:
+		handleHudExitAction(state, action)
+	case fswatch.TargetFilesChangedAction:
 		handleFSEvent(ctx, state, action)
 	case k8swatch.PodChangeAction:
 		handlePodChangeAction(ctx, state, action)
@@ -165,31 +137,29 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 	case store.K8sEventAction:
 		handleK8sEvent(ctx, state, action)
 	case buildcontrol.BuildCompleteAction:
-		err = handleBuildCompleted(ctx, state, action)
+		handleBuildCompleted(ctx, state, action)
 	case buildcontrol.BuildStartedAction:
 		handleBuildStarted(ctx, state, action)
 	case configs.ConfigsReloadStartedAction:
 		handleConfigsReloadStarted(ctx, state, action)
 	case configs.ConfigsReloadedAction:
 		handleConfigsReloaded(ctx, state, action)
-	case DockerComposeEventAction:
+	case dcwatch.EventAction:
 		handleDockerComposeEvent(ctx, state, action)
 	case server.AppendToTriggerQueueAction:
-		appendToTriggerQueue(state, action.Name)
+		appendToTriggerQueue(state, action.Name, action.Reason)
 	case hud.StartProfilingAction:
 		handleStartProfilingAction(state)
 	case hud.StopProfilingAction:
 		handleStopProfilingAction(state)
 	case hud.DumpEngineStateAction:
 		handleDumpEngineStateAction(ctx, state)
-	case LatestVersionAction:
-		handleLatestVersionAction(state, action)
 	case store.AnalyticsUserOptAction:
 		handleAnalyticsUserOptAction(state, action)
 	case store.AnalyticsNudgeSurfacedAction:
 		handleAnalyticsNudgeSurfacedAction(ctx, state)
-	case store.TiltCloudUserLookedUpAction:
-		handleTiltCloudUserLookedUpAction(state, action)
+	case store.TiltCloudStatusReceivedAction:
+		handleTiltCloudStatusReceivedAction(state, action)
 	case store.UserStartedTiltCloudRegistrationAction:
 		handleUserStartedTiltCloudRegistrationAction(state)
 	case store.PanicAction:
@@ -200,13 +170,11 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleLocalServeStatusAction(ctx, state, action)
 	case store.LogAction:
 		handleLogAction(state, action)
+	case exit.Action:
+		handleExitAction(state, action)
 
 	default:
-		err = fmt.Errorf("unrecognized action: %T", action)
-	}
-
-	if err != nil {
-		state.FatalError = err
+		state.FatalError = fmt.Errorf("unrecognized action: %T", action)
 	}
 }
 
@@ -256,7 +224,7 @@ func handleBuildStarted(ctx context.Context, state *store.EngineState, action bu
 	removeFromTriggerQueue(state, mn)
 }
 
-func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, cb buildcontrol.BuildCompleteAction) error {
+func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, cb buildcontrol.BuildCompleteAction) {
 	defer func() {
 		delete(engineState.CurrentlyBuilding, cb.ManifestName)
 	}()
@@ -265,7 +233,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 
 	mt, ok := engineState.ManifestTargets[cb.ManifestName]
 	if !ok {
-		return nil
+		return
 	}
 
 	err := cb.Error
@@ -277,7 +245,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 	ms := mt.State
 	bs := ms.CurrentBuild
 	bs.Error = err
-	bs.FinishTime = time.Now()
+	bs.FinishTime = cb.FinishTime
 	bs.BuildTypes = cb.Result.BuildTypes()
 	if bs.SpanID != "" {
 		bs.WarningCount = len(engineState.LogStore.Warnings(bs.SpanID))
@@ -292,28 +260,27 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 		ms.MutableBuildStatus(id).LastResult = result
 	}
 
-	if err != nil {
-		if buildcontrol.IsFatalError(err) {
-			return err
-		} else if !engineState.WatchFiles {
-			return errors.Wrap(err, "Build Failed")
-		}
-	} else {
-		// Remove pending file changes that were consumed by this build.
-		for _, status := range ms.BuildStatuses {
-			for file, modTime := range status.PendingFileChanges {
-				if modTime.Before(bs.StartTime) {
-					delete(status.PendingFileChanges, file)
-				}
+	// Remove pending file changes that were consumed by this build.
+	for _, status := range ms.BuildStatuses {
+		for file, modTime := range status.PendingFileChanges {
+			if store.BeforeOrEqual(modTime, bs.StartTime) {
+				delete(status.PendingFileChanges, file)
 			}
 		}
+	}
 
-		if !ms.PendingManifestChange.IsZero() &&
-			ms.PendingManifestChange.Before(bs.StartTime) {
-			ms.PendingManifestChange = time.Time{}
+	if !ms.PendingManifestChange.IsZero() &&
+		store.BeforeOrEqual(ms.PendingManifestChange, bs.StartTime) {
+		ms.PendingManifestChange = time.Time{}
+	}
+
+	if err != nil {
+		if buildcontrol.IsFatalError(err) {
+			engineState.FatalError = err
+			return
 		}
-
-		ms.LastSuccessfulDeployTime = time.Now()
+	} else {
+		ms.LastSuccessfulDeployTime = cb.FinishTime
 
 		for id, result := range cb.Result {
 			ms.MutableBuildStatus(id).LastSuccessfulResult = result
@@ -338,7 +305,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 		}
 
 		bestPod := ms.MostRecentPod()
-		if bestPod.StartedAt.After(bs.StartTime) ||
+		if store.AfterOrEqual(bestPod.StartedAt, bs.StartTime) ||
 			bestPod.UpdateStartTime.Equal(bs.StartTime) {
 			checkForContainerCrash(ctx, engineState, mt)
 		}
@@ -371,13 +338,19 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 			state = state.WithContainerID(cid)
 		}
 
-		// If we have a container ID and no status yet, set status to Up
-		// (this is an expected case when we run docker-compose up while the service
-		// is already running, and we won't get an event to tell us so).
-		// If the container is crashing we will get an event subsequently.
-		isFirstBuild := cid != "" && state.Status == ""
-		if isFirstBuild {
-			state = state.WithStatus(dockercompose.StatusUp)
+		cState := dcResult.ContainerState
+		if cState != nil {
+			state = state.WithContainerState(*cState)
+
+			if docker.HasStarted(*cState) {
+				if state.StartTime.IsZero() {
+					state = state.WithStartTime(cb.FinishTime)
+				}
+				if state.LastReadyTime.IsZero() {
+					// NB: this will differ from StartTime once we support DC health checks
+					state = state.WithLastReadyTime(cb.FinishTime)
+				}
+			}
 		}
 
 		ms.RuntimeState = state
@@ -389,18 +362,22 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 			HasSucceededAtLeastOnce: err == nil,
 		}
 	}
-
-	return nil
 }
 
-func appendToTriggerQueue(state *store.EngineState, mn model.ManifestName) {
-	_, ok := state.ManifestState(mn)
+func appendToTriggerQueue(state *store.EngineState, mn model.ManifestName, reason model.BuildReason) {
+	ms, ok := state.ManifestState(mn)
 	if !ok {
 		return
 	}
 
-	for _, triggerName := range state.TriggerQueue {
-		if mn == triggerName {
+	if reason == 0 {
+		reason = model.BuildReasonFlagTriggerUnknown
+	}
+
+	ms.TriggerReason = ms.TriggerReason.With(reason)
+
+	for _, queued := range state.TriggerQueue {
+		if mn == queued {
 			return
 		}
 	}
@@ -408,6 +385,11 @@ func appendToTriggerQueue(state *store.EngineState, mn model.ManifestName) {
 }
 
 func removeFromTriggerQueue(state *store.EngineState, mn model.ManifestName) {
+	mState, ok := state.ManifestState(mn)
+	if ok {
+		mState.TriggerReason = model.BuildReasonNone
+	}
+
 	for i, triggerName := range state.TriggerQueue {
 		if triggerName == mn {
 			state.TriggerQueue = append(state.TriggerQueue[:i], state.TriggerQueue[i+1:]...)
@@ -427,25 +409,25 @@ func handleStartProfilingAction(state *store.EngineState) {
 func handleFSEvent(
 	ctx context.Context,
 	state *store.EngineState,
-	event targetFilesChangedAction) {
+	event fswatch.TargetFilesChangedAction) {
 
-	if event.targetID.Type == model.TargetTypeConfigs {
-		for _, f := range event.files {
-			state.PendingConfigFileChanges[f] = event.time
+	if event.TargetID.Type == model.TargetTypeConfigs {
+		for _, f := range event.Files {
+			state.PendingConfigFileChanges[f] = event.Time
 		}
 		return
 	}
 
-	mns := state.ManifestNamesForTargetID(event.targetID)
+	mns := state.ManifestNamesForTargetID(event.TargetID)
 	for _, mn := range mns {
 		ms, ok := state.ManifestState(mn)
 		if !ok {
 			return
 		}
 
-		status := ms.MutableBuildStatus(event.targetID)
-		for _, f := range event.files {
-			status.PendingFileChanges[f] = event.time
+		status := ms.MutableBuildStatus(event.TargetID)
+		for _, f := range event.Files {
+			status.PendingFileChanges[f] = event.Time
 		}
 	}
 }
@@ -455,18 +437,15 @@ func handleConfigsReloadStarted(
 	state *store.EngineState,
 	event configs.ConfigsReloadStartedAction,
 ) {
-	filesChanged := []string{}
-	for f := range event.FilesChanged {
-		filesChanged = append(filesChanged, f)
-	}
 	status := model.BuildRecord{
 		StartTime: event.StartTime,
-		Reason:    model.BuildReasonFlagConfig,
-		Edits:     filesChanged,
+		Reason:    event.Reason,
+		Edits:     event.FilesChanged,
 		SpanID:    event.SpanID,
 	}
 
 	state.TiltfileState.CurrentBuild = status
+	state.StartedTiltfileLoadCount++
 }
 
 func handleConfigsReloaded(
@@ -474,6 +453,7 @@ func handleConfigsReloaded(
 	state *store.EngineState,
 	event configs.ConfigsReloadedAction,
 ) {
+
 	manifests := event.Manifests
 
 	b := state.TiltfileState.CurrentBuild
@@ -552,7 +532,7 @@ func handleConfigsReloaded(
 			// ensure we do an image build so that we apply the changes
 			ms := mt.State
 			ms.BuildStatuses = make(map[model.TargetID]*store.BuildStatus)
-			ms.PendingManifestChange = time.Now()
+			ms.PendingManifestChange = event.FinishTime
 			ms.ConfigFilesThatCausedChange = configFilesThatChanged
 		}
 		state.UpsertManifestTarget(mt)
@@ -564,16 +544,16 @@ func handleConfigsReloaded(
 	state.TiltIgnoreContents = event.TiltIgnoreContents
 
 	state.Features = event.Features
-	state.TeamName = event.TeamName
+	state.TeamID = event.TeamID
 	state.TelemetrySettings = event.TelemetrySettings
 	state.VersionSettings = event.VersionSettings
 	state.AnalyticsTiltfileOpt = event.AnalyticsTiltfileOpt
 
-	state.MaxParallelUpdates = event.UpdateSettings.MaxParallelUpdatesMinOne()
+	state.UpdateSettings = event.UpdateSettings
 
 	// Remove pending file changes that were consumed by this build.
 	for file, modTime := range state.PendingConfigFileChanges {
-		if modTime.Before(state.TiltfileState.LastBuild().StartTime) {
+		if store.BeforeOrEqual(modTime, state.TiltfileState.LastBuild().StartTime) {
 			delete(state.PendingConfigFileChanges, file)
 		}
 	}
@@ -582,6 +562,13 @@ func handleConfigsReloaded(
 
 func handleLogAction(state *store.EngineState, action store.LogAction) {
 	state.LogStore.Append(action, state.Secrets)
+}
+
+func handleExitAction(state *store.EngineState, action exit.Action) {
+	if action.ExitSignal {
+		state.ExitSignal = action.ExitSignal
+		state.ExitError = action.ExitError
+	}
 }
 
 func handleServiceEvent(ctx context.Context, state *store.EngineState, action k8swatch.ServiceChangeAction) {
@@ -620,29 +607,20 @@ func handleDumpEngineStateAction(ctx context.Context, engineState *store.EngineS
 	}
 }
 
-func handleLatestVersionAction(state *store.EngineState, action LatestVersionAction) {
-	state.LatestTiltBuild = action.Build
-}
-
-func handleInitAction(ctx context.Context, engineState *store.EngineState, action InitAction) error {
+func handleInitAction(ctx context.Context, engineState *store.EngineState, action InitAction) {
 	engineState.TiltBuildInfo = action.TiltBuild
 	engineState.TiltStartTime = action.StartTime
 	engineState.TiltfilePath = action.TiltfilePath
 	engineState.ConfigFiles = action.ConfigFiles
 	engineState.UserConfigState.Args = action.UserArgs
 	engineState.AnalyticsUserOpt = action.AnalyticsUserOpt
-	engineState.WatchFiles = action.WatchFiles
+	engineState.EngineMode = action.EngineMode
 	engineState.CloudAddress = action.CloudAddress
 	engineState.Token = action.Token
 	engineState.HUDEnabled = action.HUDEnabled
-
-	// NOTE(dmiller): this kicks off a Tiltfile build
-	engineState.PendingConfigFileChanges[action.TiltfilePath] = time.Now()
-
-	return nil
 }
 
-func handleExitAction(state *store.EngineState, action hud.ExitAction) {
+func handleHudExitAction(state *store.EngineState, action hud.ExitAction) {
 	if action.Err != nil {
 		state.FatalError = action.Err
 	} else {
@@ -671,7 +649,7 @@ func handleLocalServeStatusAction(ctx context.Context, state *store.EngineState,
 	ms.RuntimeState = lrs
 }
 
-func handleDockerComposeEvent(ctx context.Context, engineState *store.EngineState, action DockerComposeEventAction) {
+func handleDockerComposeEvent(ctx context.Context, engineState *store.EngineState, action dcwatch.EventAction) {
 	evt := action.Event
 	mn := model.ManifestName(evt.Service)
 	ms, ok := engineState.ManifestState(mn)
@@ -680,35 +658,16 @@ func handleDockerComposeEvent(ctx context.Context, engineState *store.EngineStat
 		return
 	}
 
-	if evt.Type != dockercompose.TypeContainer {
-		// We currently only support Container events.
-		return
-	}
-
 	state, _ := ms.RuntimeState.(dockercompose.State)
 
 	state = state.WithContainerID(container.ID(evt.ID)).
-		WithSpanID(runtimelog.SpanIDForDCService(mn))
-
-	// For now, just guess at state.
-	status := evt.GuessStatus()
-	if status != "" {
-		state = state.WithStatus(status)
-	}
+		WithSpanID(runtimelog.SpanIDForDCService(mn)).
+		WithContainerState(action.ContainerState)
 
 	if evt.IsStartupEvent() {
-		state = state.WithStartTime(time.Now())
-		state = state.WithStopping(false)
+		state = state.WithStartTime(action.Time)
 		// NB: this will differ from StartTime once we support DC health checks
-		state = state.WithLastReadyTime(time.Now())
-	}
-
-	if evt.IsStopEvent() {
-		state = state.WithStopping(true)
-	}
-
-	if evt.Action == dockercompose.ActionDie && !state.IsStopping {
-		state = state.WithStatus(dockercompose.StatusCrash)
+		state = state.WithLastReadyTime(action.Time)
 	}
 
 	ms.RuntimeState = state
@@ -730,19 +689,22 @@ func handleAnalyticsNudgeSurfacedAction(ctx context.Context, state *store.Engine
 	}
 }
 
-func handleTiltCloudUserLookedUpAction(state *store.EngineState, action store.TiltCloudUserLookedUpAction) {
+func handleTiltCloudStatusReceivedAction(state *store.EngineState, action store.TiltCloudStatusReceivedAction) {
 	if action.IsPostRegistrationLookup {
-		state.WaitingForTiltCloudUsernamePostRegistration = false
+		state.CloudStatus.WaitingForStatusPostRegistration = false
 	}
 	if !action.Found {
-		state.TokenKnownUnregistered = true
-		state.TiltCloudUsername = ""
+		state.CloudStatus.TokenKnownUnregistered = true
+		state.CloudStatus.Username = ""
 	} else {
-		state.TokenKnownUnregistered = false
-		state.TiltCloudUsername = action.Username
+		state.CloudStatus.TokenKnownUnregistered = false
+		state.CloudStatus.Username = action.Username
+		state.CloudStatus.TeamName = action.TeamName
 	}
+
+	state.SuggestedTiltVersion = action.SuggestedTiltVersion
 }
 
 func handleUserStartedTiltCloudRegistrationAction(state *store.EngineState) {
-	state.WaitingForTiltCloudUsernamePostRegistration = true
+	state.CloudStatus.WaitingForStatusPostRegistration = true
 }

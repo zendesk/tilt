@@ -8,8 +8,8 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"gopkg.in/d4l3k/messagediff.v1"
 
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // Allow actions to batch together a bit.
@@ -52,9 +52,14 @@ func NewStore(reducer Reducer, logActions LogActionsFlag) *Store {
 	}
 }
 
-// Returns a Store for testing that saves observed actions and makes them available
-// via the return value `getActions`
-func NewStoreForTesting() (st *Store, getActions func() []Action) {
+// Returns a Store with a fake reducer that saves observed actions and makes
+// them available via the return value `getActions`.
+//
+// Tests should only use this if they:
+// 1) want to test the Store itself, or
+// 2) want to test subscribers with the particular async behavior of a real Store
+// Otherwise, use NewTestingStore().
+func NewStoreWithFakeReducer() (st *Store, getActions func() []Action) {
 	var mu sync.Mutex
 	actions := []Action{}
 	reducer := Reducer(func(ctx context.Context, s *EngineState, action Action) {
@@ -190,13 +195,11 @@ func (s *Store) maybeFinished() (bool, error) {
 		return true, state.FatalError
 	}
 
-	if len(state.ManifestTargets) == 0 {
-		return false, nil
+	if state.ExitSignal {
+		return true, state.ExitError
 	}
 
-	finished := !state.WatchFiles && state.InitialBuildsCompleted()
-
-	return finished, nil
+	return false, nil
 }
 
 func (s *Store) drainActions() {

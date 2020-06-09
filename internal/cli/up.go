@@ -15,18 +15,18 @@ import (
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog"
 
-	"github.com/windmilleng/tilt/internal/analytics"
-	engineanalytics "github.com/windmilleng/tilt/internal/engine/analytics"
-	"github.com/windmilleng/tilt/internal/engine/buildcontrol"
-	"github.com/windmilleng/tilt/internal/hud"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/store"
-	"github.com/windmilleng/tilt/internal/tiltfile"
-	"github.com/windmilleng/tilt/internal/tracer"
-	"github.com/windmilleng/tilt/pkg/assets"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/web"
+	"github.com/tilt-dev/tilt/internal/analytics"
+	"github.com/tilt-dev/tilt/internal/cloud"
+	engineanalytics "github.com/tilt-dev/tilt/internal/engine/analytics"
+	"github.com/tilt-dev/tilt/internal/engine/buildcontrol"
+	"github.com/tilt-dev/tilt/internal/hud"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/internal/tracer"
+	"github.com/tilt-dev/tilt/pkg/assets"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/web"
 )
 
 const DefaultWebHost = "localhost"
@@ -42,10 +42,15 @@ var noBrowser bool = false
 var logActionsFlag bool = false
 
 type upCmd struct {
-	watch     bool
-	traceTags string
-	hud       bool
-	fileName  string
+	watch                bool
+	traceTags            string
+	fileName             string
+	outputSnapshotOnExit string
+
+	defaultTUI bool
+	hud        bool
+	// whether hud was explicitly set or just got the default value
+	hudFlagExplicitlySet bool
 }
 
 func (c *upCmd) register() *cobra.Command {
@@ -66,29 +71,51 @@ By default:
 
 This default behavior does not apply if the Tiltfile uses config.parse or config.set_enabled_resources.
 In that case, see https://tilt.dev/user_config.html and/or comments in your Tiltfile
+
+When you exit Tilt (using Ctrl+C), Kubernetes resources and Docker Compose resources continue running;
+you can use tilt down (https://docs.tilt.dev/cli/tilt_down.html) to delete these resources. Any long-running
+local resources--i.e. those using serve_cmd--are terminated when you exit Tilt.
 `,
 	}
 
 	cmd.Flags().BoolVar(&c.watch, "watch", true, "If true, services will be automatically rebuilt and redeployed when files change. Otherwise, each service will be started once.")
-	cmd.Flags().Var(&webModeFlag, "web-mode", "Values: local, prod. Controls whether to use prod assets or a local dev server")
 	cmd.Flags().StringVar(&updateModeFlag, "update-mode", string(buildcontrol.UpdateModeAuto),
 		fmt.Sprintf("Control the strategy Tilt uses for updating instances. Possible values: %v", buildcontrol.AllUpdateModes))
 	cmd.Flags().StringVar(&c.traceTags, "traceTags", "", "tags to add to spans for easy querying, of the form: key1=val1,key2=val2")
 	cmd.Flags().BoolVar(&c.hud, "hud", true, "If true, tilt will open in HUD mode.")
 	cmd.Flags().BoolVar(&logActionsFlag, "logactions", false, "log all actions and state changes")
-	cmd.Flags().IntVar(&webPort, "port", DefaultWebPort, "Port for the Tilt HTTP server. Set to 0 to disable.")
-	cmd.Flags().StringVar(&webHost, "host", DefaultWebHost, "Host for the Tilt HTTP server and default host for any port-forwards. Set to 0.0.0.0 to listen on all interfaces.")
-	cmd.Flags().IntVar(&webDevPort, "webdev-port", DefaultWebDevPort, "Port for the Tilt Dev Webpack server. Only applies when using --web-mode=local")
+	addStartServerFlags(cmd)
+	addDevServerFlags(cmd)
+	addTiltfileFlag(cmd, &c.fileName)
 	cmd.Flags().Lookup("logactions").Hidden = true
-	cmd.Flags().StringVar(&c.fileName, "file", tiltfile.FileName, "Path to Tiltfile")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "If true, web UI will not open on startup.")
+	cmd.Flags().StringVar(&c.outputSnapshotOnExit, "output-snapshot-on-exit", "", "If specified, Tilt will dump a snapshot of its state to the specified path when it exits")
+
+	// this is to test the new behavior before enabling it in Tilt 1.0
+	// https://app.clubhouse.io/windmill/epic/5549/make-tui-hard-to-find-in-tilt-1-0
+	cmd.Flags().BoolVar(&c.defaultTUI, "default-hud", true, "If false, we'll hide the TUI by default")
+	cmd.Flags().Lookup("default-hud").Hidden = true
+
+	cmd.PreRun = func(cmd *cobra.Command, args []string) {
+		c.hudFlagExplicitlySet = cmd.Flag("hud").Changed
+	}
 
 	return cmd
 }
 
+func (c *upCmd) isHudEnabledByConfig() bool {
+	ret := c.hud
+	// in non-default-TUI mode, we only show the hud if the user explicitly specified --hud
+	if !c.defaultTUI && !c.hudFlagExplicitlySet {
+		ret = false
+	}
+
+	return ret
+}
+
 func (c *upCmd) run(ctx context.Context, args []string) error {
 	a := analytics.Get(ctx)
-	cmdUpTags := engineanalytics.CmdUpTags(map[string]string{
+	cmdUpTags := engineanalytics.CmdTags(map[string]string{
 		"watch": fmt.Sprintf("%v", c.watch),
 		"mode":  string(updateModeFlag),
 	})
@@ -113,19 +140,22 @@ func (c *upCmd) run(ctx context.Context, args []string) error {
 		log.Printf("Tilt analytics disabled: %s", reason)
 	}
 
-	hudEnabled := c.hud && isatty.IsTerminal(os.Stdout.Fd())
-	threads, err := wireCmdUp(ctx, hud.HudEnabled(hudEnabled), a, cmdUpTags)
+	hudEnabled := c.isHudEnabledByConfig() && isatty.IsTerminal(os.Stdout.Fd())
+	cmdUpDeps, err := wireCmdUp(ctx, hud.HudEnabled(hudEnabled), a, cmdUpTags)
 	if err != nil {
 		deferred.SetOutput(deferred.Original())
 		return err
 	}
 
-	upper := threads.upper
-	h := threads.hud
+	upper := cmdUpDeps.Upper
+	h := cmdUpDeps.Hud
 
 	l := store.NewLogActionLogger(ctx, upper.Dispatch)
 	deferred.SetOutput(l)
 	ctx = redirectLogs(ctx, l)
+	if c.outputSnapshotOnExit != "" {
+		defer cloud.WriteSnapshot(ctx, cmdUpDeps.Store, c.outputSnapshotOnExit)
+	}
 
 	if trace {
 		traceID, err := tracer.TraceID(ctx)
@@ -146,9 +176,15 @@ func (c *upCmd) run(ctx context.Context, args []string) error {
 		})
 	}
 
+	engineMode := store.EngineModeUp
+	if !c.watch {
+		engineMode = store.EngineModeApply
+	}
+
 	g.Go(func() error {
 		defer cancel()
-		return upper.Start(ctx, args, threads.tiltBuild, c.watch, c.fileName, hudEnabled, a.UserOpt(), threads.token, string(threads.cloudAddress))
+		return upper.Start(ctx, args, cmdUpDeps.TiltBuild, engineMode,
+			c.fileName, hudEnabled, a.UserOpt(), cmdUpDeps.Token, string(cmdUpDeps.CloudAddress))
 	})
 
 	err = g.Wait()

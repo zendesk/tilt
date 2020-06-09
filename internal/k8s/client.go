@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,8 +32,8 @@ import (
 	// Client auth plugins! They will auto-init if we import them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/logger"
 )
 
 type Namespace string
@@ -69,7 +68,7 @@ type Client interface {
 	//
 	// Returns entities in the order that they were applied (which may be different
 	// than they were passed in) and with UUIDs from the Kube API
-	Upsert(ctx context.Context, entities []K8sEntity) ([]K8sEntity, error)
+	Upsert(ctx context.Context, entities []K8sEntity, timeout time.Duration) ([]K8sEntity, error)
 
 	// Deletes all given entities.
 	//
@@ -122,7 +121,7 @@ type K8sClient struct {
 	runtimeAsync      *runtimeAsync
 	registryAsync     *registryAsync
 	nodeIPAsync       *nodeIPAsync
-	drm               meta.RESTMapper
+	drm               *restmapper.DeferredDiscoveryRESTMapper
 }
 
 var _ Client = K8sClient{}
@@ -135,6 +134,7 @@ func ProvideK8sClient(
 	pfClient PortForwardClient,
 	configNamespace Namespace,
 	runner kubectlRunner,
+	mkClient MinikubeClient,
 	clientLoader clientcmd.ClientConfig) Client {
 	if env == EnvNone {
 		// No k8s, so no need to get any further configs
@@ -154,7 +154,7 @@ func ProvideK8sClient(
 	core := clientset.CoreV1()
 	runtimeAsync := newRuntimeAsync(core)
 	registryAsync := newRegistryAsync(env, core, runtimeAsync)
-	nodeIPAsync := newNodeIPAsync(env)
+	nodeIPAsync := newNodeIPAsync(env, mkClient)
 
 	di, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
@@ -240,9 +240,16 @@ func ServiceURL(service *v1.Service, ip NodeIP) (*url.URL, error) {
 	return nil, nil
 }
 
-func (k K8sClient) Upsert(ctx context.Context, entities []K8sEntity) ([]K8sEntity, error) {
+func timeoutError(timeout time.Duration) error {
+	return errors.New(fmt.Sprintf("Killed kubectl. Hit timeout of %v.", timeout))
+}
+
+func (k K8sClient) Upsert(ctx context.Context, entities []K8sEntity, timeout time.Duration) ([]K8sEntity, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "daemon-k8sUpsert")
 	defer span.Finish()
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	result := make([]K8sEntity, 0, len(entities))
 
@@ -251,6 +258,9 @@ func (k K8sClient) Upsert(ctx context.Context, entities []K8sEntity) ([]K8sEntit
 	if len(mutable) > 0 {
 		newEntities, err := k.applyEntitiesAndMaybeForce(ctx, mutable)
 		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, timeoutError(timeout)
+			}
 			return nil, err
 		}
 		result = append(result, newEntities...)
@@ -259,6 +269,9 @@ func (k K8sClient) Upsert(ctx context.Context, entities []K8sEntity) ([]K8sEntit
 	if len(immutable) > 0 {
 		newEntities, err := k.forceReplaceEntities(ctx, immutable)
 		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, timeoutError(timeout)
+			}
 			return nil, err
 		}
 		result = append(result, newEntities...)
@@ -281,25 +294,26 @@ func (k K8sClient) forceReplaceEntities(ctx context.Context, entities []K8sEntit
 func (k K8sClient) applyEntitiesAndMaybeForce(ctx context.Context, entities []K8sEntity) ([]K8sEntity, error) {
 	stdout, stderr, err := k.actOnEntities(ctx, []string{"apply", "-o", "yaml"}, entities)
 	if err != nil {
-		shouldTryReplace := maybeImmutableFieldStderr(stderr)
+		reason, shouldTryReplace := maybeShouldTryReplaceReason(stderr)
 
 		if !shouldTryReplace {
 			return nil, errors.Wrapf(err, "kubectl apply:\nstderr: %s", stderr)
 		}
 
-		// If the kubectl apply failed due to an immutable field, fall back to kubectl delete && kubectl apply
-		// NOTE(maia): this is equivalent to `kubecutl replace --force`, but will ensure that all
+		// NOTE(maia): we don't use `kubecutl replace --force`, because we want to ensure that all
 		// dependant pods get deleted rather than orphaned. We WANT these pods to be deleted
 		// and recreated so they have all the new labels, etc. of their controlling k8s entity.
-		logger.Get(ctx).Infof("Falling back to 'kubectl delete && apply' on immutable field error")
-		_, stderr, err = k.actOnEntities(ctx, []string{"delete"}, entities)
+		logger.Get(ctx).Infof("Falling back to 'kubectl delete && create': %s", reason)
+		// --ignore-not-found because, e.g., if we fell back due to large metadata.annotations, the object might not exist
+		_, stderr, err = k.actOnEntities(ctx, []string{"delete", "--ignore-not-found=true"}, entities)
 		if err != nil {
-			return nil, errors.Wrapf(err, "kubectl delete (as part of delete && apply):\nstderr: %s", stderr)
+			return nil, errors.Wrapf(err, "kubectl delete (as part of delete && create):\nstderr: %s", stderr)
 		}
-		stdout, stderr, err = k.actOnEntities(ctx, []string{"apply", "-o", "yaml"}, entities)
+		stdout, stderr, err = k.actOnEntities(ctx, []string{"create", "-o", "yaml"}, entities)
 		if err != nil {
-			return nil, errors.Wrapf(err, "kubectl apply (as part of delete && apply):\nstderr: %s", stderr)
+			return nil, errors.Wrapf(err, "kubectl create (as part of delete && create):\nstderr: %s", stderr)
 		}
+		logger.Get(ctx).Infof("Succeeded!")
 	}
 
 	return ParseYAMLFromString(stdout)
@@ -324,14 +338,41 @@ func maybeImmutableFieldStderr(stderr string) bool {
 	return strings.Contains(stderr, validation.FieldImmutableErrorMsg) || ForbiddenFieldsRe.Match([]byte(stderr))
 }
 
+var MetadataAnnotationsTooLongRe = regexp.MustCompile(`metadata.annotations: Too long: must have at most \d+ bytes.*`)
+
+// kubectl apply sets an annotation containing the object's previous configuration.
+// However, annotations have a max size of 256k. Large objects such as configmaps can exceed 256k, which makes
+// apply unusable, so we need to fall back to delete/create
+// https://github.com/kubernetes/kubectl/issues/712
+func maybeAnnotationsTooLong(stderr string) (string, bool) {
+	for _, line := range strings.Split(stderr, "\n") {
+		if MetadataAnnotationsTooLongRe.MatchString(line) {
+			return line, true
+		}
+	}
+
+	return "", false
+}
+
+func maybeShouldTryReplaceReason(stderr string) (string, bool) {
+	if maybeImmutableFieldStderr(stderr) {
+		return "immutable field error", true
+	} else if msg, match := maybeAnnotationsTooLong(stderr); match {
+		return fmt.Sprintf("%s (https://github.com/kubernetes/kubectl/issues/712)", msg), true
+	}
+
+	return "", false
+}
+
 // Deletes all given entities.
 //
 // Currently ignores any "not found" errors, because that seems like the correct
 // behavior for our use cases.
 func (k K8sClient) Delete(ctx context.Context, entities []K8sEntity) error {
 	l := logger.Get(ctx)
+	l.Infof("Deleting via kubectl:")
 	for _, e := range entities {
-		l.Infof("Deleting via kubectl: %s/%s\n", e.GVK().Kind, e.Name())
+		l.Infof("→ %s/%s", e.GVK().Kind, e.Name())
 	}
 
 	_, stderr, err := k.actOnEntities(ctx, []string{"delete", "--ignore-not-found"}, entities)
@@ -362,10 +403,24 @@ func (k K8sClient) GetByReference(ctx context.Context, ref v1.ObjectReference) (
 	uid := ref.UID
 	rm, err := k.drm.RESTMapping(schema.GroupKind{Group: group, Kind: kind})
 	if err != nil {
-		return K8sEntity{}, errors.Wrapf(err, "error mapping %s/%s", group, kind)
+		// The REST mapper doesn't have any sort of internal invalidation
+		// mechanism. So if the user applies a CRD (i.e., changing the available
+		// api resources), the REST mapper won't discover the new types.
+		//
+		// https://github.com/kubernetes/kubernetes/issues/75383
+		//
+		// But! When Tilt requests a resource by reference, we know in advance that
+		// it must exist, and therefore, its type must exist.  So we can safely
+		// reset the REST mapper and retry, so that it discovers the types.
+		k.drm.Reset()
+
+		rm, err = k.drm.RESTMapping(schema.GroupKind{Group: group, Kind: kind})
+		if err != nil {
+			return K8sEntity{}, errors.Wrapf(err, "error mapping %s/%s", group, kind)
+		}
 	}
 
-	result, err := k.dynamic.Resource(rm.Resource).Namespace(namespace).Get(name, metav1.GetOptions{
+	result, err := k.dynamic.Resource(rm.Resource).Namespace(namespace).Get(ctx, name, metav1.GetOptions{
 		ResourceVersion: resourceVersion,
 	})
 	if err != nil {

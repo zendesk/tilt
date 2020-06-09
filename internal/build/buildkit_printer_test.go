@@ -11,12 +11,13 @@ import (
 	"testing"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
+	"github.com/stretchr/testify/assert"
 
-	"github.com/windmilleng/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/logger"
 )
 
 // NOTE(dmiller): set at runtime with:
-// go test -ldflags="-X github.com/windmilleng/tilt/internal/build.WriteGoldenMaster=1" github.com/windmilleng/tilt/internal/build -run ^TestBuildkitPrinter
+// go test -ldflags="-X github.com/tilt-dev/tilt/internal/build.WriteGoldenMaster=1" github.com/tilt-dev/tilt/internal/build -run ^TestBuildkitPrinter
 var WriteGoldenMaster = "0"
 
 type buildkitTestCase struct {
@@ -94,9 +95,7 @@ func TestBuildkitPrinter(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if output.String() != string(expected) {
-				t.Errorf("EXPECTED:\n%s\nGOT:\n%s\n", expected, output.String())
-			}
+			assert.Equal(t, normalize(string(expected)), normalize(output.String()))
 		})
 	}
 }

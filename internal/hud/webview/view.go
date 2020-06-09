@@ -5,18 +5,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/timestamp"
 
-	proto_webview "github.com/windmilleng/tilt/pkg/webview"
+	proto_webview "github.com/tilt-dev/tilt/pkg/webview"
 )
 
-func NewProtoDCResourceInfo(configPaths []string, status dockercompose.Status, cID container.ID, startTime time.Time) (*proto_webview.DCResourceInfo, error) {
+func NewProtoDCResourceInfo(configPaths []string, status string, cID container.ID, startTime time.Time) (*proto_webview.DCResourceInfo, error) {
 	start, err := timeToProto(startTime)
 	if err != nil {
 		return nil, err

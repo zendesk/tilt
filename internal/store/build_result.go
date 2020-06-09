@@ -5,12 +5,13 @@ import (
 	"sort"
 
 	"github.com/docker/distribution/reference"
+	dockertypes "github.com/docker/docker/api/types"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/dockercompose"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/dockercompose"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // The results of a successful build.
@@ -98,6 +99,9 @@ type DockerComposeBuildResult struct {
 	// we use for Kubernetes, where the pods appear some time later via an
 	// asynchronous event.
 	DockerComposeContainerID container.ID
+
+	// The initial state of the container.
+	ContainerState *dockertypes.ContainerState
 }
 
 func (r DockerComposeBuildResult) TargetID() model.TargetID   { return r.id }
@@ -105,10 +109,11 @@ func (r DockerComposeBuildResult) BuildType() model.BuildType { return model.Bui
 func (r DockerComposeBuildResult) Facets() []model.Facet      { return nil }
 
 // For docker compose deploy targets.
-func NewDockerComposeDeployResult(id model.TargetID, containerID container.ID) DockerComposeBuildResult {
+func NewDockerComposeDeployResult(id model.TargetID, containerID container.ID, state *dockertypes.ContainerState) DockerComposeBuildResult {
 	return DockerComposeBuildResult{
 		id:                       id,
 		DockerComposeContainerID: containerID,
+		ContainerState:           state,
 	}
 }
 
@@ -270,8 +275,21 @@ type BuildState struct {
 	// This must be liberal: it's ok if this has too many files, but not ok if it has too few.
 	FilesChangedSet map[string]bool
 
-	// Whether there was a manual trigger
-	NeedsForceUpdate bool
+	// There are three kinds of triggers:
+	//
+	// 1) If a resource is in trigger_mode=TRIGGER_MODE_AUTO, then the resource auto-builds.
+	//    Pressing the trigger will always do a full image build.
+	//
+	// 2) If a resource is in trigger_mode=TRIGGER_MODE_MANUAL and there are no pending changes,
+	//    then pressing the trigger will do a full image build.
+	//
+	// 3) If a resource is in trigger_mode=TRIGGER_MODE_MANUAL, and there are
+	//    pending changes, then pressing the trigger will do a live_update (if one
+	//    is configured; otherwise, will do an image build as normal)
+	//
+	// This field indicates case 1 || case 2 -- i.e. that we should skip
+	// live_update, and force an image build (even if there are no changed files)
+	FullBuildTriggered bool
 
 	RunningContainers []ContainerInfo
 
@@ -300,8 +318,8 @@ func (b BuildState) WithRunningContainerError(err error) BuildState {
 	return b
 }
 
-func (b BuildState) WithNeedsForceUpdate(needsForceUpdate bool) BuildState {
-	b.NeedsForceUpdate = needsForceUpdate
+func (b BuildState) WithFullBuildTriggered(isImageBuildTrigger bool) BuildState {
+	b.FullBuildTriggered = isImageBuildTrigger
 	return b
 }
 
@@ -348,10 +366,19 @@ func (b BuildState) HasLastSuccessfulResult() bool {
 func (b BuildState) NeedsImageBuild() bool {
 	lastBuildWasImgBuild := b.LastSuccessfulResult != nil &&
 		b.LastSuccessfulResult.BuildType() == model.BuildTypeImage
-	return !lastBuildWasImgBuild || len(b.FilesChangedSet) > 0 || b.NeedsForceUpdate
+	return !lastBuildWasImgBuild || len(b.FilesChangedSet) > 0 || b.FullBuildTriggered
 }
 
 type BuildStateSet map[model.TargetID]BuildState
+
+func (set BuildStateSet) FullBuildTriggered() bool {
+	for _, state := range set {
+		if state.FullBuildTriggered {
+			return true
+		}
+	}
+	return false
+}
 
 func (set BuildStateSet) Empty() bool {
 	return len(set) == 0

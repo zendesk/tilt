@@ -17,15 +17,14 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/stretchr/testify/assert"
 
-	wmcontainer "github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/internal/docker"
-	"github.com/windmilleng/tilt/internal/dockerfile"
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/internal/minikube"
-	"github.com/windmilleng/tilt/internal/testutils"
-	"github.com/windmilleng/tilt/internal/testutils/bufsync"
-	"github.com/windmilleng/tilt/internal/testutils/tempdir"
-	"github.com/windmilleng/tilt/pkg/model"
+	wmcontainer "github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/docker"
+	"github.com/tilt-dev/tilt/internal/dockerfile"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/testutils"
+	"github.com/tilt-dev/tilt/internal/testutils/bufsync"
+	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 type dockerBuildFixture struct {
@@ -51,7 +50,7 @@ func newDockerBuildFixture(t testing.TB) *dockerBuildFixture {
 	ctx, _, _ := testutils.CtxAndAnalyticsForTest()
 	env := k8s.EnvGKE
 
-	dEnv := docker.ProvideClusterEnv(ctx, env, wmcontainer.RuntimeDocker, minikube.FakeClient{})
+	dEnv := docker.ProvideClusterEnv(ctx, env, wmcontainer.RuntimeDocker, k8s.FakeMinikube{})
 	dCli := docker.NewDockerClient(ctx, docker.Env(dEnv))
 	_, ok := dCli.(*docker.Cli)
 	// If it wasn't an actual Docker client, it's an exploding client
@@ -248,7 +247,7 @@ func containerConfigRunCmd(imgRef reference.NamedTagged, cmd model.Cmd) *contain
 	//
 	// https://github.com/opencontainers/image-spec/blob/master/config.md#properties
 	if cmd.Empty() {
-		config.Cmd = model.ToShellCmd("# NOTE(nick): a fake cmd").Argv
+		config.Cmd = model.ToUnixCmd("# NOTE(nick): a fake cmd").Argv
 	} else {
 		config.Cmd = cmd.Argv
 	}

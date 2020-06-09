@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/windmilleng/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/windmilleng/tilt/internal/k8s"
-	"github.com/windmilleng/tilt/pkg/logger"
-	"github.com/windmilleng/tilt/pkg/model"
-	"github.com/windmilleng/tilt/pkg/model/logstore"
+	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/pkg/model/logstore"
 )
 
 type ErrorAction struct {
@@ -125,13 +125,15 @@ type AnalyticsNudgeSurfacedAction struct{}
 
 func (AnalyticsNudgeSurfacedAction) Action() {}
 
-type TiltCloudUserLookedUpAction struct {
+type TiltCloudStatusReceivedAction struct {
 	Found                    bool
 	Username                 string
+	TeamName                 string
 	IsPostRegistrationLookup bool
+	SuggestedTiltVersion     string
 }
 
-func (TiltCloudUserLookedUpAction) Action() {}
+func (TiltCloudStatusReceivedAction) Action() {}
 
 type UserStartedTiltCloudRegistrationAction struct{}
 

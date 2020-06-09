@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,8 +13,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
-	"github.com/windmilleng/tilt/internal/dockerfile"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/build/moby"
+	"github.com/tilt-dev/tilt/internal/dockerfile"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 type ArchiveBuilder struct {
@@ -119,48 +122,38 @@ type archiveEntry struct {
 // tarPath writes the given source path into tarWriter at the given dest (recursively for directories).
 // e.g. tarring my_dir --> dest d: d/file_a, d/file_b
 // If source path does not exist, quietly skips it and returns no err
-func (a *ArchiveBuilder) entriesForPath(ctx context.Context, source, dest string) ([]archiveEntry, error) {
-	// (PL) convert \ to / in case of windows path
-	source = filepath.ToSlash(source)
-
-	sourceInfo, err := os.Stat(source)
+func (a *ArchiveBuilder) entriesForPath(ctx context.Context, localPath, containerPath string) ([]archiveEntry, error) {
+	localInfo, err := os.Stat(localPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "%s: stat", source)
+		return nil, errors.Wrapf(err, "%s: stat", localPath)
 	}
 
-	sourceIsDir := sourceInfo.IsDir()
-	if sourceIsDir {
+	localPathIsDir := localInfo.IsDir()
+	if localPathIsDir {
 		// Make sure we can trim this off filenames to get valid relative filepaths
-		if !strings.HasSuffix(source, "/") {
-			source += "/"
+		if !strings.HasSuffix(localPath, string(filepath.Separator)) {
+			localPath += string(filepath.Separator)
 		}
 	}
 
-	// (PL) convert \ to / in case of windows path
-	dest = filepath.ToSlash(dest)
-
-	// (PL) remove volume name + / so if we got a windows path C:\foo it becomes foo
-	dest = strings.TrimPrefix(dest, filepath.VolumeName(dest)+"/")
+	containerPath = strings.TrimPrefix(containerPath, "/")
 
 	result := make([]archiveEntry, 0)
-	err = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(localPath, func(curLocalPath string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrapf(err, "error walking to %s", path)
+			return errors.Wrapf(err, "error walking to %s", curLocalPath)
 		}
 
-		// (PL) convert \ to / in case of windows path
-		path = filepath.ToSlash(path)
-
-		matches, err := a.filter.Matches(path)
+		matches, err := a.filter.Matches(curLocalPath)
 		if err != nil {
 			return err
 		}
 		if matches {
-			if info.IsDir() && path != source {
-				shouldSkip, err := a.filter.MatchesEntireDir(path)
+			if info.IsDir() && curLocalPath != localPath {
+				shouldSkip, err := a.filter.MatchesEntireDir(curLocalPath)
 				if err != nil {
 					return err
 				}
@@ -174,7 +167,7 @@ func (a *ArchiveBuilder) entriesForPath(ctx context.Context, source, dest string
 		linkname := ""
 		if info.Mode()&os.ModeSymlink != 0 {
 			var err error
-			linkname, err = os.Readlink(path)
+			linkname, err = os.Readlink(curLocalPath)
 			if err != nil {
 				return err
 			}
@@ -182,27 +175,32 @@ func (a *ArchiveBuilder) entriesForPath(ctx context.Context, source, dest string
 
 		header, err := tar.FileInfoHeader(info, linkname)
 		if err != nil {
-			return errors.Wrapf(err, "%s: making header", path)
+			// Not all types of files are allowed in a tarball. That's OK.
+			// Mimic the Docker behavior and just skip the file.
+			logger.Get(ctx).Debugf("Skipping file %s: %v", curLocalPath, err)
+			return nil
 		}
+
+		header.Mode = int64(moby.ChmodTarEntry(os.FileMode(header.Mode)))
 
 		clearUIDAndGID(header)
 
-		if sourceIsDir {
+		if localPathIsDir {
 			// Name of file in tar should be relative to source directory...
-			tmp, err := filepath.Rel(source, path)
+			tmp, err := filepath.Rel(localPath, curLocalPath)
 			if err != nil {
-				return errors.Wrapf(err, "making rel path source:%s path:%s", source, path)
+				return errors.Wrapf(err, "making rel path source:%s path:%s", localPath, curLocalPath)
 			}
 			// ...and live inside `dest`
-			header.Name = filepath.Join(dest, tmp)
-		} else if strings.HasSuffix(dest, "/") {
-			header.Name = dest + filepath.Base(path)
+			header.Name = path.Join(containerPath, filepath.ToSlash(tmp))
+		} else if strings.HasSuffix(containerPath, "/") {
+			header.Name = containerPath + filepath.Base(curLocalPath)
 		} else {
-			header.Name = dest
+			header.Name = containerPath
 		}
-		header.Name = filepath.ToSlash(filepath.Clean(header.Name))
+		header.Name = path.Clean(header.Name)
 		result = append(result, archiveEntry{
-			path:   path,
+			path:   curLocalPath,
 			info:   info,
 			header: header,
 		})

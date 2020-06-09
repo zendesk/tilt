@@ -9,8 +9,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 
-	"github.com/windmilleng/tilt/internal/container"
-	"github.com/windmilleng/tilt/pkg/model"
+	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/pkg/model"
 )
 
 // A Cli implementation that lets us switch back and forth between a local
@@ -56,6 +56,9 @@ func (c *switchCli) BuilderVersion() types.BuilderVersion {
 }
 func (c *switchCli) ServerVersion() types.Version {
 	return c.client().ServerVersion()
+}
+func (c *switchCli) ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error) {
+	return c.client().ContainerInspect(ctx, containerID)
 }
 func (c *switchCli) ContainerList(ctx context.Context, options types.ContainerListOptions) ([]types.Container, error) {
 	return c.client().ContainerList(ctx, options)
