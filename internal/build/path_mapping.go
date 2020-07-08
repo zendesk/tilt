@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/tilt-dev/tilt/internal/ospath"
+	"github.com/tilt-dev/tilt/pkg/logger"
 	"github.com/tilt-dev/tilt/pkg/model"
 )
 
@@ -91,11 +92,11 @@ func FilterMappings(mappings []PathMapping, matcher model.PathMatcher) ([]PathMa
 // FilesToPathMappings converts a list of absolute local filepaths into pathMappings (i.e.
 // associates local filepaths with their syncs and destination paths), returning those
 // that it cannot associate with a sync.
-func FilesToPathMappings(files []string, syncs []model.Sync) ([]PathMapping, []string, error) {
+func FilesToPathMappings(ctx context.Context, files []string, syncs []model.Sync) ([]PathMapping, []string, error) {
 	pms := make([]PathMapping, 0, len(files))
 	pathsMatchingNoSync := []string{}
 	for _, f := range files {
-		pm, couldMap, err := fileToPathMapping(f, syncs)
+		pm, couldMap, err := fileToPathMapping(ctx, f, syncs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -110,12 +111,13 @@ func FilesToPathMappings(files []string, syncs []model.Sync) ([]PathMapping, []s
 	return pms, pathsMatchingNoSync, nil
 }
 
-func fileToPathMapping(file string, sync []model.Sync) (pm PathMapping, couldMap bool, err error) {
+func fileToPathMapping(ctx context.Context, file string, sync []model.Sync) (pm PathMapping, couldMap bool, err error) {
 	for _, s := range sync {
 		// Open Q: can you sync files inside of syncs?! o_0
 		// TODO(maia): are symlinks etc. gonna kick our asses here? If so, will
 		// need ospath.RealChild -- but then can't deal with deleted local files.
 		relPath, isChild := ospath.Child(s.LocalPath, file)
+		logger.Get(ctx).Infof("Checking if %s is child of %s: %t", file, s.LocalPath, isChild)
 		if isChild {
 			localPathIsFile, err := isFile(s.LocalPath)
 			if err != nil {

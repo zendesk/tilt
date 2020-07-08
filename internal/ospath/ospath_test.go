@@ -32,6 +32,10 @@ func TestChild(t *testing.T) {
 	f.assertChild("parent", "parent", ".")
 }
 
+func TestChildProblem(t *testing.T) {
+	Child("/Users/p2741134/Sources/gitlab.com/fab-web/fab-web/business/ng1-src/build", "/Users/p2741134/Sources/gitlab.com/fab-web/fab-web/business/ng1-src/build/business/ng1-src/build/version.txt")
+}
+
 func TestIsBrokenSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("windows does not support user-land symlinks")
