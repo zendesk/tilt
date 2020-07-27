@@ -136,6 +136,10 @@ func (d *naiveNotify) Errors() chan error {
 func (d *naiveNotify) loop() {
 	defer close(d.wrappedEvents)
 	for e := range d.events {
+		if e.Name == "" {
+			continue
+		}
+
 		if e.Op&fsnotify.Create != fsnotify.Create {
 			if d.shouldNotify(e.Name) {
 				d.wrappedEvents <- FileEvent{e.Name}
@@ -242,6 +246,17 @@ func (d *naiveNotify) add(path string) error {
 	return nil
 }
 
+type ResizableBuffer interface {
+	SetBufferSize(bufSize int)
+}
+
+func maybeSetSize(v interface{}) {
+	fswb, ok := v.(ResizableBuffer)
+	if ok {
+		fswb.SetBufferSize(1024)
+	}
+}
+
 func newWatcher(paths []string, ignore PathMatcher, l logger.Logger) (*naiveNotify, error) {
 	if ignore == nil {
 		return nil, fmt.Errorf("newWatcher: ignore is nil")
@@ -251,6 +266,7 @@ func newWatcher(paths []string, ignore PathMatcher, l logger.Logger) (*naiveNoti
 	if err != nil {
 		return nil, err
 	}
+	maybeSetSize(fsw)
 
 	err = fsw.SetRecursive()
 	isWatcherRecursive := err == nil

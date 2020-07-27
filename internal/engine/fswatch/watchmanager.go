@@ -262,6 +262,7 @@ func (w *WatchManager) dispatchFileChangesLoop(
 	for {
 		select {
 		case err, ok := <-watcher.Errors():
+			err = fmt.Errorf("WATCHER ERRORS %v", err)
 			if !ok {
 				return
 			}
@@ -274,6 +275,8 @@ func (w *WatchManager) dispatchFileChangesLoop(
 			return
 
 		case fsEvents, ok := <-eventsCh:
+			
+
 			if !ok {
 				return
 			}
