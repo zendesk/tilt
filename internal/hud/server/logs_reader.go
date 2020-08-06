@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
@@ -69,6 +71,9 @@ func (ls *LogStreamer) Handle(v proto_webview.View) error {
 	suppressPrefix := len(ls.resources) == 1
 	fromCheckpoint := logstore.Checkpoint(v.LogList.FromCheckpoint)
 	toCheckpoint := logstore.Checkpoint(v.LogList.ToCheckpoint)
+
+	fmt.Printf("FROM: %d; TO: %d\n", fromCheckpoint, toCheckpoint)
+	spew.Dump(v.LogList.Segments)
 
 	if fromCheckpoint == -1 {
 		// Server has no new logs to send

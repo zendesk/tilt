@@ -88,16 +88,19 @@ func TestLogStreamerWithFilteringHandlesCheckpoints(t *testing.T) {
 	// Check that the way we track internal vs. external checkpoints doesn't break
 	f := newFixture(t).withResourceNames("foo", "baz")
 	view := f.newViewWithLogsForManifests(alphabet[:4], []string{"foo", "", "foo", "bar"})
+	fmt.Println("aaa")
 	f.handle(view)
 
 	view = f.newViewWithLogsForManifests(alphabet[4:8], []string{"bar", "bar", "", "bar"})
-	view.LogList.FromCheckpoint = 4
-	view.LogList.ToCheckpoint = 8
+	view.LogList.FromCheckpoint = view.LogList.ToCheckpoint
+	view.LogList.ToCheckpoint = view.LogList.FromCheckpoint + int32(len(view.LogList.Segments))
+	fmt.Println("bbb")
 	f.handle(view)
 
 	view = f.newViewWithLogsForManifests(alphabet[8:12], []string{"", "foo", "bar", "baz"})
-	view.LogList.FromCheckpoint = 8
-	view.LogList.ToCheckpoint = 12
+	view.LogList.FromCheckpoint = view.LogList.ToCheckpoint
+	view.LogList.ToCheckpoint = view.LogList.FromCheckpoint + int32(len(view.LogList.Segments))
+	fmt.Println("ccc")
 	f.handle(view)
 
 	expected := f.expectedLinesWithPrefixes(
@@ -160,6 +163,7 @@ func (f *fixture) newViewWithLogsForManifests(messages []string, manifestNames [
 }
 
 func (f *fixture) addLogs(view proto_webview.View, messages []string, manifestNames []string) proto_webview.View {
+	view.LogList.FromCheckpoint = view.LogList.ToCheckpoint
 	newSegs := f.segments(messages, manifestNames)
 	view.LogList.Segments = append(view.LogList.Segments, newSegs...)
 	view.LogList.ToCheckpoint = int32(len(view.LogList.Segments))

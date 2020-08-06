@@ -216,11 +216,14 @@ func (s *LogStore) prevIndexMatchingManifests(index int, mns model.ManifestNameS
 // (If mns is empty, all logs match.)
 // If no valid i found, return -1
 func (s *LogStore) nextIndexMatchingManifests(index int, mns model.ManifestNameSet) int {
+	fmt.Printf("starting at index %d; there are %d segs\n\t(manifests: %v)\n",
+		index, len(s.segments), mns)
 	if len(mns) == 0 {
 		return index
 	}
 
 	for i := index; index < len(s.segments); i++ {
+		fmt.Printf("i = %d\n", i)
 		span, ok := s.spans[s.segments[i].SpanID]
 		if !ok {
 			continue
@@ -229,7 +232,9 @@ func (s *LogStore) nextIndexMatchingManifests(index int, mns model.ManifestNameS
 		if mns[mn] {
 			return i
 		}
+		fmt.Printf("no match for mn %s, incrementing\n", mn)
 	}
+	fmt.Println("ok done")
 	return -1
 }
 
