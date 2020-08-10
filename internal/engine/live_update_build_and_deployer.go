@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/docker/distribution/reference"
 	"github.com/opentracing/opentracing-go"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/tilt-dev/tilt/internal/ospath"
 
-	"github.com/tilt-dev/tilt/internal/analytics"
 	"github.com/tilt-dev/tilt/internal/engine/buildcontrol"
 
 	"github.com/tilt-dev/tilt/internal/container"
@@ -62,6 +60,8 @@ type liveUpdInfo struct {
 }
 
 func (lui liveUpdInfo) Empty() bool { return lui.iTarget.ID() == model.ImageTarget{}.ID() }
+
+func (lubad *LiveUpdateBuildAndDeployer) UpdateType() string { return "container" }
 
 func (lubad *LiveUpdateBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RStore, specs []model.TargetSpec, stateSet store.BuildStateSet) (store.BuildResultSet, error) {
 	liveUpdateStateSet, err := extractImageTargetsForLiveUpdates(specs, stateSet)
@@ -120,11 +120,6 @@ func (lubad *LiveUpdateBuildAndDeployer) buildAndDeploy(ctx context.Context, ps 
 	span, ctx := opentracing.StartSpanFromContext(ctx, "LiveUpdateBuildAndDeployer-buildAndDeploy")
 	span.SetTag("target", iTarget.Refs.ConfigurationRef.String())
 	defer span.Finish()
-
-	startTime := time.Now()
-	defer func() {
-		analytics.Get(ctx).Timer("build.container", time.Since(startTime), nil)
-	}()
 
 	l := logger.Get(ctx)
 	cIDStr := container.ShortStrs(store.IDsForInfos(state.RunningContainers))

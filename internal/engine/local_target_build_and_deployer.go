@@ -23,6 +23,8 @@ func NewLocalTargetBuildAndDeployer(c build.Clock) *LocalTargetBuildAndDeployer 
 	return &LocalTargetBuildAndDeployer{clock: c}
 }
 
+func (bd *LocalTargetBuildAndDeployer) UpdateType() string { return "local" }
+
 func (bd *LocalTargetBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RStore, specs []model.TargetSpec, stateSet store.BuildStateSet) (resultSet store.BuildResultSet, err error) {
 	targets := bd.extract(specs)
 	if len(targets) != 1 {

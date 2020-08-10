@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/trace"
+
+	"github.com/tilt-dev/tilt/internal/analytics"
 
 	"github.com/tilt-dev/tilt/internal/container"
 	"github.com/tilt-dev/tilt/internal/engine/buildcontrol"
@@ -16,8 +19,9 @@ import (
 	"github.com/tilt-dev/tilt/pkg/model"
 )
 
+// BuildAndDeploy builds and deployed the specified target specs.
 type BuildAndDeployer interface {
-	// BuildAndDeploy builds and deployed the specified target specs.
+	UpdateType() string
 
 	// Returns a BuildResultSet containing output (build result and associated
 	// file changes) for each target built in this call. The BuildResultSet only
@@ -62,6 +66,8 @@ func NewCompositeBuildAndDeployer(builders BuildOrder, tracer trace.Tracer) *Com
 	return &CompositeBuildAndDeployer{builders: builders, tracer: tracer}
 }
 
+func (composite *CompositeBuildAndDeployer) UpdateType() string { return "composite" }
+
 func (composite *CompositeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RStore, specs []model.TargetSpec, currentState store.BuildStateSet) (store.BuildResultSet, error) {
 	ctx, span := composite.tracer.Start(ctx, "update")
 	defer span.End()
@@ -79,13 +85,9 @@ func (composite *CompositeBuildAndDeployer) BuildAndDeploy(ctx context.Context, 
 		buildType := fmt.Sprintf("%T", builder)
 		logger.Get(ctx).Debugf("Trying to build and deploy with %s", buildType)
 
-		br, err := builder.BuildAndDeploy(ctx, st, specs, currentState)
+		br, err := composite.buildAndDeployWithBuilder(ctx, builder, span, st, specs, currentState)
 		if err == nil {
-			buildTypes := br.BuildTypes()
-			for _, bt := range buildTypes {
-				span.SetAttributes(core.KeyValue{Key: core.Key(fmt.Sprintf("buildType.%s", bt)), Value: core.Bool(true)})
-			}
-			return br, nil
+			return br, err
 		}
 
 		if !buildcontrol.ShouldFallBackForErr(err) {
@@ -119,6 +121,26 @@ func (composite *CompositeBuildAndDeployer) BuildAndDeploy(ctx context.Context, 
 		return store.BuildResultSet{}, lastUnexpectedErr
 	}
 	return store.BuildResultSet{}, lastErr
+}
+
+func (composite *CompositeBuildAndDeployer) buildAndDeployWithBuilder(ctx context.Context, builder BuildAndDeployer,
+	span trace.Span, st store.RStore, specs []model.TargetSpec, currentState store.BuildStateSet) (br store.BuildResultSet, err error) {
+	startTime := time.Now()
+	defer func() {
+		analytics.Get(ctx).Timer("update", time.Since(startTime), map[string]string{
+			"type":     builder.UpdateType(),
+			"hasError": fmt.Sprintf("%t", err != nil),
+			"fellBack": fmt.Sprintf("%t", err != nil && buildcontrol.IsRedirectError(err)),
+		})
+	}()
+	br, err = builder.BuildAndDeploy(ctx, st, specs, currentState)
+	if err == nil {
+		buildTypes := br.BuildTypes()
+		for _, bt := range buildTypes {
+			span.SetAttributes(core.KeyValue{Key: core.Key(fmt.Sprintf("buildType.%s", bt)), Value: core.Bool(true)})
+		}
+	}
+	return br, err
 }
 
 func DefaultBuildOrder(lubad *LiveUpdateBuildAndDeployer, ibad *ImageBuildAndDeployer, dcbad *DockerComposeBuildAndDeployer,

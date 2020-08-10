@@ -56,6 +56,8 @@ func (bd *DockerComposeBuildAndDeployer) extract(specs []model.TargetSpec) ([]mo
 	return iTargets, dcTargets
 }
 
+func (bd *DockerComposeBuildAndDeployer) UpdateType() string { return "docker-compose" }
+
 func (bd *DockerComposeBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RStore, specs []model.TargetSpec, currentState store.BuildStateSet) (store.BuildResultSet, error) {
 	iTargets, dcTargets := bd.extract(specs)
 	if len(dcTargets) != 1 {

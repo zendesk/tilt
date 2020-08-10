@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/docker/distribution/reference"
 	"github.com/opentracing/opentracing-go"
@@ -101,6 +100,7 @@ func NewImageBuildAndDeployer(
 func (ibd *ImageBuildAndDeployer) SetInjectSynclet(inject bool) {
 	ibd.injectSynclet = inject
 }
+func (ibd *ImageBuildAndDeployer) UpdateType() string { return "image" }
 
 func (ibd *ImageBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.RStore, specs []model.TargetSpec, stateSet store.BuildStateSet) (resultSet store.BuildResultSet, err error) {
 	iTargets, kTargets := extractImageAndK8sTargets(specs)
@@ -112,12 +112,6 @@ func (ibd *ImageBuildAndDeployer) BuildAndDeploy(ctx context.Context, st store.R
 	span, ctx := opentracing.StartSpanFromContext(ctx, "daemon-ImageBuildAndDeployer-BuildAndDeploy")
 	span.SetTag("target", kTarget.Name)
 	defer span.Finish()
-
-	startTime := time.Now()
-	defer func() {
-		// todo: image tag?
-		ibd.analytics.Timer("build.image", time.Since(startTime), nil)
-	}()
 
 	q, err := buildcontrol.NewImageTargetQueue(ctx, iTargets, stateSet, ibd.ib.CanReuseRef)
 	if err != nil {
