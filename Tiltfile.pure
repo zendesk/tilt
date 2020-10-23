@@ -1,0 +1,1 @@
+local_resource('log', 'while true; do echo log; sleep 1; done')

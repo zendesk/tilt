@@ -169,6 +169,7 @@ class SidebarResources extends PureComponent<SidebarProps> {
   }
 
   render() {
+    console.log("rendering SidebarResources")
     let pb = this.props.pathBuilder
 
     let allLink =
