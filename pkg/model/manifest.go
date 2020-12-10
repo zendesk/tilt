@@ -111,6 +111,16 @@ func (m Manifest) ImageTargetWithID(id TargetID) ImageTarget {
 
 type DockerBuildArgs map[string]string
 
+func (m Manifest) TestTarget() TestTarget {
+	ret, _ := m.DeployTarget.(TestTarget)
+	return ret
+}
+
+func (m Manifest) IsTest() bool {
+	_, ok := m.DeployTarget.(TestTarget)
+	return ok
+}
+
 func (m Manifest) LocalTarget() LocalTarget {
 	ret, _ := m.DeployTarget.(LocalTarget)
 	return ret

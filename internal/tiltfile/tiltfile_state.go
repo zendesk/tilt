@@ -37,6 +37,7 @@ import (
 	"github.com/tilt-dev/tilt/internal/tiltfile/starkit"
 	"github.com/tilt-dev/tilt/internal/tiltfile/starlarkstruct"
 	"github.com/tilt-dev/tilt/internal/tiltfile/telemetry"
+	"github.com/tilt-dev/tilt/internal/tiltfile/tests"
 	"github.com/tilt-dev/tilt/internal/tiltfile/tiltextension"
 	"github.com/tilt-dev/tilt/internal/tiltfile/updatesettings"
 	"github.com/tilt-dev/tilt/internal/tiltfile/version"
@@ -205,6 +206,7 @@ func (s *tiltfileState) loadManifests(absFilename string, userConfigState model.
 		loaddynamic.NewExtension(),
 		tiltextension.NewExtension(fetcher, tiltextension.NewLocalStore(filepath.Dir(absFilename))),
 		links.NewExtension(),
+		tests.NewExtension(),
 	)
 	if err != nil {
 		return nil, result, starkit.UnpackBacktrace(err)
