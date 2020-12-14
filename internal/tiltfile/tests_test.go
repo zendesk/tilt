@@ -27,7 +27,7 @@ t = test("test-foo", "echo hi")
 	testTarg := foo.TestTarget()
 	require.Equal(t, "test-foo", testTarg.Name.String(), "test target name")
 	require.Equal(t, model.ToHostCmd("echo hi"), testTarg.Cmd, "test target cmd")
-	require.Equal(t, ".", testTarg.Environment, "default env is .")
+	require.Equal(t, f.Path(), testTarg.Environment, "default env is Tiltfile cwd")
 	require.Equal(t, model.TestTypeLocal, testTarg.Type, "default type is TestTypeLocal")
 }
 

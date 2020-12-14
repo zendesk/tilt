@@ -104,6 +104,31 @@ func TestExtractOneLocalTarget(t *testing.T) {
 	assert.Contains(t, f.out.String(), "hello world", "expect cmd stdout in logs")
 }
 
+func TestHACKExtractTestTarget(t *testing.T) {
+	f := newLTFixture(t)
+	defer f.TearDown()
+
+	targ := model.TestTarget{
+		Name:        "bloop",
+		Cmd:         model.ToHostCmd("echo hello hacks"),
+		Environment: "",
+		Type:        model.TestTypeLocal,
+		Workdir:     f.Path(),
+	}
+
+	// Even if there are multiple other targets, should correctly extract and run the one LocalTarget
+	specs := []model.TargetSpec{
+		targ, model.ImageTarget{}, model.K8sTarget{},
+	}
+
+	res, err := f.ltbad.BuildAndDeploy(f.ctx, f.st, specs, store.BuildStateSet{})
+	require.Nil(t, err)
+
+	assert.Equal(t, targ.ID(), res[targ.ID()].TargetID())
+
+	assert.Contains(t, f.out.String(), "hello hacks", "expect cmd stdout in logs")
+}
+
 func TestFailedCommand(t *testing.T) {
 	f := newLTFixture(t)
 	defer f.TearDown()

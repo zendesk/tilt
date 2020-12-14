@@ -89,6 +89,19 @@ func (bd *LocalTargetBuildAndDeployer) extract(specs []model.TargetSpec) []model
 		switch s := s.(type) {
 		case model.LocalTarget:
 			targs = append(targs, s)
+		case model.TestTarget:
+			if s.Type == model.TestTypeLocal {
+				// 🚨 THIS IS GROSS: shove the relevant TestTarget fields into
+				// a Local Target so we don't need to change build logic at all
+				targs = append(targs, model.LocalTarget{
+					Name:          s.Name,
+					UpdateCmd:     s.Cmd,
+					ServeCmd:      model.Cmd{},
+					Workdir:       s.Environment,
+					Deps:          s.Deps,
+					AllowParallel: true,
+				})
+			}
 		}
 	}
 	return targs

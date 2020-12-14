@@ -33,7 +33,7 @@ func (e Extension) OnStart(env *starkit.Environment) error {
 
 func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var name string
-	env := "."
+	envVal := starlark.String(".")     // default is pwd
 	typ := string(model.TestTypeLocal) // this is wrong, we want a constant like TRIGGER_MODE_LOCAL
 	var cmdVal, cmdBatVal starlark.Value
 	deps := value.NewLocalPathListUnpacker(thread)
@@ -45,7 +45,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		"cmd", &cmdVal,
 		"cmd_bat?", &cmdBatVal,
 		"deps?", &deps,
-		"env?", &env,
+		"env?", &envVal,
 		"type?", &typ,
 		"tags?", &tagsVal,
 		"timeout?", &timeout,
@@ -67,25 +67,30 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		return nil, err
 	}
 
+	var env string
+	// If it's a local test, env is a path, so make sure it's an abs path
+	if testType == model.TestTypeLocal {
+		env, err = value.ValueToAbsPath(thread, envVal)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// otherwise it's a cluster test, env is just itself as a plain string
+		env = string(envVal)
+	}
+
 	tags, err := value.SequenceToStringSlice(tagsVal)
 	if err != nil {
 		return nil, errors.Wrapf(err, "%s: tags", fn.Name())
 	}
 
-	// TODO: repos for apths? (see tiltfile/local_resource.go: 62)
+	// TODO: repos for paths? (see tiltfile/local_resource.go: 62)
 
 	// TODO: set manifest-level properties like triggermode
 
-	t := model.TestTarget{
-		Name:          model.TargetName(name),
-		Cmd:           cmd,
-		Environment:   env,
-		Type:          testType,
-		Tags:          tags,
-		Deps:          deps.Value,
-		Timeout:       timeout,
-		AllowParallel: true, // TODO: can set from Tiltfile, right now this is just a default
-	}
+	// TODO: can set AllowParallel from Tiltfile (or just remove it?)
+
+	t := model.NewTestTarget(model.TargetName(name), cmd, env, testType, tags, deps.Value, timeout)
 
 	err = starkit.SetState(thread, func(tests []model.TestTarget) []model.TestTarget {
 		tests = append(tests, t)

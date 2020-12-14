@@ -154,6 +154,8 @@ func buildTargets(manifest model.Manifest) []model.TargetSpec {
 		result = append(result, manifest.K8sTarget())
 	} else if manifest.IsLocal() {
 		result = append(result, manifest.LocalTarget())
+	} else if manifest.IsTest() {
+		result = append(result, manifest.TestTarget())
 	}
 
 	return result
