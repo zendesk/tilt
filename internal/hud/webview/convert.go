@@ -243,7 +243,9 @@ func protoPopulateResourceInfoView(mt *store.ManifestTarget, r *proto_webview.Re
 		r.RuntimeStatus = string(dcState.RuntimeStatus())
 		return nil
 	}
-	if mt.Manifest.IsLocal() {
+	// TODO: Test Targets should probably have their own block of this conversion code
+	//   but for now, assume they have all the same sorts of state
+	if mt.Manifest.IsLocal() || mt.Manifest.IsTest() && mt.Manifest.TestTarget().Type == model.TestTypeLocal {
 		lState := mt.State.LocalRuntimeState()
 		r.LocalResourceInfo = &proto_webview.LocalResourceInfo{Pid: int64(lState.PID)}
 		r.RuntimeStatus = string(lState.RuntimeStatus())

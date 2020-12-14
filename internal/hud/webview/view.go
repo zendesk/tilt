@@ -84,7 +84,10 @@ func targetSpecToProto(spec model.TargetSpec) (proto_webview.TargetSpec, error) 
 			Id:   typ.ID().String(),
 			Type: proto_webview.TargetType_TARGET_TYPE_K8S,
 		}, nil
-	case model.LocalTarget:
+		// in future TestTarget will be its own type but this is easier than
+		// changing the protobufs (and we need to do SOMETHING with the TestTarget
+		// or else the code throws an error below)
+	case model.LocalTarget, model.TestTarget:
 		return proto_webview.TargetSpec{
 			Id:   typ.ID().String(),
 			Type: proto_webview.TargetType_TARGET_TYPE_LOCAL,

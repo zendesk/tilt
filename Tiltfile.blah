@@ -1,1 +1,7 @@
+# run with: `tilt up -f Tiltfile.blah`
+
 test('hello', 'echo hi there', deps='.')
+
+# here's a red test so we can see what it looks like when
+# a test fails (`false` just exits with code 1)
+test('red-test', 'false', deps='.')

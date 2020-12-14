@@ -349,6 +349,9 @@ func TestSpecs(t *testing.T) {
 	mLiveUpd := model.Manifest{Name: "liveUpd"}.WithImageTarget(luTarg).WithDeployTarget(model.K8sTarget{})
 	mLocal := model.Manifest{Name: "local"}.WithDeployTarget(model.LocalTarget{})
 
+	// Make sure we can webview-ify test targets w/o anything breaking
+	mTest := model.Manifest{Name: "test"}.WithDeployTarget(model.TestTarget{Type: model.TestTypeLocal})
+
 	expected := []struct {
 		name          string
 		targetTypes   []proto_webview.TargetType
@@ -357,11 +360,12 @@ func TestSpecs(t *testing.T) {
 		{"noLiveUpd", []proto_webview.TargetType{proto_webview.TargetType_TARGET_TYPE_IMAGE, proto_webview.TargetType_TARGET_TYPE_K8S}, false},
 		{"liveUpd", []proto_webview.TargetType{proto_webview.TargetType_TARGET_TYPE_IMAGE, proto_webview.TargetType_TARGET_TYPE_K8S}, true},
 		{"local", []proto_webview.TargetType{proto_webview.TargetType_TARGET_TYPE_LOCAL}, false},
+		{"test", []proto_webview.TargetType{proto_webview.TargetType_TARGET_TYPE_LOCAL}, false},
 	}
-	state := newState([]model.Manifest{mNoLiveUpd, mLiveUpd, mLocal})
+	state := newState([]model.Manifest{mNoLiveUpd, mLiveUpd, mLocal, mTest})
 	v := stateToProtoView(t, *state)
 
-	require.Equal(t, 4, len(v.Resources))
+	require.Equal(t, 5, len(v.Resources))
 	for i, r := range v.Resources {
 		if i == 0 {
 			continue // skip Tiltfile
