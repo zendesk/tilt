@@ -58,7 +58,7 @@ t = test("test-foo", "echo hi",
 	require.Equal(t, "gcr.io/myimg", testTarg.Environment, "test target env")
 	require.Equal(t, model.TestTypeCluster, testTarg.Type, "test target type")
 	require.Equal(t, []string{"beep", "boop"}, testTarg.Tags, "test target tags")
-	require.Equal(t, []string{"a.txt", "b.txt"}, testTarg.Deps, "test target deps")
+	require.Equal(t, f.JoinPaths([]string{"a.txt", "b.txt"}), testTarg.Deps, "test target deps")
 }
 
 // TODO: ACTUAL TESTS, YOU NERDS

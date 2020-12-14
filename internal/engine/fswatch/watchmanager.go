@@ -49,6 +49,7 @@ type WatchableTarget interface {
 
 var _ WatchableTarget = model.ImageTarget{}
 var _ WatchableTarget = model.LocalTarget{}
+var _ WatchableTarget = model.TestTarget{}
 
 func WatchableTargetsForManifests(manifests []model.Manifest) []WatchableTarget {
 	var watchable []WatchableTarget

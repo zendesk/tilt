@@ -155,6 +155,9 @@ func (e *EngineState) ManifestNamesForTargetID(id model.TargetID) []model.Manife
 		if manifest.LocalTarget().ID() == id {
 			result = append(result, mn)
 		}
+		if manifest.TestTarget().ID() == id {
+			result = append(result, mn)
+		}
 	}
 	return result
 }

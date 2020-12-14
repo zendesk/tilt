@@ -37,6 +37,34 @@ func TestWatchManager_basic(t *testing.T) {
 	f.AssertActionsContain(actions, "foo.txt")
 }
 
+// TODO: 🤖 this isn't actually useful except as we're writing the code,
+//   probs remove it
+func TestWatchManager_TestTargetDir(t *testing.T) {
+	f := newWMFixture(t)
+	defer f.TearDown()
+
+	target := model.TestTarget{Name: "foo", Deps: []string{"."}}
+	f.SetManifestTarget(target)
+
+	f.ChangeFile(t, "foo.txt")
+
+	actions := f.Stop(t)
+	f.AssertActionsContain(actions, "foo.txt")
+}
+
+// func TestWatchManager_TestTargetFile(t *testing.T) {
+// 	f := newWMFixture(t)
+// 	defer f.TearDown()
+//
+// 	target := model.TestTarget{Name: "foo", Deps: f.JoinPaths([]string{"foo.txt", "bar.txt"})}
+// 	f.SetManifestTarget(target)
+//
+// 	f.ChangeFile(t, "foo.txt")
+//
+// 	actions := f.Stop(t)
+// 	f.AssertActionsContain(actions, "foo.txt")
+// }
+
 func TestWatchManager_disabledOnCIMode(t *testing.T) {
 	f := newWMFixture(t)
 	defer f.TearDown()
@@ -318,8 +346,8 @@ func (f *wmFixture) Stop(t *testing.T) []TargetFilesChangedAction {
 	return actions
 }
 
-func (f *wmFixture) SetManifestTarget(target model.DockerComposeTarget) {
-	m := model.Manifest{Name: "foo"}.WithDeployTarget(target)
+func (f *wmFixture) SetManifestTarget(deployTarget model.TargetSpec) {
+	m := model.Manifest{Name: "foo"}.WithDeployTarget(deployTarget)
 	mt := store.ManifestTarget{Manifest: m}
 	state := f.store.LockMutableStateForTesting()
 	state.UpsertManifestTarget(&mt)

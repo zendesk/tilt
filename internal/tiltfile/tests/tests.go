@@ -36,14 +36,15 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 	env := "."
 	typ := string(model.TestTypeLocal) // this is wrong, we want a constant like TRIGGER_MODE_LOCAL
 	var cmdVal, cmdBatVal starlark.Value
-	var tagsVal, depsVal starlark.Sequence
+	deps := value.NewLocalPathListUnpacker(thread)
+	var tagsVal starlark.Sequence
 	var timeout int
 
 	if err := starkit.UnpackArgs(thread, fn.Name(), args, kwargs,
 		"name", &name,
 		"cmd", &cmdVal,
 		"cmd_bat?", &cmdBatVal,
-		"deps?", &depsVal,
+		"deps?", &deps,
 		"env?", &env,
 		"type?", &typ,
 		"tags?", &tagsVal,
@@ -71,10 +72,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		return nil, errors.Wrapf(err, "%s: tags", fn.Name())
 	}
 
-	deps, err := value.SequenceToStringSlice(depsVal)
-	if err != nil {
-		return nil, errors.Wrapf(err, "%s: deps", fn.Name())
-	}
+	// TODO: repos for apths? (see tiltfile/local_resource.go: 62)
 
 	// TODO: set manifest-level properties like triggermode
 
@@ -84,7 +82,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		Environment:   env,
 		Type:          testType,
 		Tags:          tags,
-		Deps:          deps,
+		Deps:          deps.Value,
 		Timeout:       timeout,
 		AllowParallel: true, // TODO: can set from Tiltfile, right now this is just a default
 	}

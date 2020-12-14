@@ -96,6 +96,14 @@ func (tt TestTarget) Dependencies() []string {
 	return sliceutils.DedupedAndSorted(tt.Deps)
 }
 
+func (tt TestTarget) LocalRepos() []LocalGitRepo {
+	return nil
+}
+
+func (tt TestTarget) Dockerignores() []Dockerignore {
+	return nil
+}
+
 func (tt TestTarget) IgnoredLocalDirectories() []string {
 	return nil
 }
