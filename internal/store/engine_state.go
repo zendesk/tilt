@@ -493,7 +493,7 @@ func newManifestState(m model.Manifest) *ManifestState {
 
 	if m.IsK8s() {
 		ms.RuntimeState = NewK8sRuntimeState(m)
-	} else if m.IsLocal() {
+	} else if m.IsLocal() || m.IsTest() { // 🚨 hack alert!
 		ms.RuntimeState = LocalRuntimeState{}
 	}
 

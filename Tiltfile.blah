@@ -1,7 +1,8 @@
 # run with: `tilt up -f Tiltfile.blah`
 
-test('hello', 'echo hi there', deps='.')
+test('hello', 'echo hi there', deps='./mytest')
 
+local_resource('goodbye', 'echo bye nerds', deps='./mylocal')
 # here's a red test so we can see what it looks like when
 # a test fails (`false` just exits with code 1)
-test('red-test', 'false', deps='.', trigger_mode=TRIGGER_MODE_MANUAL)
+# test('red-test', 'false', deps='.', trigger_mode=TRIGGER_MODE_MANUAL)

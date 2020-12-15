@@ -39,7 +39,7 @@ func NextTargetToBuild(state store.EngineState) (*store.ManifestTarget, HoldSet)
 	// Uncategorized YAML might contain namespaces or volumes that
 	// we don't want to parallelize.
 	//
-	// TODO(nick): Long-term, we should try to infer dependencies between Kuberentes
+	// TODO(nick): Long-term, we should try to infer dependencies between Kubernetes
 	// resources. A general library might make sense.
 	if IsBuildingUncategorizedYAML(state) {
 		HoldK8sTargets(targets, holds)

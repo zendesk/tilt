@@ -457,7 +457,7 @@ func handleBuildCompleted(ctx context.Context, engineState *store.EngineState, c
 		ms.RuntimeState = state
 	}
 
-	if mt.Manifest.IsLocal() {
+	if mt.Manifest.IsLocal() || mt.Manifest.IsTest() { // 🚨 hack alert!
 		lrs := ms.LocalRuntimeState()
 		lrs.Status = model.RuntimeStatusNotApplicable
 		if err == nil {
