@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/tilt-dev/tilt/internal/tiltfile/triggermode"
+
 	"github.com/tilt-dev/tilt/pkg/model"
 )
 
@@ -632,17 +634,17 @@ default_registry('bar.com')
 func TestTriggerModeDC(t *testing.T) {
 	for _, testCase := range []struct {
 		name                string
-		globalSetting       triggerMode
-		dcResourceSetting   triggerMode
+		globalSetting       triggermode.TriggerMode
+		dcResourceSetting   triggermode.TriggerMode
 		expectedTriggerMode model.TriggerMode
 	}{
-		{"default", TriggerModeUnset, TriggerModeUnset, model.TriggerModeAuto},
-		{"explicit global auto", TriggerModeAuto, TriggerModeUnset, model.TriggerModeAuto},
-		{"explicit global manual", TriggerModeManual, TriggerModeUnset, model.TriggerModeManualAfterInitial},
-		{"dc auto", TriggerModeUnset, TriggerModeUnset, model.TriggerModeAuto},
-		{"dc manual", TriggerModeUnset, TriggerModeManual, model.TriggerModeManualAfterInitial},
-		{"dc override auto", TriggerModeManual, TriggerModeAuto, model.TriggerModeAuto},
-		{"dc override manual", TriggerModeAuto, TriggerModeManual, model.TriggerModeManualAfterInitial},
+		{"default", triggermode.ModeUnset, triggermode.ModeUnset, model.TriggerModeAuto},
+		{"explicit global auto", triggermode.ModeAuto, triggermode.ModeUnset, model.TriggerModeAuto},
+		{"explicit global manual", triggermode.ModeManual, triggermode.ModeUnset, model.TriggerModeManualAfterInitial},
+		{"dc auto", triggermode.ModeUnset, triggermode.ModeUnset, model.TriggerModeAuto},
+		{"dc manual", triggermode.ModeUnset, triggermode.ModeManual, model.TriggerModeManualAfterInitial},
+		{"dc override auto", triggermode.ModeManual, triggermode.ModeAuto, model.TriggerModeAuto},
+		{"dc override manual", triggermode.ModeAuto, triggermode.ModeManual, model.TriggerModeManualAfterInitial},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -653,21 +655,21 @@ func TestTriggerModeDC(t *testing.T) {
 
 			var globalTriggerModeDirective string
 			switch testCase.globalSetting {
-			case TriggerModeUnset:
+			case triggermode.ModeUnset:
 				globalTriggerModeDirective = ""
-			case TriggerModeManual:
+			case triggermode.ModeManual:
 				globalTriggerModeDirective = "trigger_mode(TRIGGER_MODE_MANUAL)"
-			case TriggerModeAuto:
+			case triggermode.ModeAuto:
 				globalTriggerModeDirective = "trigger_mode(TRIGGER_MODE_AUTO)"
 			}
 
 			var dcResourceDirective string
 			switch testCase.dcResourceSetting {
-			case TriggerModeUnset:
+			case triggermode.ModeUnset:
 				dcResourceDirective = ""
-			case TriggerModeManual:
+			case triggermode.ModeManual:
 				dcResourceDirective = "dc_resource('foo', trigger_mode=TRIGGER_MODE_MANUAL)"
-			case TriggerModeAuto:
+			case triggermode.ModeAuto:
 				dcResourceDirective = "dc_resource('foo', trigger_mode=TRIGGER_MODE_AUTO)"
 			}
 

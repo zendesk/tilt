@@ -12,6 +12,8 @@ import (
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 
+	"github.com/tilt-dev/tilt/internal/tiltfile/triggermode"
+
 	links "github.com/tilt-dev/tilt/internal/tiltfile/links"
 
 	"github.com/tilt-dev/tilt/internal/container"
@@ -110,8 +112,8 @@ type tiltfileState struct {
 	unconsumedLiveUpdateSteps map[string]liveUpdateStep
 
 	// global trigger mode -- will be the default for all manifests (tho user can still explicitly set
-	// triggerMode for a specific manifest)
-	triggerMode triggerMode
+	// TriggerMode for a specific manifest)
+	triggerMode triggermode.TriggerMode
 
 	// for error reporting in case it's called twice
 	triggerModeCallPosition syntax.Position
@@ -154,7 +156,7 @@ func newTiltfileState(
 		unconsumedLiveUpdateSteps: make(map[string]liveUpdateStep),
 		k8sResourceOptions:        make(map[string]k8sResourceOptions),
 		localResources:            []localResource{},
-		triggerMode:               TriggerModeAuto,
+		triggerMode:               triggermode.ModeAuto,
 		features:                  features,
 		secretSettings:            model.DefaultSecretSettings(),
 		k8sKinds:                  make(map[k8s.ObjectSelector]*tiltfile_k8s.KindInfo),
@@ -260,6 +262,17 @@ to your Tiltfile. Otherwise, switch k8s contexts and restart Tilt.`, kubeContext
 	}
 	manifests = append(manifests, localManifests...)
 
+	// 🤖 Idk if we want to store []model.Test on the extension state and convert them here,
+	// or find a way to store the test manifests directly on the state, or not use extension state
+	// and just stick the test manifests directly on the TiltfileState (see tiltfilestate.LocalResource)...?
+	// Idk this is fine for now.
+	testManifests, err := s.translateTest(result)
+
+	if err != nil {
+		return nil, result, err
+	}
+	manifests = append(manifests, testManifests...)
+
 	configSettings, _ := config.GetState(result)
 	manifests, err = configSettings.EnabledResources(manifests)
 	if err != nil {
@@ -319,9 +332,6 @@ const (
 	restartContainerN = "restart_container"
 
 	// trigger mode
-	triggerModeN       = "trigger_mode"
-	triggerModeAutoN   = "TRIGGER_MODE_AUTO"
-	triggerModeManualN = "TRIGGER_MODE_MANUAL"
 
 	// feature flags
 	enableFeatureN  = "enable_feature"
@@ -334,66 +344,29 @@ const (
 	setTeamN = "set_team"
 )
 
-type triggerMode int
-
-func (m triggerMode) String() string {
-	switch m {
-	case TriggerModeAuto:
-		return triggerModeAutoN
-	case TriggerModeManual:
-		return triggerModeManualN
-	default:
-		return fmt.Sprintf("unknown trigger mode with value %d", m)
-	}
-}
-
-func (t triggerMode) Type() string {
-	return "TriggerMode"
-}
-
-func (t triggerMode) Freeze() {
-	// noop
-}
-
-func (t triggerMode) Truth() starlark.Bool {
-	return starlark.MakeInt(int(t)).Truth()
-}
-
-func (t triggerMode) Hash() (uint32, error) {
-	return starlark.MakeInt(int(t)).Hash()
-}
-
-var _ starlark.Value = triggerMode(0)
-
-const (
-	TriggerModeUnset  triggerMode = iota
-	TriggerModeAuto   triggerMode = iota
-	TriggerModeManual triggerMode = iota
-)
-
-func (s *tiltfileState) triggerModeForResource(resourceTriggerMode triggerMode) triggerMode {
-	if resourceTriggerMode != TriggerModeUnset {
+func (s *tiltfileState) triggerModeForResource(resourceTriggerMode triggermode.TriggerMode) triggermode.TriggerMode {
+	if resourceTriggerMode != triggermode.ModeUnset {
 		return resourceTriggerMode
 	} else {
 		return s.triggerMode
 	}
 }
 
-func starlarkTriggerModeToModel(triggerMode triggerMode, autoInit bool) (model.TriggerMode, error) {
+func starlarkTriggerModeToModel(triggerMode triggermode.TriggerMode, autoInit bool) (model.TriggerMode, error) {
 	switch triggerMode {
-	case TriggerModeAuto:
+	case triggermode.ModeAuto:
 		if !autoInit {
 			return 0, errors.New("auto_init=False incompatible with trigger_mode=TRIGGER_MODE_AUTO")
 		}
 		return model.TriggerModeAuto, nil
-	case TriggerModeManual:
+	case triggermode.ModeManual:
 		if autoInit {
 			return model.TriggerModeManualAfterInitial, nil
 		} else {
 			return model.TriggerModeManualIncludingInitial, nil
 		}
 	default:
-		return 0, fmt.Errorf("unknown triggerMode %v", triggerMode)
+		return 0, fmt.Errorf("unknown TriggerMode %v", triggerMode)
 	}
 }
 
@@ -487,7 +460,7 @@ func (s *tiltfileState) OnStart(e *starkit.Environment) error {
 		{kustomizeN, s.kustomize},
 		{helmN, s.helm},
 		{failN, s.fail},
-		{triggerModeN, s.triggerModeFn},
+		{triggermode.ModeN, s.triggerModeFn},
 		{fallBackOnN, s.liveUpdateFallBackOn},
 		{syncN, s.liveUpdateSync},
 		{runN, s.liveUpdateRun},
@@ -507,8 +480,8 @@ func (s *tiltfileState) OnStart(e *starkit.Environment) error {
 		name  string
 		value starlark.Value
 	}{
-		{triggerModeAutoN, TriggerModeAuto},
-		{triggerModeManualN, TriggerModeManual},
+		{triggermode.ModeAutoN, triggermode.ModeAuto},
+		{triggermode.ModeManualN, triggermode.ModeManual},
 	} {
 		err := e.AddValue(v.name, v.value)
 		if err != nil {
@@ -1408,7 +1381,7 @@ const (
 )
 
 func (s *tiltfileState) triggerModeFn(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var triggerMode triggerMode
+	var triggerMode triggermode.TriggerMode
 	err := s.unpackArgs(fn.Name(), args, kwargs, "trigger_mode", &triggerMode)
 	if err != nil {
 		return nil, err
@@ -1485,6 +1458,38 @@ func (s *tiltfileState) translateLocal() ([]model.Manifest, error) {
 	}
 
 	return result, nil
+}
+
+func (s *tiltfileState) translateTest(m starkit.Model) ([]model.Manifest, error) {
+	manifests := []model.Manifest{}
+	ts, _ := tests.GetState(m)
+	for _, t := range ts {
+		// TODO: can set auto-init?
+		tm, err := starlarkTriggerModeToModel(s.triggerModeForResource(t.TriggerMode), true)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error in resource %s options", t.Target.Name)
+		}
+		manifests = append(manifests, model.Manifest{
+			Name: model.ManifestName(t.Target.Name),
+
+			// 🤖 we'll make a new struct TestTarget that satisfies interface DeployTarget
+			// (see model.LocalTarget) that will eventually hold info like file deps, command
+			// to run the test, etc.
+			// Will also have a manifest.IsTest() func (see `manifest.IsLocal`) to tell us if it's a test or not.
+			// Eventually will teach a BuildAndDeployer how to deal with Test targets, that's how
+			// they'll actually get run (see `LocalTargetBuildAndDeployer`)
+			// The advantage of using a manifest is that we already know how to watch a manifest for
+			// file changes, collect logs, send through the (increasingly poorly named) build and deploy
+			// pipeline when we detect a change, etc.
+			DeployTarget: t.Target,
+
+			// TODO: can set these
+			TriggerMode:          tm,
+			ResourceDependencies: nil,
+			Source:               model.ManifestSourceTiltfile,
+		})
+	}
+	return manifests, nil
 }
 
 func validateResourceDependencies(ms []model.Manifest) error {

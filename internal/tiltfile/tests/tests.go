@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"go.starlark.net/starlark"
 
+	"github.com/tilt-dev/tilt/internal/tiltfile/triggermode"
 	"github.com/tilt-dev/tilt/internal/tiltfile/value"
 
 	"github.com/tilt-dev/tilt/pkg/model"
@@ -13,8 +14,13 @@ import (
 	"github.com/tilt-dev/tilt/internal/tiltfile/starkit"
 )
 
+type Test struct {
+	Target      model.TestTarget
+	TriggerMode triggermode.TriggerMode
+}
+
 func (e Extension) NewState() interface{} {
-	return []model.TestTarget{}
+	return []Test{}
 }
 
 // Implements functions for dealing with k8s secret settings.
@@ -39,6 +45,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 	deps := value.NewLocalPathListUnpacker(thread)
 	var tagsVal starlark.Sequence
 	var timeout int
+	var triggerMode triggermode.TriggerMode
 
 	if err := starkit.UnpackArgs(thread, fn.Name(), args, kwargs,
 		"name", &name,
@@ -49,6 +56,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		"type?", &typ,
 		"tags?", &tagsVal,
 		"timeout?", &timeout,
+		"trigger_mode?", &triggerMode,
 	); err != nil {
 		return nil, err
 	}
@@ -90,9 +98,12 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 
 	// TODO: can set AllowParallel from Tiltfile (or just remove it?)
 
-	t := model.NewTestTarget(model.TargetName(name), cmd, env, testType, tags, deps.Value, timeout)
-
-	err = starkit.SetState(thread, func(tests []model.TestTarget) []model.TestTarget {
+	targ := model.NewTestTarget(model.TargetName(name), cmd, env, testType, tags, deps.Value, timeout)
+	t := Test{
+		Target:      targ,
+		TriggerMode: triggerMode,
+	}
+	err = starkit.SetState(thread, func(tests []Test) []Test {
 		tests = append(tests, t)
 		return tests
 	})
@@ -102,7 +113,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 
 var _ starkit.StatefulExtension = Extension{}
 
-func MustState(model starkit.Model) []model.TestTarget {
+func MustState(model starkit.Model) []Test {
 	state, err := GetState(model)
 	if err != nil {
 		panic(err)
@@ -110,8 +121,8 @@ func MustState(model starkit.Model) []model.TestTarget {
 	return state
 }
 
-func GetState(m starkit.Model) ([]model.TestTarget, error) {
-	var state []model.TestTarget
+func GetState(m starkit.Model) ([]Test, error) {
+	var state []Test
 	err := m.Load(&state)
 	return state, err
 }

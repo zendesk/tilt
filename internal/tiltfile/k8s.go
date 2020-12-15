@@ -15,6 +15,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/tilt-dev/tilt/internal/tiltfile/triggermode"
+
 	"github.com/tilt-dev/tilt/internal/tiltfile/links"
 
 	"github.com/tilt-dev/tilt/internal/container"
@@ -57,7 +59,7 @@ type k8sResource struct {
 
 	dependencyIDs []model.TargetID
 
-	triggerMode triggerMode
+	triggerMode triggermode.TriggerMode
 	autoInit    bool
 
 	resourceDeps []string
@@ -73,7 +75,7 @@ type k8sResourceOptions struct {
 	newName           string
 	portForwards      []model.PortForward
 	extraPodSelectors []labels.Selector
-	triggerMode       triggerMode
+	triggerMode       triggermode.TriggerMode
 	autoInit          bool
 	tiltfilePosition  syntax.Position
 	resourceDeps      []string
@@ -276,7 +278,7 @@ func (s *tiltfileState) k8sResource(thread *starlark.Thread, fn *starlark.Builti
 	var newName string
 	var portForwardsVal starlark.Value
 	var extraPodSelectorsVal starlark.Value
-	var triggerMode triggerMode
+	var triggerMode triggermode.TriggerMode
 	var resourceDepsVal starlark.Sequence
 	var objectsVal starlark.Sequence
 	var podReadinessMode tiltfile_k8s.PodReadinessMode

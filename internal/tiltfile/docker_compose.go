@@ -12,6 +12,8 @@ import (
 	"github.com/pkg/errors"
 	"go.starlark.net/starlark"
 
+	"github.com/tilt-dev/tilt/internal/tiltfile/triggermode"
+
 	"github.com/tilt-dev/tilt/internal/container"
 	"github.com/tilt-dev/tilt/internal/dockercompose"
 	"github.com/tilt-dev/tilt/internal/tiltfile/io"
@@ -89,7 +91,7 @@ func (s *tiltfileState) dockerCompose(thread *starlark.Thread, fn *starlark.Buil
 func (s *tiltfileState) dcResource(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var name string
 	var imageVal starlark.Value
-	var triggerMode triggerMode
+	var triggerMode triggermode.TriggerMode
 	var resourceDepsVal starlark.Sequence
 
 	if err := s.unpackArgs(fn.Name(), args, kwargs,
@@ -181,7 +183,7 @@ type dcService struct {
 	DependencyIDs  []model.TargetID
 	PublishedPorts []int
 
-	TriggerMode triggerMode
+	TriggerMode triggermode.TriggerMode
 
 	resourceDeps []string
 }

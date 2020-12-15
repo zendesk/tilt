@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tilt-dev/tilt/internal/tiltfile/config"
+	"github.com/tilt-dev/tilt/internal/tiltfile/triggermode"
 
 	"github.com/tilt-dev/tilt/internal/tiltfile/version"
 
@@ -3289,23 +3290,23 @@ docker_build('gcr.io/some-project-162817/sancho-sidecar', './sidecar')
 func TestTriggerModeK8S(t *testing.T) {
 	for _, testCase := range []struct {
 		name                string
-		globalSetting       triggerMode
-		k8sResourceSetting  triggerMode
+		globalSetting       triggermode.TriggerMode
+		k8sResourceSetting  triggermode.TriggerMode
 		specifyAutoInit     bool
 		autoInit            bool
 		expectedTriggerMode model.TriggerMode
 	}{
-		{"default", TriggerModeUnset, TriggerModeUnset, false, false, model.TriggerModeAuto},
-		{"explicit global auto", TriggerModeAuto, TriggerModeUnset, false, false, model.TriggerModeAuto},
-		{"explicit global manual", TriggerModeManual, TriggerModeUnset, false, false, model.TriggerModeManualAfterInitial},
-		{"kr auto", TriggerModeUnset, TriggerModeUnset, false, false, model.TriggerModeAuto},
-		{"kr manual", TriggerModeUnset, TriggerModeManual, false, false, model.TriggerModeManualAfterInitial},
-		{"kr manual, auto_init=False", TriggerModeUnset, TriggerModeManual, true, false, model.TriggerModeManualIncludingInitial},
-		{"kr manual, auto_init=True", TriggerModeUnset, TriggerModeManual, true, true, model.TriggerModeManualAfterInitial},
-		{"kr override auto", TriggerModeManual, TriggerModeAuto, false, false, model.TriggerModeAuto},
-		{"kr override manual", TriggerModeAuto, TriggerModeManual, false, false, model.TriggerModeManualAfterInitial},
-		{"kr override manual, auto_init=False", TriggerModeAuto, TriggerModeManual, true, false, model.TriggerModeManualIncludingInitial},
-		{"kr override manual, auto_init=True", TriggerModeAuto, TriggerModeManual, true, true, model.TriggerModeManualAfterInitial},
+		{"default", triggermode.ModeUnset, triggermode.ModeUnset, false, false, model.TriggerModeAuto},
+		{"explicit global auto", triggermode.ModeAuto, triggermode.ModeUnset, false, false, model.TriggerModeAuto},
+		{"explicit global manual", triggermode.ModeManual, triggermode.ModeUnset, false, false, model.TriggerModeManualAfterInitial},
+		{"kr auto", triggermode.ModeUnset, triggermode.ModeUnset, false, false, model.TriggerModeAuto},
+		{"kr manual", triggermode.ModeUnset, triggermode.ModeManual, false, false, model.TriggerModeManualAfterInitial},
+		{"kr manual, auto_init=False", triggermode.ModeUnset, triggermode.ModeManual, true, false, model.TriggerModeManualIncludingInitial},
+		{"kr manual, auto_init=True", triggermode.ModeUnset, triggermode.ModeManual, true, true, model.TriggerModeManualAfterInitial},
+		{"kr override auto", triggermode.ModeManual, triggermode.ModeAuto, false, false, model.TriggerModeAuto},
+		{"kr override manual", triggermode.ModeAuto, triggermode.ModeManual, false, false, model.TriggerModeManualAfterInitial},
+		{"kr override manual, auto_init=False", triggermode.ModeAuto, triggermode.ModeManual, true, false, model.TriggerModeManualIncludingInitial},
+		{"kr override manual, auto_init=True", triggermode.ModeAuto, triggermode.ModeManual, true, true, model.TriggerModeManualAfterInitial},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -3315,7 +3316,7 @@ func TestTriggerModeK8S(t *testing.T) {
 
 			var globalTriggerModeDirective string
 			switch testCase.globalSetting {
-			case TriggerModeUnset:
+			case triggermode.ModeUnset:
 				globalTriggerModeDirective = ""
 			default:
 				globalTriggerModeDirective = fmt.Sprintf("trigger_mode(%s)", testCase.globalSetting.String())
@@ -3323,7 +3324,7 @@ func TestTriggerModeK8S(t *testing.T) {
 
 			var k8sResourceDirective string
 			switch testCase.k8sResourceSetting {
-			case TriggerModeUnset:
+			case triggermode.ModeUnset:
 				k8sResourceDirective = ""
 			default:
 				autoInitOption := ""
@@ -3356,23 +3357,23 @@ k8s_yaml('foo.yaml')
 func TestTriggerModeLocal(t *testing.T) {
 	for _, testCase := range []struct {
 		name                 string
-		globalSetting        triggerMode
-		localResourceSetting triggerMode
+		globalSetting        triggermode.TriggerMode
+		localResourceSetting triggermode.TriggerMode
 		specifyAutoInit      bool
 		autoInit             bool
 		expectedTriggerMode  model.TriggerMode
 	}{
-		{"default", TriggerModeUnset, TriggerModeUnset, false, true, model.TriggerModeAuto},
-		{"explicit global auto", TriggerModeAuto, TriggerModeUnset, false, true, model.TriggerModeAuto},
-		{"explicit global manual", TriggerModeManual, TriggerModeUnset, false, true, model.TriggerModeManualAfterInitial},
-		{"explicit global manual, autoInit=True", TriggerModeManual, TriggerModeUnset, true, true, model.TriggerModeManualAfterInitial},
-		{"explicit global manual, autoInit=False", TriggerModeManual, TriggerModeUnset, true, false, model.TriggerModeManualIncludingInitial},
-		{"local_resource auto", TriggerModeUnset, TriggerModeUnset, false, true, model.TriggerModeAuto},
-		{"local_resource manual", TriggerModeUnset, TriggerModeManual, false, true, model.TriggerModeManualAfterInitial},
-		{"local_resource manual, autoInit=True", TriggerModeUnset, TriggerModeManual, true, true, model.TriggerModeManualAfterInitial},
-		{"local_resource manual, autoInit=False", TriggerModeUnset, TriggerModeManual, true, false, model.TriggerModeManualIncludingInitial},
-		{"local_resource override auto", TriggerModeManual, TriggerModeAuto, false, true, model.TriggerModeAuto},
-		{"local_resource override manual", TriggerModeAuto, TriggerModeManual, false, true, model.TriggerModeManualAfterInitial},
+		{"default", triggermode.ModeUnset, triggermode.ModeUnset, false, true, model.TriggerModeAuto},
+		{"explicit global auto", triggermode.ModeAuto, triggermode.ModeUnset, false, true, model.TriggerModeAuto},
+		{"explicit global manual", triggermode.ModeManual, triggermode.ModeUnset, false, true, model.TriggerModeManualAfterInitial},
+		{"explicit global manual, autoInit=True", triggermode.ModeManual, triggermode.ModeUnset, true, true, model.TriggerModeManualAfterInitial},
+		{"explicit global manual, autoInit=False", triggermode.ModeManual, triggermode.ModeUnset, true, false, model.TriggerModeManualIncludingInitial},
+		{"local_resource auto", triggermode.ModeUnset, triggermode.ModeUnset, false, true, model.TriggerModeAuto},
+		{"local_resource manual", triggermode.ModeUnset, triggermode.ModeManual, false, true, model.TriggerModeManualAfterInitial},
+		{"local_resource manual, autoInit=True", triggermode.ModeUnset, triggermode.ModeManual, true, true, model.TriggerModeManualAfterInitial},
+		{"local_resource manual, autoInit=False", triggermode.ModeUnset, triggermode.ModeManual, true, false, model.TriggerModeManualIncludingInitial},
+		{"local_resource override auto", triggermode.ModeManual, triggermode.ModeAuto, false, true, model.TriggerModeAuto},
+		{"local_resource override manual", triggermode.ModeAuto, triggermode.ModeManual, false, true, model.TriggerModeManualAfterInitial},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -3380,19 +3381,19 @@ func TestTriggerModeLocal(t *testing.T) {
 
 			var globalTriggerModeDirective string
 			switch testCase.globalSetting {
-			case TriggerModeUnset:
+			case triggermode.ModeUnset:
 				globalTriggerModeDirective = ""
-			case TriggerModeManual:
+			case triggermode.ModeManual:
 				globalTriggerModeDirective = "trigger_mode(TRIGGER_MODE_MANUAL)"
-			case TriggerModeAuto:
+			case triggermode.ModeAuto:
 				globalTriggerModeDirective = "trigger_mode(TRIGGER_MODE_AUTO)"
 			}
 
 			resourceTriggerModeArg := ""
 			switch testCase.localResourceSetting {
-			case TriggerModeManual:
+			case triggermode.ModeManual:
 				resourceTriggerModeArg = ", trigger_mode=TRIGGER_MODE_MANUAL"
-			case TriggerModeAuto:
+			case triggermode.ModeAuto:
 				resourceTriggerModeArg = ", trigger_mode=TRIGGER_MODE_AUTO"
 			}
 

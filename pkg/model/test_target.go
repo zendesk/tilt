@@ -48,28 +48,6 @@ func (tt TestTarget) Empty() bool {
 	return tt.Cmd.Empty()
 }
 
-func (tt TestTarget) ToManifest() Manifest {
-	return Manifest{
-		Name: ManifestName(tt.Name),
-
-		// 🤖 we'll make a new struct TestTarget that satisfies interface DeployTarget
-		// (see model.LocalTarget) that will eventually hold info like file deps, command
-		// to run the test, etc.
-		// Will also have a manifest.IsTest() func (see `manifest.IsLocal`) to tell us if it's a test or not.
-		// Eventually will teach a BuildAndDeployer how to deal with Test targets, that's how
-		// they'll actually get run (see `LocalTargetBuildAndDeployer`)
-		// The advantage of using a manifest is that we already know how to watch a manifest for
-		// file changes, collect logs, send through the (increasingly poorly named) build and deploy
-		// pipeline when we detect a change, etc.
-		DeployTarget: tt,
-
-		// TODO: can set these
-		TriggerMode:          0,
-		ResourceDependencies: nil,
-		Source:               ManifestSourceTiltfile,
-	}
-}
-
 func (tt TestTarget) WithAllowParallel(val bool) TestTarget {
 	tt.AllowParallel = val
 	return tt

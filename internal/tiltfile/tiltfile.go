@@ -27,7 +27,6 @@ import (
 	"github.com/tilt-dev/tilt/internal/tiltfile/secretsettings"
 	"github.com/tilt-dev/tilt/internal/tiltfile/starkit"
 	"github.com/tilt-dev/tilt/internal/tiltfile/telemetry"
-	"github.com/tilt-dev/tilt/internal/tiltfile/tests"
 	"github.com/tilt-dev/tilt/internal/tiltfile/updatesettings"
 	"github.com/tilt-dev/tilt/internal/tiltfile/value"
 	"github.com/tilt-dev/tilt/internal/tiltfile/version"
@@ -221,15 +220,6 @@ func (tfl tiltfileLoader) Load(ctx context.Context, filename string, userConfigS
 
 	us, _ := updatesettings.GetState(result)
 	tlr.UpdateSettings = us
-
-	// 🤖 Idk if we want to store []model.Test on the extension state and convert them here,
-	// or find a way to store the test manifests directly on the state, or not use extension state
-	// and just stick the test manifests directly on the TiltfileState (see tiltfilestate.LocalResource)...?
-	// Idk this is fine for now.
-	ts, _ := tests.GetState(result)
-	for _, test := range ts {
-		tlr.Manifests = append(tlr.Manifests, test.ToManifest())
-	}
 
 	duration := time.Since(start)
 	s.logger.Infof("Successfully loaded Tiltfile (%s)", duration)
