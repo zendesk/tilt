@@ -26,7 +26,7 @@ t = test("test-foo", "echo hi")
 
 	testTarg := foo.TestTarget()
 	require.Equal(t, "test-foo", testTarg.Name.String(), "test target name")
-	require.Equal(t, model.ToHostCmd("echo hi"), testTarg.Cmd, "test target cmd")
+	require.Equal(t, model.ToHostCmdInDir("echo hi", f.Path()), testTarg.Cmd, "test target cmd")
 	require.Equal(t, f.Path(), testTarg.Environment, "default env is Tiltfile cwd")
 	require.Equal(t, model.TestTypeLocal, testTarg.Type, "default type is TestTypeLocal")
 }
@@ -55,12 +55,33 @@ t = test("test-foo", "echo hi",
 
 	testTarg := foo.TestTarget()
 	require.Equal(t, "test-foo", testTarg.Name.String(), "test target name")
-	require.Equal(t, model.ToHostCmd("echo hi"), testTarg.Cmd, "test target cmd")
+	require.Equal(t, model.ToHostCmdInDir("echo hi", f.Path()), testTarg.Cmd, "test target cmd")
 	require.Equal(t, "gcr.io/myimg", testTarg.Environment, "test target env")
 	require.Equal(t, model.TestTypeCluster, testTarg.Type, "test target type")
 	require.Equal(t, []string{"beep", "boop"}, testTarg.Tags, "test target tags")
 	require.Equal(t, f.JoinPaths([]string{"a.txt", "b.txt"}), testTarg.Deps, "test target deps")
 	require.Equal(t, model.TriggerModeManualAfterInitial, foo.TriggerMode, "trigger mode for manifest")
+}
+
+func TestCmdWithDir(t *testing.T) {
+	f := newFixture(t)
+	defer f.TearDown()
+	f.setupFoo()
+
+	f.file("Tiltfile", `
+t = test("test-foo", "echo hi", env="some/dir/")
+`)
+
+	f.load()
+
+	foo := f.assertNextManifest("test-foo")
+
+	require.Equal(t, "test-foo", foo.Name.String(), "manifest name")
+	require.True(t, foo.IsTest(), "should be a test manifest")
+
+	testTarg := foo.TestTarget()
+	require.Equal(t, model.ToHostCmdInDir("echo hi", f.JoinPath("some/dir/")), testTarg.Cmd,
+		"test target cmd has dir = environment value passed in Tiltfile")
 }
 
 // TODO: ACTUAL TESTS, YOU NERDS

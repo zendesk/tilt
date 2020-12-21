@@ -70,7 +70,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		return starlark.None, fmt.Errorf("bad test type: %v (b/c maia was lazy about doing this right)", typ)
 	}
 
-	cmd, err := value.ValueGroupToCmdHelper(cmdVal, cmdBatVal)
+	cmd, err := value.ValueGroupToCmdHelper(thread, cmdVal, cmdBatVal)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +82,7 @@ func (e Extension) test(thread *starlark.Thread, fn *starlark.Builtin, args star
 		if err != nil {
 			return nil, err
 		}
+		cmd = cmd.WithDir(env)
 	} else {
 		// otherwise it's a cluster test, env is just itself as a plain string
 		env = string(envVal)

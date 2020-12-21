@@ -97,7 +97,6 @@ func (bd *LocalTargetBuildAndDeployer) extract(specs []model.TargetSpec) []model
 					Name:          s.Name,
 					UpdateCmd:     s.Cmd,
 					ServeCmd:      model.Cmd{},
-					Workdir:       s.Environment,
 					Deps:          s.Deps,
 					AllowParallel: true,
 				})

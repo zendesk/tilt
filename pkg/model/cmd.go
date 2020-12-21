@@ -71,6 +71,11 @@ func (c Cmd) String() string {
 	return strings.Join(quoted, " ")
 }
 
+func (c Cmd) WithDir(dir string) Cmd {
+	c.Dir = dir
+	return c
+}
+
 func (c Cmd) Empty() bool {
 	return len(c.Argv) == 0
 }
