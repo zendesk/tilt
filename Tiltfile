@@ -1,60 +1,32 @@
-allow_k8s_contexts('kind-kind')
-username = str(local('whoami')).rstrip('\n')
-experimental_analytics_report({'user.name': username})
-analytics_settings(enable=True)
+# -*- mode: Python -*-
 
-def remove_all_empty_and_whitespace(my_list):
-  ret = []
-  for x in my_list:
-    s = x.strip()
-    if s:
-      ret.append(s)
+update_settings(max_parallel_updates=6)  # Run lots of tests at once
 
-  return ret
-
- #TODO(dmiller): can I memoize this or something?
-def get_all_go_files(path):
-  return str(local('cd %s && find . -type f -name "*.go"' % path)).split("\n")
-
-def get_deps_for_pkg(pkg):
-  cmd = """go list -f '{{ join .GoFiles "\\n" }} {{ join .TestGoFiles "\\n" }} {{ join .XTestGoFiles "\\n"}}' '%s'""" % pkg
-  split = str(local(cmd)).split("\n")
-  return remove_all_empty_and_whitespace(split)
-
-def go(name, entrypoint, all_go_files, srv=""):
-  all_packages = remove_all_empty_and_whitespace(str(local('go list ./...')).rstrip().split("\n"))
-  # for pkg in all_packages:
-  #   pkg_deps = get_deps_for_pkg(pkg)
-  #   local_resource("go_test_%s" % pkg, "go test %s" % pkg, deps=pkg_deps)
-
-  local_resource(name, "go build -o /tmp/%s %s" % (name, entrypoint), serve_cmd=srv, deps=all_go_files)
-
-def go_lint(all_go_files):
-  local_resource("go_lint", "make lint", deps=all_go_files)
-
-def get_all_ts_files(path):
-  res = str(local('cd %s && find . -type f -name "*.ts*" | grep -v node_modules | grep -v __snapshots__' % path)).rstrip().split("\n")
-  return res
-
+# Prerequisite: you need up-to-date node_modules to run these tests locally
+# (won't be necessary for running tests on a container)
 def yarn_install():
   local_resource("yarn_install", "cd web && yarn", deps=['web/package.json', 'web/yarn.lock'])
 
-def jest(path):
-  local_resource("web_jest", serve_cmd="cd %s && yarn run test --notify " % path, resource_deps=["yarn_install"])
-
-def web_lint():
-  ts_deps = get_all_ts_files("web")
-  local_resource("web_lint", "cd web && yarn run check", deps=ts_deps, resource_deps=["yarn_install"])
-
-def go_vendor():
-  local_resource("go_vendor", "make vendor", deps=['go.sum', 'go.mod'])
-
-all_go_files = get_all_go_files(".")
-
-go("Tilt", "cmd/tilt/main.go", all_go_files, srv="cd /tmp/ && ./tilt up --hud=false --web-mode=prod --port=9765")
-go_lint(all_go_files)
-go_vendor()
-
 yarn_install()
-jest("web")
-web_lint()
+
+
+# Approach 1: Tilt runs `yarn test` in the background, failures aren't immediately apparent
+# and you need to check the logs to see if anything interesting has happened
+local_resource("yarn_test_watch", serve_cmd="cd web && yarn run test --notify", resource_deps=["yarn_install"])
+
+# Approach 2: a `test` item for every test file (thin wrapper around `local_resource`)
+# that runs when the test file/associated files change.
+# Note that this is a very naive way of telling which files should trigger foo.test.tsx
+# (currently just prefix matching) -- there might be a more sophisticated way
+web_src_files = [os.path.basename(f) for f in listdir('web/src')]
+test_files = [f for f in web_src_files if f.endswith('test.ts') or f.endswith('test.tsx')]
+
+
+def shortname(file):
+  return file.replace('.test.tsx', '').replace('.test.ts', '')
+
+
+for tf in test_files:
+  short = shortname(tf)
+  deps = [os.path.join('web/src/', f) for f in web_src_files if f.startswith(short)]
+  test(short, "cd web && yarn test --watchAll=false %s" % tf, deps=deps, resource_deps=["yarn_install"])
