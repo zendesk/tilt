@@ -1,0 +1,29 @@
+EXCLUDES = ['tilt/integration', 'tilt/cmd']
+TRIMS = ['internal/', 'pkg/']
+CWD = os.getcwd()
+
+def relpath(s):
+  return s.replace(CWD, '').lstrip('/')
+
+def contains(s, substr):
+  return s.find(substr) > -1
+
+def all_go_package_dirs():
+  pkgs_raw = str(local('go list -f "{{.Dir}}" ./...')).rstrip().split("\n")
+  pkgs = []
+  for pkg in pkgs_raw:
+    stripped = pkg.strip()
+    if stripped and not any([contains(pkg, excl) for excl in EXCLUDES]):
+      pkgs.append(stripped)
+
+  return pkgs
+
+def pretty_name(name):
+  rel = relpath(name)
+  for trim in TRIMS:
+    rel = rel.replace(trim, '')
+  return rel
+
+for pkg in all_go_package_dirs():
+  name = pretty_name(pkg)
+  test(name, 'go test %s' % pkg, deps=[pkg])
