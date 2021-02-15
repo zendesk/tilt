@@ -20,6 +20,7 @@ import (
 	"github.com/tilt-dev/tilt/internal/cloud"
 	"github.com/tilt-dev/tilt/internal/cloud/cloudurl"
 	"github.com/tilt-dev/tilt/internal/container"
+	"github.com/tilt-dev/tilt/internal/controllers"
 	"github.com/tilt-dev/tilt/internal/docker"
 	"github.com/tilt-dev/tilt/internal/dockercompose"
 	"github.com/tilt-dev/tilt/internal/engine"
@@ -128,6 +129,7 @@ var BaseWireSet = wire.NewSet(
 	provideWebPort,
 	provideWebHost,
 	server.WireSet,
+	controllers.ProvideTiltServerControllerManager,
 	provideAssetServer,
 
 	tracer.NewSpanCollector,
@@ -160,12 +162,14 @@ func wireCmdUp(ctx context.Context, analytics *analytics.TiltAnalytics, cmdTags 
 }
 
 type CmdUpDeps struct {
-	Upper        engine.Upper
-	TiltBuild    model.TiltBuild
-	Token        token.Token
-	CloudAddress cloudurl.Address
-	Store        *store.Store
-	Prompt       *prompt.TerminalPrompt
+	Upper                       engine.Upper
+	TiltBuild                   model.TiltBuild
+	Token                       token.Token
+	CloudAddress                cloudurl.Address
+	Store                       *store.Store
+	Prompt                      *prompt.TerminalPrompt
+	HUDServer                   *server.HeadsUpServerController
+	TiltServerControllerManager *controllers.TiltServerControllerManager
 }
 
 func wireCmdCI(ctx context.Context, analytics *analytics.TiltAnalytics, subcommand model.TiltSubcommand) (CmdCIDeps, error) {

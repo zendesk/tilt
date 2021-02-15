@@ -67,3 +67,9 @@ type TelemetryScriptRanAction struct {
 }
 
 func (TelemetryScriptRanAction) Action() {}
+
+type APIServerSyncAction struct {
+	Manifest model.Manifest
+}
+
+func (APIServerSyncAction) Action() {}

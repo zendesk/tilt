@@ -2,13 +2,13 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 
 	"github.com/tilt-dev/tilt-apiserver/pkg/server/start"
+
 	"github.com/tilt-dev/tilt/internal/store"
 	"github.com/tilt-dev/tilt/pkg/assets"
 	"github.com/tilt-dev/tilt/pkg/model"
@@ -53,32 +53,11 @@ func (s *HeadsUpServerController) TearDown(ctx context.Context) {
 	s.assetServer.TearDown(ctx)
 }
 
-func (s *HeadsUpServerController) OnChange(ctx context.Context, st store.RStore) {
-	defer func() {
-		s.initDone = true
-	}()
-
-	if s.initDone || s.port == 0 {
-		return
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	s.shutdown = cancel
-
-	err := s.serve(ctx, st)
-	if err != nil {
-		st.Dispatch(
-			store.NewErrorAction(
-				fmt.Errorf("Cannot start the tilt-apiserver: %v", err)))
-		return
-	}
-}
-
 // Merge the APIServer and the Tilt Web server into a single handler,
 // and attach them both to the public listener.
 //
 // TODO(nick): We could move this to SetUp if SetUp had error-handling.
-func (s *HeadsUpServerController) serve(ctx context.Context, st store.RStore) error {
+func (s *HeadsUpServerController) Start(ctx context.Context) error {
 	stopCh := ctx.Done()
 	o := s.apiServerOptions
 	config, err := o.Config()
@@ -106,6 +85,7 @@ func (s *HeadsUpServerController) serve(ctx context.Context, st store.RStore) er
 	serving := config.ExtraConfig.DeprecatedInsecureServingInfo
 
 	r := mux.NewRouter()
+	r.Path("/api").Handler(http.NotFoundHandler())
 	r.PathPrefix("/apis").Handler(apiserverHandler)
 	r.PathPrefix("/healthz").Handler(apiserverHandler)
 	r.PathPrefix("/livez").Handler(apiserverHandler)
@@ -124,13 +104,12 @@ func (s *HeadsUpServerController) serve(ctx context.Context, st store.RStore) er
 	if err != nil {
 		return err
 	}
-
 	server.GenericAPIServer.RunPostStartHooks(stopCh)
 
 	go func() {
 		err := s.assetServer.Serve(ctx)
 		if err != nil && ctx.Err() == nil {
-			st.Dispatch(store.NewErrorAction(err))
+			s.hudServer.store.Dispatch(store.NewErrorAction(err))
 		}
 	}()
 

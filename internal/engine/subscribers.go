@@ -17,7 +17,6 @@ import (
 	"github.com/tilt-dev/tilt/internal/engine/telemetry"
 	"github.com/tilt-dev/tilt/internal/hud"
 	"github.com/tilt-dev/tilt/internal/hud/prompt"
-	"github.com/tilt-dev/tilt/internal/hud/server"
 	"github.com/tilt-dev/tilt/internal/store"
 )
 
@@ -37,7 +36,6 @@ func ProvideSubscribers(
 	dclm *runtimelog.DockerComposeLogManager,
 	pm *ProfilerManager,
 	ar *analytics.AnalyticsReporter,
-	hudsc *server.HeadsUpServerController,
 	au *analytics.AnalyticsUpdater,
 	ewm *k8swatch.EventWatchManager,
 	tcum *cloud.CloudStatusManager,
@@ -65,7 +63,6 @@ func ProvideSubscribers(
 		dclm,
 		pm,
 		ar,
-		hudsc,
 		au,
 		ewm,
 		tcum,

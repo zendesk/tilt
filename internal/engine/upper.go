@@ -181,6 +181,8 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handleMetricsDashboardAction(state, action)
 	case server.OverrideTriggerModeAction:
 		handleOverrideTriggerModeAction(ctx, state, action)
+	case APIServerSyncAction:
+		handleAPIServerSyncAction(ctx, state, action)
 	default:
 		state.FatalError = fmt.Errorf("unrecognized action: %T", action)
 	}
@@ -939,5 +941,16 @@ func handleOverrideTriggerModeAction(ctx context.Context, state *store.EngineSta
 			return
 		}
 		mt.Manifest.TriggerMode = action.TriggerMode
+	}
+}
+
+func handleAPIServerSyncAction(ctx context.Context, state *store.EngineState, action APIServerSyncAction) {
+	mn := action.Manifest.Name
+	if _, ok := state.ManifestTargets[mn]; ok {
+		logger.Get(ctx).Infof("Ignoring manifest %q", mn)
+		// mt.Manifest = action.Manifest
+	} else {
+		logger.Get(ctx).Infof("Injecting manifest %q", mn)
+		state.UpsertManifestTarget(store.NewManifestTarget(action.Manifest))
 	}
 }

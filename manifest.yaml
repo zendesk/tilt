@@ -1,0 +1,6 @@
+apiVersion: core.tilt.dev/v1alpha1
+kind: Manifest
+metadata:
+  name: my-server
+spec:
+  type: asdf

@@ -179,6 +179,13 @@ func (c *upCmd) run(ctx context.Context, args []string) error {
 		engineMode = store.EngineModeApply
 	}
 
+	if err := cmdUpDeps.HUDServer.Start(ctx); err != nil {
+		return err
+	}
+	if err := cmdUpDeps.TiltServerControllerManager.Start(ctx); err != nil {
+		return err
+	}
+
 	err = upper.Start(ctx, args, cmdUpDeps.TiltBuild, engineMode,
 		c.fileName, termMode, a.UserOpt(), cmdUpDeps.Token, string(cmdUpDeps.CloudAddress))
 	if err != context.Canceled {

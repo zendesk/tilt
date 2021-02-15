@@ -27,6 +27,7 @@ require (
 	github.com/gdamore/tcell v1.1.3
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-errors/errors v1.1.1 // indirect
+	github.com/go-logr/logr v0.2.1
 	github.com/go-openapi/spec v0.20.1
 	github.com/go-openapi/swag v0.19.13 // indirect
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
@@ -75,6 +76,7 @@ require (
 	go.opencensus.io v0.22.4
 	go.opentelemetry.io/otel v0.2.0
 	go.starlark.net v0.0.0-20200615180055-61b64bc45990
+	go.uber.org/zap v1.13.0 // indirect
 	golang.org/x/net v0.0.0-20210119194325-5f4716e94777 // indirect
 	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
 	golang.org/x/text v0.3.5 // indirect
@@ -97,6 +99,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd
 	k8s.io/kubectl v0.20.2
 	sigs.k8s.io/apiserver-runtime v0.0.0-20201103144618-b52895ea8337
+	sigs.k8s.io/controller-runtime v0.6.0
 	sigs.k8s.io/kustomize/api v0.7.2
 	sigs.k8s.io/yaml v1.2.0
 	vbom.ml/util v0.0.0-20180919145318-efcd4e0f9787 // indirect
