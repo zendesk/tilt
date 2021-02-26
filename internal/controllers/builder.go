@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/tilt-dev/tilt/internal/store"
@@ -14,7 +13,6 @@ import (
 
 type Controller interface {
 	reconcile.Reconciler
-	SetClient(client ctrlclient.Client)
 	SetupWithManager(mgr ctrl.Manager) error
 }
 
@@ -44,7 +42,6 @@ func (c *ControllerBuilder) SetUp(_ context.Context, _ store.RStore) error {
 	}
 
 	for _, controller := range c.controllers {
-		controller.SetClient(client)
 		if err := controller.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("error initializing %T controller: %v", controller, err)
 		}

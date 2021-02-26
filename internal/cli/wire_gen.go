@@ -178,11 +178,12 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 	}
 	headsUpServerController := server.ProvideHeadsUpServerController(webPort, apiserverConfig, headsUpServer, assetsServer, webURL)
 	scheme := controllers.NewScheme()
-	tiltServerControllerManager, err := controllers.NewTiltServerControllerManager(apiserverConfig, scheme)
+	deferredClient := controllers.ProvideDeferredClient()
+	tiltServerControllerManager, err := controllers.NewTiltServerControllerManager(apiserverConfig, scheme, deferredClient)
 	if err != nil {
 		return CmdUpDeps{}, err
 	}
-	fileWatchController := core.NewFileWatchController(storeStore)
+	fileWatchController := core.NewFileWatchController(deferredClient, storeStore)
 	v := controllers.ProvideControllers(fileWatchController)
 	controllerBuilder := controllers.NewControllerBuilder(tiltServerControllerManager, v)
 	v2 := provideClock()
@@ -348,11 +349,12 @@ func wireCmdCI(ctx context.Context, analytics3 *analytics.TiltAnalytics, subcomm
 	}
 	headsUpServerController := server.ProvideHeadsUpServerController(webPort, apiserverConfig, headsUpServer, assetsServer, webURL)
 	scheme := controllers.NewScheme()
-	tiltServerControllerManager, err := controllers.NewTiltServerControllerManager(apiserverConfig, scheme)
+	deferredClient := controllers.ProvideDeferredClient()
+	tiltServerControllerManager, err := controllers.NewTiltServerControllerManager(apiserverConfig, scheme, deferredClient)
 	if err != nil {
 		return CmdCIDeps{}, err
 	}
-	fileWatchController := core.NewFileWatchController(storeStore)
+	fileWatchController := core.NewFileWatchController(deferredClient, storeStore)
 	v := controllers.ProvideControllers(fileWatchController)
 	controllerBuilder := controllers.NewControllerBuilder(tiltServerControllerManager, v)
 	v2 := provideClock()

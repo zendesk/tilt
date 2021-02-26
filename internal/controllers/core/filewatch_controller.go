@@ -28,8 +28,9 @@ type FileWatchController struct {
 	Store store.RStore
 }
 
-func NewFileWatchController(store store.RStore) *FileWatchController {
+func NewFileWatchController(client ctrlclient.Client, store store.RStore) *FileWatchController {
 	return &FileWatchController{
+		Client: client,
 		Store: store,
 	}
 }
@@ -41,10 +42,6 @@ func NewFileWatchController(store store.RStore) *FileWatchController {
 func (r *FileWatchController) Reconcile(_ context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	// this is currently a no-op stub
 	return ctrl.Result{}, nil
-}
-
-func (r *FileWatchController) SetClient(client ctrlclient.Client) {
-	r.Client = client
 }
 
 func (r *FileWatchController) SetupWithManager(mgr ctrl.Manager) error {

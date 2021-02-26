@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"github.com/google/wire"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/tilt-dev/tilt/internal/controllers/core"
 )
@@ -23,6 +24,9 @@ var WireSet = wire.NewSet(
 
 	NewScheme,
 	NewControllerBuilder,
+
+	ProvideDeferredClient,
+	wire.Bind(new(ctrlclient.Client), new(*DeferredClient)),
 
 	controllerSet,
 )

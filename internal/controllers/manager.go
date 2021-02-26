@@ -19,6 +19,7 @@ import (
 type TiltServerControllerManager struct {
 	config  *rest.Config
 	scheme  *runtime.Scheme
+	deferredClient *DeferredClient
 	manager ctrl.Manager
 	cancel  context.CancelFunc
 }
@@ -27,10 +28,11 @@ var _ store.SetUpper = &TiltServerControllerManager{}
 var _ store.Subscriber = &TiltServerControllerManager{}
 var _ store.TearDowner = &TiltServerControllerManager{}
 
-func NewTiltServerControllerManager(config *server.APIServerConfig, scheme *runtime.Scheme) (*TiltServerControllerManager, error) {
+func NewTiltServerControllerManager(config *server.APIServerConfig, scheme *runtime.Scheme, deferredClient *DeferredClient) (*TiltServerControllerManager, error) {
 	return &TiltServerControllerManager{
 		config: config.GenericConfig.LoopbackClientConfig,
 		scheme: scheme,
+		deferredClient: deferredClient,
 	}, nil
 }
 
@@ -69,6 +71,8 @@ func (m *TiltServerControllerManager) SetUp(ctx context.Context, st store.RStore
 	if err != nil {
 		return fmt.Errorf("unable to create controller manager: %v", err)
 	}
+
+	m.deferredClient.initialize(mgr.GetClient())
 
 	go func() {
 		if err := mgr.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
