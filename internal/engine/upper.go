@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -168,6 +169,8 @@ func upperReducerFn(ctx context.Context, state *store.EngineState, action store.
 		handlePanicAction(state, action)
 	case server.SetTiltfileArgsAction:
 		handleSetTiltfileArgsAction(state, action)
+	case server.WriteTiltfileAction:
+		handleWriteTiltfileAction(ctx, state, action)
 	case local.LocalServeStatusAction:
 		handleLocalServeStatusAction(ctx, state, action)
 	case local.LocalServeReadinessProbeAction:
@@ -539,6 +542,7 @@ func handleConfigsReloaded(
 	event configs.ConfigsReloadedAction,
 ) {
 
+	state.RootTiltfileContents = event.TiltfileContent
 	manifests := event.Manifests
 	manifestNames := map[model.ManifestName]bool{}
 	for _, m := range manifests {
@@ -771,6 +775,27 @@ func handlePanicAction(state *store.EngineState, action store.PanicAction) {
 
 func handleSetTiltfileArgsAction(state *store.EngineState, action server.SetTiltfileArgsAction) {
 	state.UserConfigState = state.UserConfigState.WithArgs(action.Args)
+}
+
+func handleWriteTiltfileAction(ctx context.Context, state *store.EngineState, action server.WriteTiltfileAction) {
+	tiltfilePath, err := state.RelativeTiltfilePath()
+	if err != nil {
+		logger.Get(ctx).Infof("error getting tiltfile path: %v", err)
+	}
+
+	f, err := os.OpenFile(tiltfilePath, os.O_WRONLY, 0)
+	if err != nil {
+		logger.Get(ctx).Infof("error opening tiltfile: %v", err)
+	}
+
+	defer func() {
+		_ = f.Close()
+	}()
+
+	_, err = f.WriteString(action.Body)
+	if err != nil {
+		logger.Get(ctx).Infof("error writing tiltfile: %v", err)
+	}
 }
 
 func handleLocalServeStatusAction(ctx context.Context, state *store.EngineState, action local.LocalServeStatusAction) {

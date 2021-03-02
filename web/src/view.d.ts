@@ -29,6 +29,7 @@ declare namespace Proto {
     tiltStartTime?: string;
     tiltfileKey?: string;
     metricsServing?: webviewMetricsServing;
+    adhocTiltfileContents?: string;
   }
   export interface webviewVersionSettings {
     checkUpdates?: boolean;

@@ -99,6 +99,7 @@ func ProvideHeadsUpServer(
 	r.HandleFunc("/ws/view", s.ViewWebsocket)
 	r.HandleFunc("/api/user_started_tilt_cloud_registration", s.userStartedTiltCloudRegistration)
 	r.HandleFunc("/api/set_tiltfile_args", s.HandleSetTiltfileArgs).Methods("POST")
+	r.HandleFunc("/api/write_tiltfile", s.HandleWriteTiltfile).Methods("POST")
 
 	r.PathPrefix("/").Handler(s.cookieWrapper(assetServer))
 
@@ -259,6 +260,15 @@ func (s *HeadsUpServer) HandleSetTiltfileArgs(w http.ResponseWriter, req *http.R
 	}
 
 	s.store.Dispatch(SetTiltfileArgsAction{args})
+}
+
+func (s *HeadsUpServer) HandleWriteTiltfile(w http.ResponseWriter, req *http.Request) {
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error reading http body: %v", err), http.StatusInternalServerError)
+	}
+
+	s.store.Dispatch(WriteTiltfileAction{Body: string(body)})
 }
 
 func (s *HeadsUpServer) DispatchAction(w http.ResponseWriter, req *http.Request) {

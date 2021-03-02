@@ -213,6 +213,8 @@ message View {
   string tiltfile_key = 17;
 
   MetricsServing metrics_serving = 18;
+
+  string adhoc_tiltfile_contents = 19;
 }
 
 message MetricsServing {

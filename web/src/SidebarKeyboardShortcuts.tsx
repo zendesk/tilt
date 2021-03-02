@@ -29,6 +29,10 @@ class SidebarKeyboardShortcuts extends Component<Props> {
   }
 
   onKeydown(e: KeyboardEvent) {
+    if (e.target instanceof Element && e.target.tagName.toLowerCase() === 'textarea') {
+      return
+    }
+
     if (e.shiftKey || e.altKey || e.isComposing) {
       return
     }

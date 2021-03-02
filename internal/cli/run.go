@@ -1,0 +1,191 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
+
+	"github.com/pkg/errors"
+
+	"github.com/kballard/go-shellquote"
+	"github.com/spf13/cobra"
+
+	"github.com/tilt-dev/tilt/internal/analytics"
+	engineanalytics "github.com/tilt-dev/tilt/internal/engine/analytics"
+	"github.com/tilt-dev/tilt/internal/hud/prompt"
+	"github.com/tilt-dev/tilt/internal/store"
+	"github.com/tilt-dev/tilt/pkg/logger"
+	"github.com/tilt-dev/tilt/pkg/model"
+)
+
+type runCmd struct {
+	watch                bool
+	fileName             string
+	outputSnapshotOnExit string
+
+	hud    bool
+	legacy bool
+	stream bool
+	// whether hud/legacy/stream flags were explicitly set or just got the default value
+	hudFlagExplicitlySet bool
+
+	//whether watch was explicitly set in the cmdline
+	watchFlagExplicitlySet bool
+}
+
+func (c *runCmd) name() model.TiltSubcommand { return "run" }
+
+func (c *runCmd) register() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                   "run [<tilt flags>] [-- command to run]",
+		DisableFlagsInUseLine: true,
+	}
+
+	addStartServerFlags(cmd)
+	addDevServerFlags(cmd)
+	cmd.Flags().StringVarP(&c.fileName, "file", "f", "adhoc.tilt", "Path to Tiltfile")
+	addKubeContextFlag(cmd)
+
+	return cmd
+}
+
+func (c *runCmd) run(ctx context.Context, args []string) error {
+	a := analytics.Get(ctx)
+
+	termMode := store.TerminalModePrompt
+
+	cmdUpTags := engineanalytics.CmdTags(map[string]string{
+		"update_mode": updateModeFlag, // before 7/8/20 this was just called "mode"
+		"term_mode":   strconv.Itoa(int(termMode)),
+	})
+	a.Incr("cmd.run", cmdUpTags.AsMap())
+	defer a.Flush(time.Second)
+
+	deferred := logger.NewDeferredLogger(ctx)
+	ctx = redirectLogs(ctx, deferred)
+
+	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+
+	webHost := provideWebHost()
+	webURL, _ := provideWebURL(webHost, provideWebPort())
+	startLine := prompt.StartStatusLine(webURL, webHost)
+	log.Print(startLine)
+	log.Print(buildStamp())
+
+	if ok, reason := analytics.IsAnalyticsDisabledFromEnv(); ok {
+		log.Printf("Tilt analytics disabled: %s", reason)
+	}
+
+	cmdUpDeps, err := wireCmdUp(ctx, a, cmdUpTags, "run")
+	if err != nil {
+		deferred.SetOutput(deferred.Original())
+		return err
+	}
+
+	upper := cmdUpDeps.Upper
+
+	l := store.NewLogActionLogger(ctx, upper.Dispatch)
+	deferred.SetOutput(l)
+	ctx = redirectLogs(ctx, l)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	engineMode := store.EngineModeUp
+
+	if len(args) > 0 {
+		err = updateAdHocTiltfile(c.fileName, args)
+		if err != nil {
+			return err
+		}
+	}
+	args = nil
+
+	if isTiltRunning() {
+		_, _ = os.Stderr.WriteString("Tilt already running!")
+		l.Infof("Tilt already running. Added new resource to existing Tilt.")
+		return nil
+	} else {
+		_, _ = os.Stderr.WriteString("Tilt not already running!")
+	}
+
+	err = upper.Start(ctx, args, cmdUpDeps.TiltBuild, engineMode,
+		c.fileName, termMode, a.UserOpt(), cmdUpDeps.Token, string(cmdUpDeps.CloudAddress))
+	if err != context.Canceled {
+		return err
+	} else {
+		return nil
+	}
+}
+
+func isTiltRunning() bool {
+	url := apiURL("view")
+
+	res, err := http.Get(url)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		_ = res.Body.Close()
+	}()
+
+	if res.StatusCode != http.StatusOK {
+		return false
+	}
+
+	return true
+}
+
+func localResourceCode(resourceName string, command []string) string {
+	return fmt.Sprintf(`local_resource('%s',
+  r'''%s''',
+  # add files here to automatically update on file change
+  # deps=['.'],
+)
+`, resourceName, shellquote.Join(command...))
+}
+
+func createAdHocTiltfile(filename string) error {
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return errors.Wrapf(err, "error opening %s", filename)
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+	_, err = f.WriteString(`# uncomment this to load your team's Tiltfile
+# load('Tiltfile')
+
+`)
+	if err != nil {
+		return errors.Wrap(err, "error writing to file")
+	}
+	return nil
+}
+
+func updateAdHocTiltfile(filename string, args []string) error {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		err := createAdHocTiltfile(filename)
+		if err != nil {
+			return err
+		}
+	}
+
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return errors.Wrapf(err, "error opening %s", filename)
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+	_, err = f.WriteString(localResourceCode(args[0], args))
+	if err != nil {
+		return errors.Wrap(err, "error writing to file")
+	}
+
+	return nil
+}

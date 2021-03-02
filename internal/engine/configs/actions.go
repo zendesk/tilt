@@ -20,9 +20,10 @@ func (ConfigsReloadStartedAction) Action() {}
 
 type ConfigsReloadedAction struct {
 	// TODO(nick): Embed TiltfileLoadResult instead of copying fields.
-	Manifests   []model.Manifest
-	Tiltignore  model.Dockerignore
-	ConfigFiles []string
+	Manifests       []model.Manifest
+	Tiltignore      model.Dockerignore
+	ConfigFiles     []string
+	TiltfileContent string
 
 	FinishTime           time.Time
 	Err                  error

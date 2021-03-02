@@ -170,6 +170,8 @@ func StateToProtoView(s store.EngineState, logCheckpoint logstore.Checkpoint) (*
 	ret.TiltfileKey = s.TiltfilePath
 	ret.MetricsServing = toMetricsServingProto(s.MetricsServing)
 
+	ret.AdhocTiltfileContents = s.RootTiltfileContents
+
 	return ret, nil
 }
 

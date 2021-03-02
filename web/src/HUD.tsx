@@ -3,6 +3,7 @@ import React, { Component } from "react"
 import ReactOutlineManager from "react-outline-manager"
 import { useHistory } from "react-router"
 import { Route, RouteComponentProps, Switch } from "react-router-dom"
+import AdHocPane from "./AdHocPane"
 import { incr, navigationToTags } from "./analytics"
 import AnalyticsNudge from "./AnalyticsNudge"
 import AppController from "./AppController"
@@ -299,6 +300,12 @@ export default class HUD extends Component<HudProps, HudState> {
         <PathBuilderProvider value={this.pathBuilder}>
           <LogStoreProvider value={this.state.logStore || new LogStore()}>
             <Switch>
+              <Route
+                path={this.path("/adhoc")}
+                render={(props: RouteComponentProps<any>) => (
+                  <AdHocPane view={this.state.view} />
+                )}
+                />
               <Route
                 path={this.path("/r/:name/overview")}
                 render={(props: RouteComponentProps<any>) => (

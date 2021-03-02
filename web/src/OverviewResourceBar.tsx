@@ -371,6 +371,9 @@ class ResourceBarShortcuts extends Component<ResourceBarShortcutsProps> {
   }
 
   onKeydown(e: KeyboardEvent) {
+    if (e.target instanceof Element && e.target.tagName.toLowerCase() === 'textarea') {
+      return
+    }
     if (e.metaKey || e.altKey || e.ctrlKey || e.isComposing) {
       return
     }

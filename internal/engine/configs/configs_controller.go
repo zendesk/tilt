@@ -3,6 +3,7 @@ package configs
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	"github.com/pkg/errors"
@@ -142,6 +143,9 @@ func (cc *ConfigsController) loadTiltfile(ctx context.Context, st store.RStore, 
 		logger.Get(ctx).Infof("Tiltfile args changed to: %v", userConfigState.Args)
 	}
 
+	// ignore errors, assuming they'll get picked up by tfl.Load
+	body, _ := ioutil.ReadFile(entry.tiltfilePath)
+
 	tlr := cc.tfl.Load(ctx, entry.tiltfilePath, userConfigState)
 	if tlr.Error == nil && len(tlr.Manifests) == 0 {
 		tlr.Error = fmt.Errorf("No resources found. Check out https://docs.tilt.dev/tutorial.html to get started!")
@@ -179,6 +183,7 @@ func (cc *ConfigsController) loadTiltfile(ctx context.Context, st store.RStore, 
 		VersionSettings:       tlr.VersionSettings,
 		UpdateSettings:        tlr.UpdateSettings,
 		WatchSettings:         tlr.WatchSettings,
+		TiltfileContent:       string(body),
 	})
 }
 
