@@ -1,0 +1,14 @@
+# uncomment this to load your team's Tiltfile
+# load('Tiltfile')
+
+local_resource('ls',
+  r'''echo blah''',
+  # add files here to automatically update on file change
+  # deps=['.'],
+)
+
+
+
+
+
+
