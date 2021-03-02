@@ -1,14 +1,15 @@
 # uncomment this to load your team's Tiltfile
 # load('Tiltfile')
 
-local_resource('ls',
-  r'''echo blah''',
+
+local_resource('go',
+  r'''go test -count 3 github.com/tilt-dev/tilt/internal/token''',
   # add files here to automatically update on file change
   # deps=['.'],
 )
 
-
-
-
-
-
+local_resource('echo',
+  r'''echo goodbye world''',
+  # add files here to automatically update on file change
+  # deps=['.'],
+)

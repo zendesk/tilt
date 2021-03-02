@@ -109,6 +109,11 @@ type TiltfileEditorState = {
   expectedServerContent: Set<string>
 }
 
+const TiltfileTextArea = styled.textarea`
+  height: 90%;
+  width: 100%;
+`
+
 function TiltfileEditor(props: {view: Proto.webviewView}) {
   const viewContent = props.view.adhocTiltfileContents || ""
   const [state, setState] = useState<TiltfileEditorState>({bufferContent: viewContent, expectedServerContent: new Set(viewContent)})
@@ -132,6 +137,6 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
 
   return <EditorRoot>
     <SubmitButton onClick={e => { updateServerContent()}}>Submit</SubmitButton>
-    <textarea onChange={e => { setBufferContents(e.target.value) }} value={activeContent} />
+    <TiltfileTextArea onChange={e => { setBufferContents(e.target.value) }} value={activeContent} />
   </EditorRoot>
 }

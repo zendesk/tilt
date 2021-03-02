@@ -236,7 +236,9 @@ func provideWebURL(webHost model.WebHost, webPort model.WebPort) (model.WebURL, 
 		webHost = "127.0.0.1"
 	}
 
-	u, err := url.Parse(fmt.Sprintf("http://%s:%d/", webHost, webPort))
+	// XXX
+	// need to inject path as well
+	u, err := url.Parse(fmt.Sprintf("http://%s:%d/adhoc", webHost, webPort))
 	if err != nil {
 		return model.WebURL{}, err
 	}

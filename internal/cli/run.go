@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/tilt-dev/tilt/tools/devlog"
 
 	"github.com/pkg/errors"
 
-	"github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 
 	"github.com/tilt-dev/tilt/internal/analytics"
@@ -80,6 +82,23 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 		log.Printf("Tilt analytics disabled: %s", reason)
 	}
 
+	if len(args) > 0 {
+		err := updateAdHocTiltfile(c.fileName, args)
+		if err != nil {
+			return err
+		}
+	}
+	args = nil
+
+	devlog.Logf("checking if tilt is running")
+	if isTiltRunning() {
+		devlog.Logf("it is!")
+		deferred.Infof("Tilt already running. Added new resource to existing Tilt.")
+		return nil
+	} else {
+		devlog.Logf("it isn't!")
+	}
+
 	cmdUpDeps, err := wireCmdUp(ctx, a, cmdUpTags, "run")
 	if err != nil {
 		deferred.SetOutput(deferred.Original())
@@ -97,22 +116,6 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 
 	engineMode := store.EngineModeUp
 
-	if len(args) > 0 {
-		err = updateAdHocTiltfile(c.fileName, args)
-		if err != nil {
-			return err
-		}
-	}
-	args = nil
-
-	if isTiltRunning() {
-		_, _ = os.Stderr.WriteString("Tilt already running!")
-		l.Infof("Tilt already running. Added new resource to existing Tilt.")
-		return nil
-	} else {
-		_, _ = os.Stderr.WriteString("Tilt not already running!")
-	}
-
 	err = upper.Start(ctx, args, cmdUpDeps.TiltBuild, engineMode,
 		c.fileName, termMode, a.UserOpt(), cmdUpDeps.Token, string(cmdUpDeps.CloudAddress))
 	if err != context.Canceled {
@@ -125,7 +128,13 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 func isTiltRunning() bool {
 	url := apiURL("view")
 
-	res, err := http.Get(url)
+	client := http.Client{
+		Transport:     nil,
+		CheckRedirect: nil,
+		Jar:           nil,
+		Timeout:       2 * time.Second,
+	}
+	res, err := client.Get(url)
 	if err != nil {
 		return false
 	}
@@ -141,12 +150,16 @@ func isTiltRunning() bool {
 }
 
 func localResourceCode(resourceName string, command []string) string {
-	return fmt.Sprintf(`local_resource('%s',
+	// strings.Join on space can do bad things with shell, but not clear we have better options
+	// use r''' to protect against `'`, `"`, and `\`.
+	// XXX: handle `'''`
+	return fmt.Sprintf(`
+local_resource('%s',
   r'''%s''',
   # add files here to automatically update on file change
   # deps=['.'],
 )
-`, resourceName, shellquote.Join(command...))
+`, resourceName, strings.Join(command, " "))
 }
 
 func createAdHocTiltfile(filename string) error {
