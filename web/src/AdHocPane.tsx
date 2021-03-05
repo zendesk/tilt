@@ -8,8 +8,9 @@ import OverviewResourceBar from "./OverviewResourceBar"
 import OverviewResourceSidebar from "./OverviewResourceSidebar"
 import OverviewResourceDetails from "./OverviewResourceDetails"
 import styled from "styled-components"
-import {Color} from "./style-helpers"
+import {Color, Font, SizeUnit} from "./style-helpers"
 import {ReactComponent} from "*.svg"
+import SplitPane from "react-split-pane"
 
 let PaneRoot = styled.div`
   display: flex;
@@ -64,22 +65,14 @@ export default function AdHocPane(props: AdHocPaneProps) {
       <OverviewResourceBar {...props} />
       <Main>
         <OverviewResourceSidebar {...props} name={"(all)"} />
-        <OverviewResourceDetails resource={undefined} name={"(all)"} alerts={alerts} />
-        <TiltfileEditor view={props.view}/>
+        <SplitPane split="vertical" defaultSize="70%" style={{ position: 'static', overflow: 'visible scroll' }}>
+          <OverviewResourceDetails resource={undefined} name={"(all)"} alerts={alerts} />
+          <TiltfileEditor view={props.view}/>
+        </SplitPane>
       </Main>
     </PaneRoot>
   )
 }
-
-const EditorRoot = styled.div`
-  width: 25%;
-  height: 100%;
-`
-
-const SubmitButton = styled.button`
-  width: 90px;
-  height: 30px;
-`
 
 function setTiltfileContent(content: string) {
   let url = `//${window.location.host}/api/write_tiltfile`
@@ -109,9 +102,32 @@ type TiltfileEditorState = {
   expectedServerContent: Set<string>
 }
 
-const TiltfileTextArea = styled.textarea`
+const EditorRoot = styled.div`
   height: 90%;
+  background-color: ${Color.grayDark};
+  display: flex;
+  flex-flow: column;
+  border-left: 5px solid ${Color.grayLightest};
+`
+
+const EditorHeader = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  background-color: ${Color.grayDarker};
+  padding: ${SizeUnit(0.25)};
+`
+
+const SubmitButton = styled.button`
+`
+
+const TiltfileTextArea = styled.textarea`
+  flex-grow: 1;
   width: 100%;
+  background-color: transparent;
+  color: ${Color.offWhite};
+  padding: ${SizeUnit(0.5)};
+  font-family: ${Font.monospace};
+  border: none;
 `
 
 function TiltfileEditor(props: {view: Proto.webviewView}) {
@@ -136,7 +152,9 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
   }
 
   return <EditorRoot>
-    <SubmitButton onClick={e => { updateServerContent()}}>Submit</SubmitButton>
+    <EditorHeader>
+      <SubmitButton onClick={e => { updateServerContent()}}>Submit</SubmitButton>
+    </EditorHeader>
     <TiltfileTextArea onChange={e => { setBufferContents(e.target.value) }} value={activeContent} />
   </EditorRoot>
 }
