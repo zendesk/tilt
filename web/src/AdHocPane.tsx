@@ -1,5 +1,5 @@
 import {useTabNav} from "./TabNav"
-import {LogUpdateAction, LogUpdateEvent, useLogStore} from "./LogStore"
+import {AllManifests, LogUpdateAction, LogUpdateEvent, ManifestSet, useLogStore} from "./LogStore"
 import {ResourceName} from "./types"
 import React, {Component, useEffect, useState} from "react"
 import {Alert, combinedAlerts} from "./alerts"
@@ -11,6 +11,9 @@ import styled from "styled-components"
 import {Color, Font, SizeUnit} from "./style-helpers"
 import {ReactComponent} from "*.svg"
 import SplitPane from "react-split-pane"
+import {useFilterSet} from "./logfilters"
+import OverviewActionBar from "./OverviewActionBar"
+import OverviewLogPane from "./OverviewLogPane"
 
 let PaneRoot = styled.div`
   display: flex;
@@ -65,8 +68,8 @@ export default function AdHocPane(props: AdHocPaneProps) {
       <OverviewResourceBar {...props} />
       <Main>
         <OverviewResourceSidebar {...props} name={"(all)"} />
-        <SplitPane split="vertical" defaultSize="70%" style={{ position: 'static', overflow: 'visible scroll' }}>
-          <OverviewResourceDetails resource={undefined} name={"(all)"} alerts={alerts} />
+        <SplitPane split="vertical" defaultSize="70%" style={{ position: 'static' }} pane1Style={{ display: 'flex', flexFlow: 'column', overflow: 'hidden' }} pane2Style={{ display: 'flex'}}>
+          <CenterPane manifests={AllManifests} />
           <TiltfileEditor view={props.view}/>
         </SplitPane>
       </Main>
@@ -104,6 +107,7 @@ type TiltfileEditorState = {
 
 const EditorRoot = styled.div`
   height: 90%;
+  width: 100%;
   background-color: ${Color.grayDark};
   display: flex;
   flex-flow: column;
@@ -128,6 +132,7 @@ const TiltfileTextArea = styled.textarea`
   padding: ${SizeUnit(0.5)};
   font-family: ${Font.monospace};
   border: none;
+  resize: none;
 `
 
 function TiltfileEditor(props: {view: Proto.webviewView}) {
@@ -157,4 +162,24 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
     </EditorHeader>
     <TiltfileTextArea onChange={e => { setBufferContents(e.target.value) }} value={activeContent} />
   </EditorRoot>
+}
+
+let CenterPaneRoot = styled.div`
+  display: flex;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-direction: column;
+  overflow: hidden;
+`
+
+function CenterPane(
+  props: { manifests: ManifestSet }
+) {
+  let filterSet = useFilterSet()
+
+  return (
+    <CenterPaneRoot>
+      <OverviewLogPane manifests={props.manifests} filterSet={filterSet} />
+    </CenterPaneRoot>
+  )
 }

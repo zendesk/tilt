@@ -1,7 +1,7 @@
 import React from "react"
 import styled from "styled-components"
 import { incr } from "./analytics"
-import LogStore, { useLogStore } from "./LogStore"
+import LogStore, {ManifestSet, useLogStore} from "./LogStore"
 import {
   AnimDuration,
   Color,
@@ -11,7 +11,7 @@ import {
 import { ResourceName } from "./types"
 
 const ClearLogsButton = styled.button`
-  ${mixinResetButtonStyle}
+  ${mixinResetButtonStyle};
   margin-left: auto;
   font-size: ${FontSize.small};
   color: ${Color.white};
@@ -23,32 +23,26 @@ const ClearLogsButton = styled.button`
 `
 
 export interface ClearLogsProps {
-  resourceName: string
+  resources: ManifestSet
 }
 
 export const clearLogs = (
   logStore: LogStore,
-  resourceName: string,
+  resources: ManifestSet,
   action: string
 ) => {
   let spans: { [key: string]: Proto.webviewLogSpan }
-  const all = resourceName === ResourceName.all
-  if (all) {
-    spans = logStore.allSpans()
-  } else {
-    spans = logStore.spansForManifest(resourceName)
-  }
-  incr("ui.web.clearLogs", { action, all: all.toString() })
+  spans = logStore.spansForManifests(resources)
+  incr("ui.web.clearLogs", { action, all: (resources.type === 'all').toString() })
   logStore.removeSpans(Object.keys(spans))
 }
 
-const ClearLogs: React.FC<ClearLogsProps> = ({ resourceName }) => {
+const ClearLogs: React.FC<ClearLogsProps> = ({ resources }) => {
   const logStore = useLogStore()
-  const label =
-    resourceName == ResourceName.all ? "Clear All Logs" : "Clear Logs"
+  const label = resources.type === 'all' ? "Clear All Logs" : "Clear Logs"
 
   return (
-    <ClearLogsButton onClick={() => clearLogs(logStore, resourceName, "click")}>
+    <ClearLogsButton onClick={() => clearLogs(logStore, resources, "click")}>
       {label}
     </ClearLogsButton>
   )

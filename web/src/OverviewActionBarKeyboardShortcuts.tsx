@@ -1,7 +1,8 @@
 import React, { Component } from "react"
 import { incr } from "./analytics"
 import { clearLogs } from "./ClearLogs"
-import LogStore from "./LogStore"
+import LogStore, {AllManifests, ManifestSet, NewManifestSet} from "./LogStore"
+import {ResourceName} from "./types"
 
 type Link = Proto.webviewLink
 
@@ -39,7 +40,8 @@ class OverviewActionBarKeyboardShortcuts extends Component<Props> {
 
     if (e.ctrlKey || e.metaKey) {
       if (e.key === "Backspace" && !e.shiftKey) {
-        clearLogs(this.props.logStore, this.props.resourceName, "shortcut")
+        const ms: ManifestSet = (this.props.resourceName === ResourceName.all) ? AllManifests : NewManifestSet([this.props.resourceName])
+        clearLogs(this.props.logStore, ms, "shortcut")
         e.preventDefault()
         return
       }

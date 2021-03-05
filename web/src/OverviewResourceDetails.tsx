@@ -6,6 +6,7 @@ import OverviewActionBar from "./OverviewActionBar"
 import OverviewLogPane from "./OverviewLogPane"
 import { Color } from "./style-helpers"
 import { ResourceName } from "./types"
+import {AllManifests, NewManifestSet} from "./LogStore"
 
 type OverviewResourceDetailsProps = {
   resource?: Proto.webviewResource
@@ -18,6 +19,7 @@ let OverviewResourceDetailsRoot = styled.div`
   flex-grow: 1;
   flex-shrink: 1;
   flex-direction: column;
+  overflow: hidden;
 `
 
 let NotFound = styled.div`
@@ -38,6 +40,8 @@ export default function OverviewResourceDetails(
   let notFound = !all && !manifestName
   let filterSet = useFilterSet()
 
+  let mns = all ? AllManifests : NewManifestSet([manifestName])
+
   return (
     <OverviewResourceDetailsRoot>
       <OverviewActionBar
@@ -48,7 +52,7 @@ export default function OverviewResourceDetails(
       {notFound ? (
         <NotFound>No resource '{name}'</NotFound>
       ) : (
-        <OverviewLogPane manifestName={manifestName} filterSet={filterSet} />
+        <OverviewLogPane manifests={mns} filterSet={filterSet} />
       )}
     </OverviewResourceDetailsRoot>
   )

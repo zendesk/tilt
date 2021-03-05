@@ -101,6 +101,10 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 
 	upper := cmdUpDeps.Upper
 
+	// Any logs that showed up during initialization, make sure they're
+	// in the prompt.
+	cmdUpDeps.Prompt.SetInitOutput(deferred.CopyBuffered(logger.InfoLvl))
+
 	l := store.NewLogActionLogger(ctx, upper.Dispatch)
 	deferred.SetOutput(l)
 	ctx = redirectLogs(ctx, l)

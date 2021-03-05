@@ -1,7 +1,7 @@
 import React, { Component, useEffect, useState } from "react"
 import { MemoryRouter } from "react-router"
 import { FilterLevel, FilterSource } from "./logfilters"
-import LogStore, { LogStoreProvider } from "./LogStore"
+import LogStore, { LogStoreProvider, NewManifestSet } from "./LogStore"
 import OverviewLogPane from "./OverviewLogPane"
 import { appendLines } from "./testlogs"
 import { LogLevel } from "./types"
@@ -33,7 +33,7 @@ export const ThreeLines = () => {
   appendLines(logStore, "fe", "line 1\n", "line2\n", "line3\n")
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -43,7 +43,7 @@ export const ThreeLinesAllLog = () => {
   appendLines(logStore, "", "line 1\n", "line2\n", "line3\n")
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -57,7 +57,7 @@ export const ManyLines = (args: any) => {
   appendLines(logStore, "fe", lines)
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -86,7 +86,7 @@ export const StyledLines = () => {
   appendLines(logStore, "fe", ...lines)
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -104,7 +104,7 @@ export const BuildEventLines = () => {
   appendLines(logStore, "fe", ...lines)
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -124,7 +124,7 @@ export const BuildFallbackLines = () => {
   appendLines(logStore, "fe", ...lines)
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -156,7 +156,7 @@ export const BuildFallbackLinesLong = () => {
   appendLines(logStore, "fe", ...lines)
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -185,7 +185,7 @@ export const ProgressLines = (args: any) => {
 
   return (
     <LogStoreProvider value={logStore}>
-      <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+      <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
     </LogStoreProvider>
   )
 }
@@ -239,7 +239,7 @@ class ForeverLogComponent extends Component<ForeverLogProps> {
   render() {
     return (
       <LogStoreProvider value={this.logStore}>
-        <OverviewLogPane manifestName="fe" filterSet={defaultFilter} />
+        <OverviewLogPane manifests={NewManifestSet(["fe"])} filterSet={defaultFilter} />
       </LogStoreProvider>
     )
   }
@@ -305,7 +305,7 @@ export const BuildLogAndRunLog = (args: any) => {
   return (
     <LogStoreProvider value={logStore}>
       <OverviewLogPane
-        manifestName={"vigoda_1"}
+        manifests={NewManifestSet(["vigoda_1"])}
         filterSet={{ source: args.source, level: args.level }}
       />
     </LogStoreProvider>

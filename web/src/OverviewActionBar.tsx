@@ -14,7 +14,7 @@ import { ReactComponent as LinkSvg } from "./assets/svg/link.svg"
 import ClearLogs from "./ClearLogs"
 import { displayURL } from "./links"
 import { FilterLevel, FilterSet, FilterSource } from "./logfilters"
-import { useLogStore } from "./LogStore"
+import {AllManifests, NewManifestSet, useLogStore} from "./LogStore"
 import OverviewActionBarKeyboardShortcuts from "./OverviewActionBarKeyboardShortcuts"
 import { usePathBuilder } from "./PathBuilder"
 import { AnimDuration, Color, Font, FontSize, SizeUnit } from "./style-helpers"
@@ -423,6 +423,8 @@ export default function OverviewActionBar(props: OverviewActionBarProps) {
   const isSnapshot = usePathBuilder().isSnapshot()
   const logStore = useLogStore()
 
+  const ms = (resourceName === ResourceName.all) ? AllManifests : NewManifestSet([resourceName])
+
   let endpointEls: any = []
   endpoints.forEach((ep, i) => {
     if (i !== 0) {
@@ -483,7 +485,7 @@ export default function OverviewActionBar(props: OverviewActionBarProps) {
           filterSet={props.filterSet}
           alerts={alerts}
         />
-        {isSnapshot || <ClearLogs resourceName={resourceName} />}
+        {isSnapshot || <ClearLogs resources={ms} />}
       </ActionBarBottomRow>
     </ActionBarRoot>
   )

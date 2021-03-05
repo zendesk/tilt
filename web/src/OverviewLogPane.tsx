@@ -13,7 +13,7 @@ import "./LogPane.scss"
 import "./LogPaneLine.scss"
 import LogStore, {
   LogUpdateAction,
-  LogUpdateEvent,
+  LogUpdateEvent, ManifestSet,
   useLogStore,
 } from "./LogStore"
 import PathBuilder, { usePathBuilder } from "./PathBuilder"
@@ -25,7 +25,7 @@ import { LogLevel, LogLine } from "./types"
 export const PROLOGUE_LENGTH = 5
 
 type OverviewLogComponentProps = {
-  manifestName: string
+  manifests: ManifestSet
   pathBuilder: PathBuilder
   logStore: LogStore
   raf: RafContext
@@ -238,7 +238,7 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
     }
 
     if (
-      prevProps.manifestName !== this.props.manifestName ||
+      prevProps.manifests !== this.props.manifests ||
       !filterSetsEqual(prevProps.filterSet, this.props.filterSet)
     ) {
       this.resetRender()
@@ -452,12 +452,12 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
 
   // Render new logs that have come in since the current checkpoint.
   readLogsFromLogStore() {
-    let mn = this.props.manifestName
+    let mns = this.props.manifests
     let logStore = this.props.logStore
     let startCheckpoint = this.logCheckpoint
 
-    let patch = mn
-      ? logStore.manifestLogPatchSet(mn, startCheckpoint)
+    let patch = mns
+      ? logStore.manifestLogPatchSet(mns, startCheckpoint)
       : logStore.allLogPatchSet(startCheckpoint)
 
     let { source, level } = this.props.filterSet
@@ -598,8 +598,9 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
     }
 
     let shouldDisplayPrologues = this.props.filterSet.level !== FilterLevel.all
-    let mn = this.props.manifestName
-    let showManifestName = !mn
+    let mn = this.props.manifests
+    // XXX
+    let showManifestName = false // mn.length !== 0
     let prevManifestName = entry.prev?.line.manifestName || ""
 
     let extraClasses = []
@@ -681,7 +682,7 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
 }
 
 type OverviewLogPaneProps = {
-  manifestName: string
+  manifests: ManifestSet
   filterSet: FilterSet
 }
 
@@ -692,7 +693,7 @@ export default function OverviewLogPane(props: OverviewLogPaneProps) {
   let raf = useRaf()
   return (
     <OverviewLogComponent
-      manifestName={props.manifestName}
+      manifests={props.manifests}
       pathBuilder={pathBuilder}
       logStore={logStore}
       raf={raf}

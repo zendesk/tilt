@@ -121,15 +121,11 @@ func (p *TerminalPrompt) OnChange(ctx context.Context, st store.RStore) {
 	// Print all the init output. See comments on SetInitOutput()
 	infoLines := strings.Split(strings.TrimRight(p.initOutput.String(), "\n"), "\n")
 	needsNewline := false
-	// XXX
-	_, _ = fmt.Fprintf(p.stdout, "--- len(infoLines): %d", len(infoLines))
 	for _, line := range infoLines {
 		if strings.HasPrefix(line, firstLine) || strings.HasPrefix(line, buildStamp) {
 			continue
 		}
-		// XXX
-		_, _ = fmt.Fprintf(p.stdout, "%q\n", line)
-		//_, _ = fmt.Fprintf(p.stdout, "%s\n", line)
+		_, _ = fmt.Fprintf(p.stdout, "%s\n", line)
 		needsNewline = true
 	}
 

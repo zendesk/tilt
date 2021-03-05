@@ -367,19 +367,11 @@ class LogStore {
     return this.logHelper(spans, 0).lines
   }
 
-  allSpans(): { [key: string]: LogSpan } {
-    const result: { [key: string]: LogSpan } = {}
-    for (let spanId in this.spans) {
-      result[spanId] = this.spans[spanId]
-    }
-    return result
-  }
-
-  spansForManifest(mn: string): { [key: string]: LogSpan } {
+  spansForManifests(mn: ManifestSet): { [key: string]: LogSpan } {
     let result: { [key: string]: LogSpan } = {}
     for (let spanId in this.spans) {
       let span = this.spans[spanId]
-      if (span.manifestName === mn) {
+      if (ManifestSetMatches(mn, span.manifestName)) {
         result[spanId] = span
       }
     }
@@ -474,13 +466,13 @@ class LogStore {
     return this.logHelper(spans, 0).lines
   }
 
-  manifestLog(mn: string): LogLine[] {
-    let spans = this.spansForManifest(mn)
+  manifestLog(mns: ManifestSet): LogLine[] {
+    let spans = this.spansForManifests(mns)
     return this.logHelper(spans, 0).lines
   }
 
-  manifestLogPatchSet(mn: string, checkpoint: number): LogPatchSet {
-    let spans = this.spansForManifest(mn)
+  manifestLogPatchSet(mns: ManifestSet, checkpoint: number): LogPatchSet {
+    let spans = this.spansForManifests(mns)
     return this.logHelper(spans, checkpoint)
   }
 
@@ -695,6 +687,26 @@ class LogStore {
       action: LogUpdateAction.truncate,
     })
   }
+}
+
+export type ManifestSet = {
+  type: 'all'
+} | {
+  type: 'set',
+  resources: Set<string>,
+}
+
+export const AllManifests: ManifestSet = { type: 'all' }
+
+export function NewManifestSet(manifestNames: string[]): ManifestSet {
+  return {
+    type: 'set',
+    resources: new Set(manifestNames),
+  }
+}
+
+function ManifestSetMatches(set: ManifestSet, manifestName: string): boolean {
+  return set.type === 'all' || set.resources.has(manifestName)
 }
 
 export default LogStore
