@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tilt-dev/tilt/tools/devlog"
-
 	"github.com/pkg/errors"
 
 	"github.com/spf13/cobra"
@@ -90,13 +88,9 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 	}
 	args = nil
 
-	devlog.Logf("checking if tilt is running")
 	if isTiltRunning() {
-		devlog.Logf("it is!")
 		deferred.Infof("Tilt already running. Added new resource to existing Tilt.")
 		return nil
-	} else {
-		devlog.Logf("it isn't!")
 	}
 
 	cmdUpDeps, err := wireCmdUp(ctx, a, cmdUpTags, "run")
