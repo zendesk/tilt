@@ -80,11 +80,9 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 		log.Printf("Tilt analytics disabled: %s", reason)
 	}
 
-	if len(args) > 0 {
-		err := updateAdHocTiltfile(c.fileName, args)
-		if err != nil {
-			return err
-		}
+	err := updateAdHocTiltfile(c.fileName, args)
+	if err != nil {
+		return err
 	}
 	args = nil
 
@@ -179,6 +177,7 @@ func createAdHocTiltfile(filename string) error {
 }
 
 func updateAdHocTiltfile(filename string, args []string) error {
+	// if it doesn't exist, create adhoc.tilt
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		err := createAdHocTiltfile(filename)
 		if err != nil {
@@ -186,16 +185,20 @@ func updateAdHocTiltfile(filename string, args []string) error {
 		}
 	}
 
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		return errors.Wrapf(err, "error opening %s", filename)
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-	_, err = f.WriteString(localResourceCode(args[0], args))
-	if err != nil {
-		return errors.Wrap(err, "error writing to file")
+	// if there are any args, add a local resource to run that command
+	if len(args) > 0 {
+		f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return errors.Wrapf(err, "error opening %s", filename)
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+
+		_, err = f.WriteString(localResourceCode(args[0], args))
+		if err != nil {
+			return errors.Wrap(err, "error writing to file")
+		}
 	}
 
 	return nil

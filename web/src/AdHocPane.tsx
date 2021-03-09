@@ -1,19 +1,14 @@
-import {useTabNav} from "./TabNav"
 import {AllManifests, LogUpdateAction, LogUpdateEvent, ManifestSet, useLogStore} from "./LogStore"
-import {ResourceName} from "./types"
-import React, {Component, useEffect, useState} from "react"
-import {Alert, combinedAlerts} from "./alerts"
-import OverviewTabBar from "./OverviewTabBar"
+import React, {useEffect, useState} from "react"
+import {combinedAlerts} from "./alerts"
 import OverviewResourceBar from "./OverviewResourceBar"
 import OverviewResourceSidebar from "./OverviewResourceSidebar"
-import OverviewResourceDetails from "./OverviewResourceDetails"
 import styled from "styled-components"
 import {Color, Font, SizeUnit} from "./style-helpers"
-import {ReactComponent} from "*.svg"
 import SplitPane from "react-split-pane"
 import {useFilterSet} from "./logfilters"
-import OverviewActionBar from "./OverviewActionBar"
 import OverviewLogPane from "./OverviewLogPane"
+import "./AdHocPane.scss"
 
 let PaneRoot = styled.div`
   display: flex;
