@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -783,18 +782,10 @@ func handleWriteTiltfileAction(ctx context.Context, state *store.EngineState, ac
 		logger.Get(ctx).Infof("error getting tiltfile path: %v", err)
 	}
 
-	f, err := os.OpenFile(tiltfilePath, os.O_WRONLY, 0)
-	if err != nil {
-		logger.Get(ctx).Infof("error opening tiltfile: %v", err)
-	}
+	err = ioutil.WriteFile(tiltfilePath, []byte(action.Body), 0)
 
-	defer func() {
-		_ = f.Close()
-	}()
-
-	_, err = f.WriteString(action.Body)
 	if err != nil {
-		logger.Get(ctx).Infof("error writing tiltfile: %v", err)
+		logger.Get(ctx).Infof("error writing %s: %v", tiltfilePath, err)
 	}
 }
 

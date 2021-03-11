@@ -265,6 +265,7 @@ func (s *HeadsUpServer) HandleSetTiltfileArgs(w http.ResponseWriter, req *http.R
 func (s *HeadsUpServer) HandleWriteTiltfile(w http.ResponseWriter, req *http.Request) {
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
+		log.Printf("error writing Tiltfile: %v", err)
 		http.Error(w, fmt.Sprintf("error reading http body: %v", err), http.StatusInternalServerError)
 	}
 

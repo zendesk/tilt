@@ -4,12 +4,12 @@ import {combinedAlerts} from "./alerts"
 import OverviewResourceBar from "./OverviewResourceBar"
 import OverviewResourceSidebar from "./OverviewResourceSidebar"
 import styled from "styled-components"
-import {Color, Font, SizeUnit} from "./style-helpers"
+import {Color, Font, FontSize, SizeUnit} from "./style-helpers"
 import SplitPane from "react-split-pane"
 import {useFilterSet} from "./logfilters"
 import OverviewLogPane from "./OverviewLogPane"
 import "./AdHocPane.scss"
-import Editor from "@monaco-editor/react"
+import Editor, {Monaco, useMonaco} from "@monaco-editor/react"
 
 let PaneRoot = styled.div`
   display: flex;
@@ -82,7 +82,7 @@ function setTiltfileContent(content: string) {
   })
     .then((res) => {
       res
-        .json()
+        .text()
         .catch((err) => {
           console.error(err)
         })
@@ -94,7 +94,7 @@ function setTiltfileContent(content: string) {
 
 type TiltfileEditorState = {
   bufferContent: string
-  // this is a crappy solution, but probably good enough for a prototype.
+  // this is a really bad solution, but probably good enough for a prototype.
   // basically: if someone edits the tiltfile outside of the webui, we want it to show up in the web ui.
   // however, if we update the tiltfile from the webui, and then the backend is just sending us that
   // same tiltfile again, then ignore the update - maybe we're already typing more!
@@ -124,11 +124,27 @@ const TiltfileTextArea = styled(Editor)`
 
 `
 
+const SubmitShortcutIndicator = styled.div`
+  color: ${Color.grayLightest};
+  display: inline;
+  font-size: ${FontSize.smallester};
+`
+
+// TODO(matt) figure out how to get types for editor or monaco
+// @ts-ignore
+function handleEditorDidMount(editor, monaco) {
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+    document.getElementById("tiltfile-submit-button")?.click()
+  })
+}
+
 function TiltfileEditor(props: {view: Proto.webviewView}) {
   const viewContent = props.view.adhocTiltfileContents || ""
   const [state, setState] = useState<TiltfileEditorState>({bufferContent: viewContent, expectedServerContent: new Set(viewContent)})
   let activeContent = state.bufferContent
   if (!state.expectedServerContent.has(viewContent)) {
+    // the server had a version of the Tiltfile we haven't seen - assume it changed externally and throw out the buffer contents
+    // at some point we'll want to prompt the user asking which one they want to keep
     state.expectedServerContent.add(viewContent)
     setState({bufferContent: viewContent, expectedServerContent: state.expectedServerContent})
     activeContent = viewContent
@@ -147,13 +163,17 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
 
   return <EditorRoot>
     <EditorHeader>
-      <SubmitButton onClick={e => { updateServerContent()}}>Submit</SubmitButton>
+      <SubmitButton id="tiltfile-submit-button" onClick={e => { updateServerContent()}}>
+        Update <SubmitShortcutIndicator>(⌘+↵)</SubmitShortcutIndicator>
+      </SubmitButton>
     </EditorHeader>
     <TiltfileTextArea
       theme="vs-dark"
       defaultLanguage="python"
       onChange={(value, event) => { setBufferContents(value ?? "") }}
-      defaultValue={activeContent}
+      value={activeContent}
+      onMount={(editor, monaco) => handleEditorDidMount(editor, monaco)}
+      /* https://microsoft.github.io/monaco-editor/api/interfaces/monaco.editor.istandaloneeditorconstructionoptions.html */
       options={{
         lineNumbers: "off",
         folding: false,
