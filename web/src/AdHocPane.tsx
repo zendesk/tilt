@@ -9,6 +9,7 @@ import SplitPane from "react-split-pane"
 import {useFilterSet} from "./logfilters"
 import OverviewLogPane from "./OverviewLogPane"
 import "./AdHocPane.scss"
+import Editor from "@monaco-editor/react"
 
 let PaneRoot = styled.div`
   display: flex;
@@ -63,7 +64,7 @@ export default function AdHocPane(props: AdHocPaneProps) {
       <OverviewResourceBar {...props} />
       <Main>
         <OverviewResourceSidebar {...props} name={"(all)"} />
-        <SplitPane split="vertical" defaultSize="70%" style={{ position: 'static' }} pane1Style={{ display: 'flex', flexFlow: 'column', overflow: 'hidden' }} pane2Style={{ display: 'flex'}}>
+        <SplitPane split="vertical" defaultSize="70%" minSize="30%" style={{ position: 'static' }} pane1Style={{ display: 'flex', flexFlow: 'column', overflow: 'hidden' }} pane2Style={{ display: 'flex'}}>
           <CenterPane manifests={AllManifests} />
           <TiltfileEditor view={props.view}/>
         </SplitPane>
@@ -101,7 +102,7 @@ type TiltfileEditorState = {
 }
 
 const EditorRoot = styled.div`
-  height: 90%;
+  //height: 90%;
   width: 100%;
   background-color: ${Color.grayDark};
   display: flex;
@@ -119,15 +120,8 @@ const EditorHeader = styled.div`
 const SubmitButton = styled.button`
 `
 
-const TiltfileTextArea = styled.textarea`
-  flex-grow: 1;
-  width: 100%;
-  background-color: transparent;
-  color: ${Color.offWhite};
-  padding: ${SizeUnit(0.5)};
-  font-family: ${Font.monospace};
-  border: none;
-  resize: none;
+const TiltfileTextArea = styled(Editor)`
+
 `
 
 function TiltfileEditor(props: {view: Proto.webviewView}) {
@@ -155,7 +149,20 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
     <EditorHeader>
       <SubmitButton onClick={e => { updateServerContent()}}>Submit</SubmitButton>
     </EditorHeader>
-    <TiltfileTextArea onChange={e => { setBufferContents(e.target.value) }} value={activeContent} />
+    <TiltfileTextArea
+      theme="vs-dark"
+      defaultLanguage="python"
+      onChange={(value, event) => { setBufferContents(value ?? "") }}
+      defaultValue={activeContent}
+      options={{
+        lineNumbers: "off",
+        folding: false,
+        wordWrap: "on",
+        minimap: {
+          enabled: false,
+        },
+      }}
+    />
   </EditorRoot>
 }
 
