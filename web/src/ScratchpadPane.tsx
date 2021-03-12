@@ -116,7 +116,10 @@ const EditorHeader = styled.div`
   background-color: ${Color.grayDarker};
   padding: ${SizeUnit(0.25)};
 `
-
+const ScratchpadTitle = styled.div`
+  font-size: ${FontSize.small};
+  padding-right: ${SizeUnit(0.5)};
+`
 const SubmitButton = styled.button`
 `
 
@@ -153,10 +156,12 @@ function handleEditorDidMount(editor, monaco) {
       return null
     }
   })
-  monaco.languages.registerHoverProvider('python', {
+  // TODO(matt) fix or remove
+  monaco.languages.registerCompletionItemProvider('python', {
     // @ts-ignore
-    provideHover: function(model, position) {
-      const word = model.getWordAtPosition(position).word
+    provideCompletionItems: function(model, position) {
+      const word = model.getWordAtPosition(position)?.word
+      console.log(`looking for hover for ${word}`)
       switch (word) {
         case 'local_resource':
           return {
@@ -196,6 +201,7 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
 
   return <EditorRoot>
     <EditorHeader>
+      <ScratchpadTitle>Tiltfile Scratchpad</ScratchpadTitle>
       <SubmitButton id="tiltfile-submit-button" onClick={e => { updateServerContent()}}>
         Update <SubmitShortcutIndicator>(⌘+↵)</SubmitShortcutIndicator>
       </SubmitButton>

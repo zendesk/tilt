@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -150,26 +151,22 @@ func localResourceCode(resourceName string, command []string) string {
 	// use r''' to protect against `'`, `"`, and `\`.
 	// XXX: handle `'''`
 	return fmt.Sprintf(`
+# this resource was added via tilt run
 local_resource('%s',
+  # the command to run
   r'''%s''',
-  # add files here to automatically update on file change
+  # changes to any paths listed here will cause the command to be re-run
   # deps=['.'],
 )
 `, resourceName, strings.Join(command, " "))
 }
 
 func createScratchpadTiltfile(filename string) error {
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return errors.Wrapf(err, "error opening %s", filename)
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-	_, err = f.WriteString(`# uncomment this to load your team's Tiltfile
-# load('Tiltfile')
+	content := `# This is a scratchpad Tiltfile, for work that
+# doesn't get merged to master
 
-`)
+`
+	err := ioutil.WriteFile(filename, []byte(content), 0600)
 	if err != nil {
 		return errors.Wrap(err, "error writing to file")
 	}
