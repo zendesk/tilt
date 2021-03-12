@@ -188,9 +188,7 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
     activeContent = viewContent
   }
   let setBufferContents = (content: string) => {
-    // state.expectedServerContent.add(content)
     setState({bufferContent: content, expectedServerContent: state.expectedServerContent})
-    // setTiltfileContent(content)
   }
 
   let updateServerContent = () => {
@@ -200,12 +198,6 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
   }
 
   return <EditorRoot>
-    <EditorHeader>
-      <ScratchpadTitle>Tiltfile Scratchpad</ScratchpadTitle>
-      <SubmitButton id="tiltfile-submit-button" onClick={e => { updateServerContent()}}>
-        Update <SubmitShortcutIndicator>(⌘+↵)</SubmitShortcutIndicator>
-      </SubmitButton>
-    </EditorHeader>
     <TiltfileTextArea
       theme="vs-dark"
       defaultLanguage="python"
@@ -222,6 +214,12 @@ function TiltfileEditor(props: {view: Proto.webviewView}) {
         },
       }}
     />
+    <EditorHeader>
+      <ScratchpadTitle>Tiltfile Scratchpad</ScratchpadTitle>
+      <SubmitButton id="tiltfile-submit-button" onClick={e => { updateServerContent()}}>
+        Update <SubmitShortcutIndicator>(⌘+↵)</SubmitShortcutIndicator>
+      </SubmitButton>
+    </EditorHeader>
   </EditorRoot>
 }
 
