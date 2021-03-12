@@ -214,7 +214,7 @@ message View {
 
   MetricsServing metrics_serving = 18;
 
-  string adhoc_tiltfile_contents = 19;
+  string scratchpad_tiltfile_contents = 19;
 }
 
 message MetricsServing {

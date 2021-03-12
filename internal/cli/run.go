@@ -47,7 +47,7 @@ func (c *runCmd) register() *cobra.Command {
 
 	addStartServerFlags(cmd)
 	addDevServerFlags(cmd)
-	cmd.Flags().StringVarP(&c.fileName, "file", "f", "adhoc.tilt", "Path to Tiltfile")
+	cmd.Flags().StringVarP(&c.fileName, "file", "f", "scratchpad.tilt", "Path to Tiltfile")
 	addKubeContextFlag(cmd)
 
 	return cmd
@@ -80,7 +80,7 @@ func (c *runCmd) run(ctx context.Context, args []string) error {
 		log.Printf("Tilt analytics disabled: %s", reason)
 	}
 
-	err := updateAdHocTiltfile(c.fileName, args)
+	err := updateScratchpadTiltfile(c.fileName, args)
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ local_resource('%s',
 `, resourceName, strings.Join(command, " "))
 }
 
-func createAdHocTiltfile(filename string) error {
+func createScratchpadTiltfile(filename string) error {
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return errors.Wrapf(err, "error opening %s", filename)
@@ -176,10 +176,10 @@ func createAdHocTiltfile(filename string) error {
 	return nil
 }
 
-func updateAdHocTiltfile(filename string, args []string) error {
-	// if it doesn't exist, create adhoc.tilt
+func updateScratchpadTiltfile(filename string, args []string) error {
+	// if it doesn't exist, create scratchpad.tilt
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		err := createAdHocTiltfile(filename)
+		err := createScratchpadTiltfile(filename)
 		if err != nil {
 			return err
 		}

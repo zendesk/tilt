@@ -8,7 +8,7 @@ import {Color, Font, FontSize, SizeUnit} from "./style-helpers"
 import SplitPane from "react-split-pane"
 import {useFilterSet} from "./logfilters"
 import OverviewLogPane from "./OverviewLogPane"
-import "./AdHocPane.scss"
+import "./ScratchpadPane.scss"
 import Editor, {Monaco, useMonaco} from "@monaco-editor/react"
 
 let PaneRoot = styled.div`
@@ -27,11 +27,11 @@ let Main = styled.div`
   overflow: hidden;
 `
 
-type AdHocPaneProps = {
+type ScratchpadPaneProps = {
   view: Proto.webviewView
 }
 
-export default function AdHocPane(props: AdHocPaneProps) {
+export default function ScratchpadPane(props: ScratchpadPaneProps) {
   const logStore = useLogStore()
   let resources = props.view?.resources || []
 
@@ -136,10 +136,43 @@ function handleEditorDidMount(editor, monaco) {
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
     document.getElementById("tiltfile-submit-button")?.click()
   })
+  editor.addAction({
+    id: 'tilt-help',
+    label: 'Help',
+    keybindings: [ monaco.KeyCode.F2 ],
+    precondition: null,
+    keybindingContext: null,
+    contextMenuGroupId: 'navigation',
+    contextMenuOrder: 1.5,
+    // @ts-ignore
+    // TODO(matt) figure out what to do about unknown words
+    run: (ed) => {
+      const wordUnderCursor = ed.getModel().getWordAtPosition(ed.getPosition()).word
+      const url = `https://docs.tilt.dev/api.html#api.${wordUnderCursor}`
+      window.open(url, '_blank')
+      return null
+    }
+  })
+  monaco.languages.registerHoverProvider('python', {
+    // @ts-ignore
+    provideHover: function(model, position) {
+      const word = model.getWordAtPosition(position).word
+      switch (word) {
+        case 'local_resource':
+          return {
+            contents: [
+              'local_resource(name, cmd, serve_cmd)'
+            ]
+          }
+        default:
+          return null
+      }
+    }
+  })
 }
 
 function TiltfileEditor(props: {view: Proto.webviewView}) {
-  const viewContent = props.view.adhocTiltfileContents || ""
+  const viewContent = props.view.scratchpadTiltfileContents || ""
   const [state, setState] = useState<TiltfileEditorState>({bufferContent: viewContent, expectedServerContent: new Set(viewContent)})
   let activeContent = state.bufferContent
   if (!state.expectedServerContent.has(viewContent)) {

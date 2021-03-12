@@ -600,7 +600,7 @@
         "metrics_serving": {
           "$ref": "#/definitions/webviewMetricsServing"
         },
-        "adhoc_tiltfile_contents": {
+        "scratchpad_tiltfile_contents": {
           "type": "string"
         }
       }
