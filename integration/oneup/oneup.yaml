@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: oneup
-  namespace: tilt-integration
   labels:
     app: oneup
 spec:
