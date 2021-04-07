@@ -54,6 +54,8 @@ type SessionList struct {
 
 // SessionSpec defines the desired state of Session
 type SessionSpec struct {
+	// TEMP(milas): This is to intentionally break CI and will be rebased out before merge.
+	OutOfSyncField string `json:"outOfSyncField"`
 	// TiltfilePath is the path to the Tiltfile for the run. It cannot be empty.
 	TiltfilePath string `json:"tiltfilePath"`
 	// ExitCondition defines the criteria for Tilt to exit.

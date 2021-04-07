@@ -1268,6 +1268,14 @@ func schema_pkg_apis_core_v1alpha1_SessionSpec(ref common.ReferenceCallback) com
 				Description: "SessionSpec defines the desired state of Session",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
+					"outOfSyncField": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TEMP(milas): This is to intentionally break CI and will be rebased out before merge.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"tiltfilePath": {
 						SchemaProps: spec.SchemaProps{
 							Description: "TiltfilePath is the path to the Tiltfile for the run. It cannot be empty.",
@@ -1285,7 +1293,7 @@ func schema_pkg_apis_core_v1alpha1_SessionSpec(ref common.ReferenceCallback) com
 						},
 					},
 				},
-				Required: []string{"tiltfilePath", "exitCondition"},
+				Required: []string{"outOfSyncField", "tiltfilePath", "exitCondition"},
 			},
 		},
 	}
