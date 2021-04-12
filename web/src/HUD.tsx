@@ -30,6 +30,7 @@ import {
   SnapshotHighlight,
   SocketState,
 } from "./types"
+import {TiltVersionConsistencyPrompt} from "./TiltVersionConsistencyCheck"
 
 type HudProps = {
   history: History
@@ -299,6 +300,9 @@ export default class HUD extends Component<HudProps, HudState> {
         <SnapshotActionProvider value={snapshotAction}>
           <PathBuilderProvider value={this.pathBuilder}>
             <LogStoreProvider value={this.state.logStore || new LogStore()}>
+              <TiltVersionConsistencyPrompt
+                frontendVersion={process.env.REACT_APP_TILT_VERSION}
+                backendVersion={this.state.view?.runningTiltBuild?.version}/>
               <Switch>
                 <Route
                   path={this.path("/r/:name/overview")}

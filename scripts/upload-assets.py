@@ -52,5 +52,6 @@ os.chdir("web")
 subprocess.check_call(["yarn", "install"])
 e = os.environ.copy()
 e["CI"] = "false"
+e["REACT_APP_TILT_VERSION"] = version
 subprocess.check_call(["yarn", "run", "build"], env=e)
 subprocess.check_call(["gsutil", "-m", "cp", "-r", "build", "gs://tilt-static-assets/%s" % version])
