@@ -44,6 +44,8 @@ github.com/akutz/memconn
 github.com/alessio/shellescape
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
+# github.com/bitly/go-hostpool v0.1.0
+## explicit
 # github.com/blang/semver v3.5.1+incompatible
 ## explicit
 github.com/blang/semver
@@ -431,7 +433,7 @@ github.com/peterbourgon/diskv
 # github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 ## explicit
 github.com/phayes/freeport
-# github.com/pkg/browser v0.0.0-20170505125900-c90ca0c84f15
+# github.com/pkg/browser v0.0.0-00010101000000-000000000000 => github.com/tilt-dev/browser v0.0.1
 ## explicit
 github.com/pkg/browser
 # github.com/pkg/errors v0.9.1
@@ -496,6 +498,8 @@ github.com/theupdateframework/notary/tuf/data
 github.com/theupdateframework/notary/tuf/signed
 github.com/theupdateframework/notary/tuf/utils
 github.com/theupdateframework/notary/tuf/validation
+# github.com/tilt-dev/browser v0.0.2
+## explicit
 # github.com/tilt-dev/dockerignore v0.0.0-20200910202654-0d8c17a73277
 ## explicit
 github.com/tilt-dev/dockerignore
@@ -649,7 +653,7 @@ golang.org/x/oauth2/jwt
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.0.0-20201119102817-f84b799fce68 => golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
+# golang.org/x/sys v0.0.0-20210415045647-66c3f260301c => golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
@@ -1370,17 +1374,22 @@ k8s.io/kube-openapi/pkg/util/proto/validation
 k8s.io/kube-openapi/pkg/util/sets
 # k8s.io/kubectl v0.20.2
 ## explicit
+k8s.io/kubectl/pkg/cmd/apiresources
 k8s.io/kubectl/pkg/cmd/apply
+k8s.io/kubectl/pkg/cmd/create
 k8s.io/kubectl/pkg/cmd/delete
 k8s.io/kubectl/pkg/cmd/get
 k8s.io/kubectl/pkg/cmd/util
 k8s.io/kubectl/pkg/cmd/util/editor
 k8s.io/kubectl/pkg/cmd/util/editor/crlf
 k8s.io/kubectl/pkg/cmd/wait
+k8s.io/kubectl/pkg/generate
+k8s.io/kubectl/pkg/generate/versioned
 k8s.io/kubectl/pkg/generated
 k8s.io/kubectl/pkg/rawhttp
 k8s.io/kubectl/pkg/scheme
 k8s.io/kubectl/pkg/util
+k8s.io/kubectl/pkg/util/hash
 k8s.io/kubectl/pkg/util/i18n
 k8s.io/kubectl/pkg/util/interrupt
 k8s.io/kubectl/pkg/util/openapi
@@ -1507,3 +1516,4 @@ vbom.ml/util/sortorder
 # go.opencensus.io => github.com/tilt-dev/opencensus-go v0.22.5-0.20200904175236-275b1754f353
 # golang.org/x/crypto => golang.org/x/crypto v0.0.0-20191206172530-e9b2fee46413
 # golang.org/x/sys => golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
+# github.com/pkg/browser => github.com/tilt-dev/browser v0.0.1

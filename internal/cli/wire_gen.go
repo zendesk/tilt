@@ -19,6 +19,7 @@ import (
 
 	"github.com/tilt-dev/tilt/internal/analytics"
 	"github.com/tilt-dev/tilt/internal/build"
+	client2 "github.com/tilt-dev/tilt/internal/cli/client"
 	"github.com/tilt-dev/tilt/internal/cloud"
 	"github.com/tilt-dev/tilt/internal/cloud/cloudurl"
 	"github.com/tilt-dev/tilt/internal/container"
@@ -52,6 +53,7 @@ import (
 	"github.com/tilt-dev/tilt/internal/hud/prompt"
 	"github.com/tilt-dev/tilt/internal/hud/server"
 	"github.com/tilt-dev/tilt/internal/k8s"
+	"github.com/tilt-dev/tilt/internal/openurl"
 	"github.com/tilt-dev/tilt/internal/store"
 	"github.com/tilt-dev/tilt/internal/tiltfile"
 	"github.com/tilt-dev/tilt/internal/tiltfile/config"
@@ -147,8 +149,18 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 	reducer := _wireReducerValue
 	storeLogActionsFlag := provideLogActions()
 	storeStore := store.NewStore(reducer, storeLogActionsFlag)
-	webHost := provideWebHost()
+	tiltDevDir, err := dirs.UseTiltDevDir()
+	if err != nil {
+		return CmdUpDeps{}, err
+	}
+	configAccess := server.ProvideConfigAccess(tiltDevDir)
 	webPort := provideWebPort()
+	apiServerName := model.ProvideAPIServerName(webPort)
+	webHost := provideWebHost()
+	webListener, err := server.ProvideWebListener(webHost, webPort)
+	if err != nil {
+		return CmdUpDeps{}, err
+	}
 	tiltBuild := provideTiltInfo()
 	connProvider := server.ProvideMemConn()
 	bearerToken, err := server.NewBearerToken()
@@ -156,7 +168,11 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 		return CmdUpDeps{}, err
 	}
 	generatableKeyCert := server.ProvideKeyCert()
-	apiserverConfig, err := server.ProvideTiltServerOptions(ctx, tiltBuild, connProvider, bearerToken, generatableKeyCert)
+	apiServerPort, err := server.ProvideAPIServerPort()
+	if err != nil {
+		return CmdUpDeps{}, err
+	}
+	apiserverConfig, err := server.ProvideTiltServerOptions(ctx, tiltBuild, connProvider, bearerToken, generatableKeyCert, apiServerPort)
 	if err != nil {
 		return CmdUpDeps{}, err
 	}
@@ -166,10 +182,6 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 	}
 	webVersion := provideWebVersion(tiltBuild)
 	assetsServer, err := provideAssetServer(webMode, webVersion)
-	if err != nil {
-		return CmdUpDeps{}, err
-	}
-	tiltDevDir, err := dirs.UseTiltDevDir()
 	if err != nil {
 		return CmdUpDeps{}, err
 	}
@@ -186,7 +198,7 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 	if err != nil {
 		return CmdUpDeps{}, err
 	}
-	headsUpServerController := server.ProvideHeadsUpServerController(webHost, webPort, apiserverConfig, headsUpServer, assetsServer, webURL)
+	headsUpServerController := server.ProvideHeadsUpServerController(configAccess, apiServerName, webListener, apiserverConfig, headsUpServer, assetsServer, webURL)
 	scheme := v1alpha1.NewScheme()
 	deferredClient := controllers.ProvideDeferredClient()
 	clientBuilder := controllers.NewClientBuilder(deferredClient)
@@ -222,12 +234,12 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 	controllerBuilder := controllers.NewControllerBuilder(tiltServerControllerManager, v)
 	v2 := provideClock()
 	renderer := hud.NewRenderer(v2)
-	headsUpDisplay := hud.NewHud(renderer, webURL, analytics3)
+	openURL := _wireOpenURLValue
+	headsUpDisplay := hud.NewHud(renderer, webURL, analytics3, openURL)
 	stdout := hud.ProvideStdout()
 	incrementalPrinter := hud.NewIncrementalPrinter(stdout)
 	terminalStream := hud.NewTerminalStream(incrementalPrinter, storeStore)
 	openInput := _wireOpenInputValue
-	openURL := _wireOpenURLValue
 	terminalPrompt := prompt.NewTerminalPrompt(analytics3, openInput, openURL, stdout, webHost, webURL)
 	ownerFetcher := k8s.ProvideOwnerFetcher(ctx, client)
 	podWatcher := k8swatch.NewPodWatcher(client, ownerFetcher, namespace)
@@ -315,8 +327,8 @@ func wireCmdUp(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdTags
 
 var (
 	_wireReducerValue   = engine.UpperReducer
+	_wireOpenURLValue   = openurl.OpenURL(openurl.BrowserOpen)
 	_wireOpenInputValue = prompt.OpenInput(prompt.TTYOpen)
-	_wireOpenURLValue   = prompt.OpenURL(prompt.BrowserOpen)
 	_wireLabelsValue    = dockerfile.Labels{}
 )
 
@@ -324,8 +336,18 @@ func wireCmdCI(ctx context.Context, analytics3 *analytics.TiltAnalytics, subcomm
 	reducer := _wireReducerValue
 	storeLogActionsFlag := provideLogActions()
 	storeStore := store.NewStore(reducer, storeLogActionsFlag)
-	webHost := provideWebHost()
+	tiltDevDir, err := dirs.UseTiltDevDir()
+	if err != nil {
+		return CmdCIDeps{}, err
+	}
+	configAccess := server.ProvideConfigAccess(tiltDevDir)
 	webPort := provideWebPort()
+	apiServerName := model.ProvideAPIServerName(webPort)
+	webHost := provideWebHost()
+	webListener, err := server.ProvideWebListener(webHost, webPort)
+	if err != nil {
+		return CmdCIDeps{}, err
+	}
 	tiltBuild := provideTiltInfo()
 	connProvider := server.ProvideMemConn()
 	bearerToken, err := server.NewBearerToken()
@@ -333,7 +355,11 @@ func wireCmdCI(ctx context.Context, analytics3 *analytics.TiltAnalytics, subcomm
 		return CmdCIDeps{}, err
 	}
 	generatableKeyCert := server.ProvideKeyCert()
-	apiserverConfig, err := server.ProvideTiltServerOptions(ctx, tiltBuild, connProvider, bearerToken, generatableKeyCert)
+	apiServerPort, err := server.ProvideAPIServerPort()
+	if err != nil {
+		return CmdCIDeps{}, err
+	}
+	apiserverConfig, err := server.ProvideTiltServerOptions(ctx, tiltBuild, connProvider, bearerToken, generatableKeyCert, apiServerPort)
 	if err != nil {
 		return CmdCIDeps{}, err
 	}
@@ -343,10 +369,6 @@ func wireCmdCI(ctx context.Context, analytics3 *analytics.TiltAnalytics, subcomm
 	}
 	webVersion := provideWebVersion(tiltBuild)
 	assetsServer, err := provideAssetServer(webMode, webVersion)
-	if err != nil {
-		return CmdCIDeps{}, err
-	}
-	tiltDevDir, err := dirs.UseTiltDevDir()
 	if err != nil {
 		return CmdCIDeps{}, err
 	}
@@ -363,7 +385,7 @@ func wireCmdCI(ctx context.Context, analytics3 *analytics.TiltAnalytics, subcomm
 	if err != nil {
 		return CmdCIDeps{}, err
 	}
-	headsUpServerController := server.ProvideHeadsUpServerController(webHost, webPort, apiserverConfig, headsUpServer, assetsServer, webURL)
+	headsUpServerController := server.ProvideHeadsUpServerController(configAccess, apiServerName, webListener, apiserverConfig, headsUpServer, assetsServer, webURL)
 	scheme := v1alpha1.NewScheme()
 	deferredClient := controllers.ProvideDeferredClient()
 	clientBuilder := controllers.NewClientBuilder(deferredClient)
@@ -399,12 +421,12 @@ func wireCmdCI(ctx context.Context, analytics3 *analytics.TiltAnalytics, subcomm
 	controllerBuilder := controllers.NewControllerBuilder(tiltServerControllerManager, v)
 	v2 := provideClock()
 	renderer := hud.NewRenderer(v2)
-	headsUpDisplay := hud.NewHud(renderer, webURL, analytics3)
+	openURL := _wireOpenURLValue
+	headsUpDisplay := hud.NewHud(renderer, webURL, analytics3, openURL)
 	stdout := hud.ProvideStdout()
 	incrementalPrinter := hud.NewIncrementalPrinter(stdout)
 	terminalStream := hud.NewTerminalStream(incrementalPrinter, storeStore)
 	openInput := _wireOpenInputValue
-	openURL := _wireOpenURLValue
 	terminalPrompt := prompt.NewTerminalPrompt(analytics3, openInput, openURL, stdout, webHost, webURL)
 	ownerFetcher := k8s.ProvideOwnerFetcher(ctx, client)
 	podWatcher := k8swatch.NewPodWatcher(client, ownerFetcher, namespace)
@@ -498,8 +520,18 @@ func wireCmdUpdog(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdT
 	reducer := _wireReducerValue
 	storeLogActionsFlag := provideLogActions()
 	storeStore := store.NewStore(reducer, storeLogActionsFlag)
-	webHost := provideWebHost()
+	tiltDevDir, err := dirs.UseTiltDevDir()
+	if err != nil {
+		return CmdUpdogDeps{}, err
+	}
+	configAccess := server.ProvideConfigAccess(tiltDevDir)
 	webPort := provideWebPort()
+	apiServerName := model.ProvideAPIServerName(webPort)
+	webHost := provideWebHost()
+	webListener, err := server.ProvideWebListener(webHost, webPort)
+	if err != nil {
+		return CmdUpdogDeps{}, err
+	}
 	tiltBuild := provideTiltInfo()
 	connProvider := server.ProvideMemConn()
 	bearerToken, err := server.NewBearerToken()
@@ -507,7 +539,11 @@ func wireCmdUpdog(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdT
 		return CmdUpdogDeps{}, err
 	}
 	generatableKeyCert := server.ProvideKeyCert()
-	apiserverConfig, err := server.ProvideTiltServerOptions(ctx, tiltBuild, connProvider, bearerToken, generatableKeyCert)
+	apiServerPort, err := server.ProvideAPIServerPort()
+	if err != nil {
+		return CmdUpdogDeps{}, err
+	}
+	apiserverConfig, err := server.ProvideTiltServerOptions(ctx, tiltBuild, connProvider, bearerToken, generatableKeyCert, apiServerPort)
 	if err != nil {
 		return CmdUpdogDeps{}, err
 	}
@@ -517,10 +553,6 @@ func wireCmdUpdog(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdT
 	}
 	webVersion := provideWebVersion(tiltBuild)
 	assetsServer, err := provideAssetServer(webMode, webVersion)
-	if err != nil {
-		return CmdUpdogDeps{}, err
-	}
-	tiltDevDir, err := dirs.UseTiltDevDir()
 	if err != nil {
 		return CmdUpdogDeps{}, err
 	}
@@ -537,7 +569,7 @@ func wireCmdUpdog(ctx context.Context, analytics3 *analytics.TiltAnalytics, cmdT
 	if err != nil {
 		return CmdUpdogDeps{}, err
 	}
-	headsUpServerController := server.ProvideHeadsUpServerController(webHost, webPort, apiserverConfig, headsUpServer, assetsServer, webURL)
+	headsUpServerController := server.ProvideHeadsUpServerController(configAccess, apiServerName, webListener, apiserverConfig, headsUpServer, assetsServer, webURL)
 	scheme := v1alpha1.NewScheme()
 	deferredClient := controllers.ProvideDeferredClient()
 	clientBuilder := controllers.NewClientBuilder(deferredClient)
@@ -849,16 +881,36 @@ func wireAnalytics(l logger.Logger, cmdName model.TiltSubcommand) (*analytics.Ti
 	return tiltAnalytics, nil
 }
 
+func wireClientGetter(ctx context.Context) (*client2.Getter, error) {
+	tiltDevDir, err := dirs.UseTiltDevDir()
+	if err != nil {
+		return nil, err
+	}
+	webPort := provideWebPort()
+	apiServerName := model.ProvideAPIServerName(webPort)
+	configAccess := server.ProvideConfigAccess(tiltDevDir)
+	tiltClientConfig, err := client2.ProvideClientConfig(apiServerName, configAccess)
+	if err != nil {
+		return nil, err
+	}
+	getter := client2.NewGetter(tiltDevDir, tiltClientConfig)
+	return getter, nil
+}
+
 // wire.go:
 
 var K8sWireSet = wire.NewSet(k8s.ProvideEnv, k8s.ProvideClusterName, k8s.ProvideKubeContext, k8s.ProvideKubeConfig, k8s.ProvideClientConfig, k8s.ProvideClientset, k8s.ProvideRESTConfig, k8s.ProvidePortForwardClient, k8s.ProvideConfigNamespace, k8s.ProvideContainerRuntime, k8s.ProvideServerVersion, k8s.ProvideK8sClient, k8s.ProvideOwnerFetcher, ProvideKubeContextOverride)
 
 var BaseWireSet = wire.NewSet(
-	K8sWireSet, tiltfile.WireSet, git.ProvideGitRemote, docker.SwitchWireSet, ProvideDeferredExporter, metrics.WireSet, user.WireSet, dockercompose.NewDockerComposeClient, clockwork.NewRealClock, engine.DeployerWireSet, runtimelog.NewPodLogManager, podlogstream.NewController, portforward.NewController, engine.NewBuildController, cmd.WireSet, local.NewServerController, k8swatch.NewPodWatcher, k8swatch.NewServiceWatcher, k8swatch.NewEventWatchManager, configs.NewConfigsController, telemetry.NewController, dcwatch.NewEventWatcher, runtimelog.NewDockerComposeLogManager, cloud.WireSet, cloudurl.ProvideAddress, k8srollout.NewPodMonitor, telemetry.NewStartTracker, session.NewController, build.ProvideClock, provideClock, hud.WireSet, prompt.WireSet, provideLogActions, store.NewStore, wire.Bind(new(store.RStore), new(*store.Store)), dockerprune.NewDockerPruner, provideTiltInfo, engine.NewUpper, analytics2.NewAnalyticsUpdater, analytics2.ProvideAnalyticsReporter, provideUpdateModeFlag, fswatch.NewManifestSubscriber, fsevent.ProvideWatcherMaker, fsevent.ProvideTimerMaker, controllers.WireSet, provideWebVersion,
+	K8sWireSet, tiltfile.WireSet, git.ProvideGitRemote, docker.SwitchWireSet, ProvideDeferredExporter, metrics.WireSet, user.WireSet, dockercompose.NewDockerComposeClient, clockwork.NewRealClock, engine.DeployerWireSet, runtimelog.NewPodLogManager, podlogstream.NewController, portforward.NewController, engine.NewBuildController, cmd.WireSet, local.NewServerController, k8swatch.NewPodWatcher, k8swatch.NewServiceWatcher, k8swatch.NewEventWatchManager, configs.NewConfigsController, telemetry.NewController, dcwatch.NewEventWatcher, runtimelog.NewDockerComposeLogManager, cloud.WireSet, cloudurl.ProvideAddress, k8srollout.NewPodMonitor, telemetry.NewStartTracker, session.NewController, build.ProvideClock, provideClock, hud.WireSet, prompt.WireSet, wire.Value(openurl.OpenURL(openurl.BrowserOpen)), provideLogActions, store.NewStore, wire.Bind(new(store.RStore), new(*store.Store)), dockerprune.NewDockerPruner, provideTiltInfo, engine.NewUpper, analytics2.NewAnalyticsUpdater, analytics2.ProvideAnalyticsReporter, provideUpdateModeFlag, fswatch.NewManifestSubscriber, fsevent.ProvideWatcherMaker, fsevent.ProvideTimerMaker, controllers.WireSet, provideWebVersion,
 	provideWebMode,
 	provideWebURL,
 	provideWebPort,
 	provideWebHost, server.WireSet, provideAssetServer, tracer.NewSpanCollector, wire.Bind(new(trace.SpanProcessor), new(*tracer.SpanCollector)), wire.Bind(new(tracer.SpanSource), new(*tracer.SpanCollector)), dirs.UseTiltDevDir, token.GetOrCreateToken, buildcontrol.NewKINDLoader, wire.Value(feature.MainDefaults),
+)
+
+var CLIClientWireSet = wire.NewSet(
+	BaseWireSet, client2.WireSet,
 )
 
 var UpWireSet = wire.NewSet(

@@ -17,31 +17,29 @@ import (
 	"testing"
 	"time"
 
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/tilt-dev/tilt-apiserver/pkg/server/testdata"
-	"github.com/tilt-dev/tilt/internal/controllers/core/filewatch/fsevent"
-	"github.com/tilt-dev/tilt/internal/controllers/core/podlogstream"
-
 	"github.com/docker/distribution/reference"
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tilt-dev/wmclient/pkg/analytics"
+	"github.com/tilt-dev/wmclient/pkg/dirs"
 	yaml "gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/tilt-dev/wmclient/pkg/analytics"
-
+	"github.com/tilt-dev/tilt-apiserver/pkg/server/testdata"
 	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
 	"github.com/tilt-dev/tilt/internal/cloud"
 	"github.com/tilt-dev/tilt/internal/container"
 	"github.com/tilt-dev/tilt/internal/controllers"
 	"github.com/tilt-dev/tilt/internal/controllers/core/cmd"
 	"github.com/tilt-dev/tilt/internal/controllers/core/filewatch"
+	"github.com/tilt-dev/tilt/internal/controllers/core/filewatch/fsevent"
+	"github.com/tilt-dev/tilt/internal/controllers/core/podlogstream"
 	"github.com/tilt-dev/tilt/internal/docker"
 	"github.com/tilt-dev/tilt/internal/dockercompose"
 	engineanalytics "github.com/tilt-dev/tilt/internal/engine/analytics"
@@ -65,6 +63,7 @@ import (
 	"github.com/tilt-dev/tilt/internal/hud/view"
 	"github.com/tilt-dev/tilt/internal/k8s"
 	"github.com/tilt-dev/tilt/internal/k8s/testyaml"
+	"github.com/tilt-dev/tilt/internal/openurl"
 	"github.com/tilt-dev/tilt/internal/store"
 	"github.com/tilt-dev/tilt/internal/testutils"
 	"github.com/tilt-dev/tilt/internal/testutils/bufsync"
@@ -3751,6 +3750,7 @@ type testFixture struct {
 func newTestFixture(t *testing.T) *testFixture {
 	f := tempdir.NewTempDirFixture(t)
 
+	dir := dirs.NewTiltDevDirAt(f.Path())
 	log := bufsync.NewThreadSafeBuffer()
 	to := tiltanalytics.NewFakeOpter(analytics.OptIn)
 	ctx, _, ta := testutils.ForkedCtxAndAnalyticsWithOpterForTest(log, to)
@@ -3799,10 +3799,14 @@ func newTestFixture(t *testing.T) *testFixture {
 	dcw := dcwatch.NewEventWatcher(fakeDcc, dockerClient)
 	dclm := runtimelog.NewDockerComposeLogManager(fakeDcc)
 	memconn := server.ProvideMemConn()
-	serverOptions, err := server.ProvideTiltServerOptions(ctx, model.TiltBuild{}, memconn, "corgi-charge", testdata.CertKey())
+	serverOptions, err := server.ProvideTiltServerOptions(ctx, model.TiltBuild{}, memconn, "corgi-charge", testdata.CertKey(), 0)
 	require.NoError(t, err)
+	webListener, err := server.ProvideWebListener("localhost", 0)
+	require.NoError(t, err)
+	configAccess := server.ProvideConfigAccess(dir)
 	hudsc := server.ProvideHeadsUpServerController(
-		"localhost", 0, serverOptions, &server.HeadsUpServer{}, assets.NewFakeServer(), model.WebURL{})
+		configAccess, "tilt-default", webListener, serverOptions,
+		&server.HeadsUpServer{}, assets.NewFakeServer(), model.WebURL{})
 	ewm := k8swatch.NewEventWatchManager(kCli, of, ns)
 	tcum := cloud.NewStatusManager(httptest.NewFakeClientEmptyJSON(), clock)
 	fe := cmd.NewFakeExecer()
@@ -3812,7 +3816,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	lsc := local.NewServerController(cdc)
 	sessionController := session.NewController(cdc)
 	ts := hud.NewTerminalStream(hud.NewIncrementalPrinter(log), st)
-	tp := prompt.NewTerminalPrompt(ta, prompt.TTYOpen, prompt.BrowserOpen,
+	tp := prompt.NewTerminalPrompt(ta, prompt.TTYOpen, openurl.BrowserOpen,
 		log, "localhost", model.WebURL{})
 	h := hud.NewFakeHud()
 	tscm, err := controllers.NewTiltServerControllerManager(serverOptions, v1alpha1.NewScheme(), ccb)
