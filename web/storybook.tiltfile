@@ -33,3 +33,12 @@ local_resource(
   'CI=true yarn test -u',
   auto_init=False,
   trigger_mode=TRIGGER_MODE_MANUAL)
+
+local_resource(
+  'wait: tilt.dev',
+  deps=['wait.sh'],
+  readiness_probe=probe(
+    period_secs=15,
+    http_get=http_get_action(port=9000, path="/")
+  ),
+  serve_cmd='sh -c ./wait.sh; echo done')
