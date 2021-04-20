@@ -39,6 +39,6 @@ local_resource(
   deps=['wait.sh'],
   readiness_probe=probe(
     period_secs=15,
-    http_get=http_get_action(port=9000, path="/")
+    http_get=http_get_action(port=8080, path="/")
   ),
-  serve_cmd='sh -c ./wait.sh; echo done')
+  serve_cmd='cd ../web2 && (npm run dev & npm run build)')

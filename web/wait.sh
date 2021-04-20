@@ -1,4 +1,6 @@
 #!/bin/bash
 
-echo "webpack server sec"
-PORT=4555 yarn build
+export PORT=11234
+export BROWSER=none
+npm run start & npm run build
+echo done
