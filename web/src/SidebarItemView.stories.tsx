@@ -1,7 +1,7 @@
 import React from "react"
 import { MemoryRouter } from "react-router"
 import PathBuilder from "./PathBuilder"
-import { ResourceNavContextProvider } from "./ResourceNav"
+import {ResourceNavProvider} from "./ResourceNav"
 import SidebarItem from "./SidebarItem"
 import SidebarItemView, { SidebarItemViewProps } from "./SidebarItemView"
 import { oneResourceNoAlerts } from "./testdata"
@@ -16,16 +16,11 @@ type Resource = Proto.webviewResource
 let pathBuilder = PathBuilder.forTesting("localhost", "/")
 
 function ItemWrapper(props: { children: React.ReactNode }) {
-  let resourceNav = {
-    selectedResource: "",
-    invalidResource: "",
-    openResource: (name: string) => {},
-  }
   return (
     <MemoryRouter initialEntries={["/"]}>
-      <ResourceNavContextProvider value={resourceNav}>
+      <ResourceNavProvider>
         <div style={{ width: "336px", margin: "100px" }}>{props.children}</div>
-      </ResourceNavContextProvider>
+      </ResourceNavProvider>
     </MemoryRouter>
   )
 }

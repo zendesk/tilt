@@ -2,7 +2,7 @@ import React from "react"
 import TimeAgo from "react-timeago"
 import styled from "styled-components"
 import PathBuilder from "./PathBuilder"
-import { useResourceNav } from "./ResourceNav"
+import { openResource, useResourceNav } from "./ResourceNav"
 import SidebarIcon from "./SidebarIcon"
 import SidebarItem from "./SidebarItem"
 import SidebarTriggerButton from "./SidebarTriggerButton"
@@ -25,6 +25,7 @@ import { formatBuildDuration, isZeroTime } from "./time"
 import { timeAgoFormatter } from "./timeFormatters"
 import { TriggerModeToggle } from "./TriggerModeToggle"
 import { ResourceStatus, ResourceView, TriggerMode } from "./types"
+import deepEqual from 'fast-deep-equal'
 
 export const SidebarItemRoot = styled.li`
   & + & {
@@ -251,7 +252,7 @@ function buildTooltipText(status: ResourceStatus): string {
   }
 }
 
-export default function SidebarItemView(props: SidebarItemViewProps) {
+export function SidebarItemView(props: SidebarItemViewProps) {
   let nav = useResourceNav()
   let item = props.item
   let formatter = timeAgoFormatter
@@ -279,7 +280,7 @@ export default function SidebarItemView(props: SidebarItemViewProps) {
         className={`${isSelectedClass} ${isBuildingClass}`}
         tabIndex={-1}
         role="button"
-        onClick={(e) => nav.openResource(item.name)}
+        onClick={(e) => openResource(item.name, nav)}
         data-name={item.name}
       >
         <SidebarItemInnerBox>
@@ -323,3 +324,10 @@ export default function SidebarItemView(props: SidebarItemViewProps) {
     </SidebarItemRoot>
   )
 }
+
+export default React.memo(SidebarItemView, (a, b) => {
+  return a.selected === b.selected &&
+    a.pathBuilder === b.pathBuilder &&
+    a.resourceView === b.resourceView &&
+    deepEqual(a.item, b.item)
+})

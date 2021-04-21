@@ -5,7 +5,7 @@ import HeaderBar from "./HeaderBar"
 import { LogUpdateAction, LogUpdateEvent, useLogStore } from "./LogStore"
 import OverviewResourceDetails from "./OverviewResourceDetails"
 import OverviewResourceSidebar from "./OverviewResourceSidebar"
-import { useResourceNav } from "./ResourceNav"
+import { selectedResource, useResourceNav } from "./ResourceNav"
 import StarredResourceBar, {
   starredResourcePropsFromView,
 } from "./StarredResourceBar"
@@ -37,7 +37,8 @@ export default function OverviewResourcePane(props: OverviewResourcePaneProps) {
   let nav = useResourceNav()
   const logStore = useLogStore()
   let resources = props.view?.resources || []
-  let name = nav.invalidResource || nav.selectedResource || ""
+  let names = selectedResource(nav)
+  let name = names.invalidResource || names.selectedResource || ""
   let r: Proto.webviewResource | undefined
   let all = name === "" || name === ResourceName.all
   if (!all) {

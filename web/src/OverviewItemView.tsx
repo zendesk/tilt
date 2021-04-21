@@ -36,6 +36,7 @@ import { formatBuildDuration, isZeroTime, timeDiff } from "./time"
 import { timeAgoFormatter } from "./timeFormatters"
 import { TriggerModeToggle } from "./TriggerModeToggle"
 import { ResourceStatus, TargetType, TriggerMode } from "./types"
+import deepEqual from 'fast-deep-equal'
 
 export const OverviewItemRoot = styled.li`
   display: flex;
@@ -635,7 +636,7 @@ let useStyles = makeStyles((theme) => ({
   },
 }))
 
-export default function OverviewItemView(props: OverviewItemViewProps) {
+function OverviewItemView(props: OverviewItemViewProps) {
   const popoverClasses = useStyles()
 
   let [anchorSpec, setAnchorSpec] = useState({
@@ -705,3 +706,7 @@ export default function OverviewItemView(props: OverviewItemViewProps) {
     </OverviewItemRoot>
   )
 }
+
+export default React.memo(OverviewItemView, (a, b) => {
+  return deepEqual(a, b)
+})

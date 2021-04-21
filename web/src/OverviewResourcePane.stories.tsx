@@ -29,12 +29,10 @@ function OverviewResourcePaneHarness(props: {
 }) {
   let { name, view } = props
   let entry = name ? `/r/${props.name}/overview` : `/overview`
-  let resources = view?.resources || []
-  let validateResource = (name: string) =>
-    resources.some((res) => res.name == name)
+  let resourceNames = view?.resources?.flatMap(r => r.name ? [r.name] : [])
   return (
     <MemoryRouter initialEntries={[entry]}>
-      <ResourceNavProvider validateResource={validateResource}>
+      <ResourceNavProvider validResources={resourceNames}>
         <OverviewResourcePane view={view} />
       </ResourceNavProvider>
     </MemoryRouter>

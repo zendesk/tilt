@@ -29,9 +29,9 @@ class LogPaneLine extends PureComponent<LogPaneProps> {
   private ref: React.RefObject<HTMLSpanElement> = React.createRef()
 
   scrollIntoView() {
-    if (this.ref.current) {
-      this.ref.current.scrollIntoView({ block: "center" })
-    }
+    // if (this.ref.current) {
+    //   this.ref.current.scrollIntoView({ block: "center" })
+    // }
   }
 
   render() {

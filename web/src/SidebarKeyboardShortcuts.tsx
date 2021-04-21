@@ -1,6 +1,6 @@
 import React, { Component } from "react"
 import { incr } from "./analytics"
-import { ResourceNav, useResourceNav } from "./ResourceNav"
+import { openResource, ResourceNav, useResourceNav } from "./ResourceNav"
 import { isTargetEditable } from "./shortcut"
 import SidebarItem from "./SidebarItem"
 import { ResourceName, ResourceView } from "./types"
@@ -56,7 +56,7 @@ class SidebarKeyboardShortcuts extends Component<Props> {
         }
 
         let name = names[targetIndex]
-        this.props.resourceNav.openResource(name)
+        openResource(name, this.props.resourceNav)
         e.preventDefault()
         break
 

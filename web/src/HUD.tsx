@@ -1,6 +1,6 @@
 import { StylesProvider } from "@material-ui/core/styles"
 import { History, UnregisterCallback } from "history"
-import React, { Component } from "react"
+import React, { Component, Profiler } from "react"
 import ReactOutlineManager from "react-outline-manager"
 import { useHistory } from "react-router"
 import { Route, RouteComponentProps, Switch } from "react-router-dom"
@@ -19,7 +19,7 @@ import LogStore, { LogStoreProvider } from "./LogStore"
 import OverviewPane from "./OverviewPane"
 import OverviewResourcePane from "./OverviewResourcePane"
 import PathBuilder, { PathBuilderProvider } from "./PathBuilder"
-import { ResourceNavProvider } from "./ResourceNav"
+import {SetResourceNavContextConsumer, ResourceNavProvider, ResourceNav} from "./ResourceNav"
 import ShareSnapshotModal from "./ShareSnapshotModal"
 import { SnapshotActionProvider } from "./snapshot"
 import SocketBar from "./SocketBar"
@@ -30,6 +30,7 @@ import {
   SnapshotHighlight,
   SocketState,
 } from "./types"
+import {Interaction as SchedulerInteraction} from "scheduler/tracing"
 
 type HudProps = {
   history: History
@@ -261,13 +262,19 @@ export default class HUD extends Component<HudProps, HudState> {
       hudClasses.push("is-snapshot")
     }
 
-    let validateResource = (name: string) =>
-      resources.some((res) => res.name === name)
     return (
       <tiltfileKeyContext.Provider value={view.tiltfileKey}>
         <StarredResourcesContextProvider>
           <ReactOutlineManager>
-            <ResourceNavProvider validateResource={validateResource}>
+            <ResourceNavProvider>
+              <SetResourceNavContextConsumer>
+                {(setResourceNav) => {
+                  const validResourceNames = view?.resources?.flatMap(r => r.name ? [r.name] : [])
+                  setResourceNav((prev: ResourceNav) => {return {...prev, validResourceNames }})
+                  return null
+                  }
+                }
+              </SetResourceNavContextConsumer>
               <div className={hudClasses.join(" ")}>
                 <AnalyticsNudge needsNudge={needsNudge} />
                 <SocketBar state={this.state.socketState} />
@@ -372,8 +379,21 @@ export default class HUD extends Component<HudProps, HudState> {
   }
 }
 
+function logRender(
+  id: string,
+  phase: "mount" | "update",
+  actualDuration: number,
+  baseDuration: number,
+  startTime: number,
+  commitTime: number,
+  interactions: Set<SchedulerInteraction>) {
+  // console.log(`render ${id}, phase ${phase}, duration ${actualDuration}`)
+}
+
 export function HUDFromContext(props: React.PropsWithChildren<{}>) {
   let history = useHistory()
   let interfaceVersion = useInterfaceVersion()
-  return <HUD history={history} interfaceVersion={interfaceVersion} />
+  return <Profiler id="hud" onRender={logRender}>
+    <HUD history={history} interfaceVersion={interfaceVersion} />
+  </Profiler>
 }

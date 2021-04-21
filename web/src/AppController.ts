@@ -17,6 +17,7 @@ class AppController {
   component: HudInt
   disposed: boolean = false
   pb: PathBuilder
+  lastData: string | undefined
 
   /**
    * @param pathBuilder a PathBuilder
@@ -44,6 +45,10 @@ class AppController {
 
     this.socket.addEventListener("close", this.onSocketClose.bind(this))
     this.socket.addEventListener("message", (event) => {
+      if (event.data === this.lastData) {
+        return
+      }
+      this.lastData = event.data
       if (!this.liveSocket) {
         this.loadCount++
       }

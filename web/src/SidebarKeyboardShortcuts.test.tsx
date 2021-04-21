@@ -2,7 +2,7 @@ import { fireEvent } from "@testing-library/dom"
 import { mount } from "enzyme"
 import React from "react"
 import { MemoryRouter } from "react-router"
-import { ResourceNavContextProvider } from "./ResourceNav"
+import { ResourceNavProvider } from "./ResourceNav"
 import SidebarItem from "./SidebarItem"
 import SidebarKeyboardShortcuts from "./SidebarKeyboardShortcuts"
 import { twoResourceView } from "./testdata"
@@ -12,18 +12,10 @@ var opened: any
 let component: any
 let triggered: any = false
 const shortcuts = (items: SidebarItem[], selected: string) => {
-  let resourceNav = {
-    selectedResource: "",
-    invalidResource: "",
-    openResource: (name: string) => {
-      opened = name
-    },
-  }
-  opened = null
-
+  // XXX mock history.location.push
   component = mount(
     <MemoryRouter initialEntries={["/init"]}>
-      <ResourceNavContextProvider value={resourceNav}>
+      <ResourceNavProvider>
         <SidebarKeyboardShortcuts
           items={items}
           selected={selected}
@@ -32,7 +24,7 @@ const shortcuts = (items: SidebarItem[], selected: string) => {
             triggered = true
           }}
         />
-      </ResourceNavContextProvider>
+      </ResourceNavProvider>
     </MemoryRouter>
   )
 }
