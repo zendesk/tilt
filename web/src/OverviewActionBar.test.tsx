@@ -85,5 +85,5 @@ it("navigates to build warning filter", () => {
   let buildItem = sourceItems.filter({ "data-filter": FilterSource.build })
   expect(buildItem).toHaveLength(1)
   buildItem.simulate("click")
-  expect(history.location.search).toEqual("?source=build&level=warn")
+  expect(history.location.search).toEqual("?level=warn&source=build")
 })

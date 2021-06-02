@@ -1,4 +1,5 @@
 import Anser from "anser"
+import { History } from "history"
 import React, { Component } from "react"
 import { useHistory } from "react-router"
 import styled, { keyframes } from "styled-components"
@@ -8,6 +9,7 @@ import {
   FilterSet,
   filterSetsEqual,
   FilterSource,
+  TermState,
 } from "./logfilters"
 import "./LogPane.scss"
 import "./LogPaneLine.scss"
@@ -30,7 +32,7 @@ type OverviewLogComponentProps = {
   logStore: LogStore
   raf: RafContext
   filterSet: FilterSet
-  history: any
+  history: History
   scrollToStoredLineIndex: number | null
 }
 
@@ -66,28 +68,11 @@ let LogEnd = styled.div`
 
 let anser = new Anser()
 
-function newLineText(text: string, textToHighlight?: string): string {
-  if (!textToHighlight) {
-    return text
-  }
-
-  // TODO: This logic will be a wee bit more complicated because we need to 1) find matches, 2) escape html outside of matches, 3) add html around matches
-  // Array of match indices
-  // Wrap the highlighted text in `mark` elements
-  // Escape the html of non-matches
-  // OR: maybe we can just escape everything and then add
-
-  // return textToHighlight.replaceAll(new RegExp(`(${textToHighlight})`, 'g'), "<mark>$1</mark>")
-  return text
-}
-
 function newLineEl(
   line: LogLine,
   showManifestPrefix: boolean,
-  extraClasses: string[],
-  textToHighlight?: string
+  extraClasses: string[]
 ): Element {
-  // console.log('newLineEle', line.spanId)
   let text = line.text
   let level = line.level
   let buildEvent = line.buildEvent
@@ -125,13 +110,10 @@ function newLineEl(
   let code = document.createElement("code")
   code.classList.add("LogPaneLine-content")
 
-  // TODO: Add search term mark logic here; not sure if search terms will need to be reset when they change
-  const textWithHighlight = newLineText(line.text, textToHighlight)
-
   // newline ensures this takes up at least one line
   let spacer = "\n"
   code.innerHTML = anser.linkify(
-    anser.ansiToHtml(anser.escapeForHtml(textWithHighlight) + spacer, {
+    anser.ansiToHtml(anser.escapeForHtml(line.text) + spacer, {
       use_classes: true,
     })
   )
@@ -395,7 +377,6 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
   }
 
   resetRender() {
-    // console.log("running resetRender")
     let root = this.rootRef.current
     let cursor = this.cursorRef.current
     if (root) {
@@ -420,20 +401,15 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
     }
   }
 
-  // TODO: Consider when the filter term is interpretted as plain text or regex if that's the approach we go with
   matchesTermFilter(line: LogLine): boolean {
-    const filterTerm = this.props.filterSet.term
+    const { term } = this.props.filterSet
 
-    // If there's no term to filter by, consider everything a match
-    if (!filterTerm || filterTerm.length === 0) {
+    // Don't consider a filter term if the term hasn't been parsed for matching
+    if (term.state !== TermState.Parsed) {
       return true
     }
 
-    if (line.text && line.text.toLowerCase().includes(filterTerm)) {
-      return true
-    }
-
-    return false
+    return term.regex.test(line.text)
   }
 
   // If we have a level filter on, check if this line matches the level filter.
@@ -467,9 +443,7 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
       return false
     }
 
-    const matchesTerm = this.matchesTermFilter(line)
-    // console.log(line, matchesTerm)
-    return this.matchesLevelFilter(line) && matchesTerm
+    return this.matchesLevelFilter(line) && this.matchesTermFilter(line)
   }
 
   // Index this line so that we can display prologues to errors.
@@ -493,8 +467,6 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
 
   // Render new logs that have come in since the current checkpoint.
   readLogsFromLogStore() {
-    // console.log("readLogsFromLogStore")
-    // console.log(this.props.logStore)
     let mn = this.props.manifestName
     let logStore = this.props.logStore
     let startCheckpoint = this.logCheckpoint
@@ -670,12 +642,7 @@ export class OverviewLogComponent extends Component<OverviewLogComponentProps> {
       extraClasses.push("is-startOfAlert")
     }
 
-    let lineEl = newLineEl(
-      entry.line,
-      showManifestName,
-      extraClasses,
-      this.props.filterSet.term
-    )
+    let lineEl = newLineEl(entry.line, showManifestName, extraClasses)
     if (isStartOfAlert) {
       lineEl.appendChild(this.newAlertNavEl(entry.line))
     }
