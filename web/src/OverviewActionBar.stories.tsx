@@ -35,12 +35,14 @@ export default {
   ],
   argTypes: {
     source: {
+      name: "Source",
       control: {
         type: "select",
         options: [FilterSource.all, FilterSource.build, FilterSource.runtime],
       },
     },
     level: {
+      name: "Level",
       control: {
         type: "select",
         options: [FilterLevel.all, FilterLevel.warn, FilterLevel.error],
