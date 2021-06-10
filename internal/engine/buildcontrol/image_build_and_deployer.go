@@ -347,18 +347,6 @@ func (ibd *ImageBuildAndDeployer) createEntitiesToDeploy(ctx context.Context,
 			return nil, errors.Wrap(err, "deploy")
 		}
 
-		// If we're redeploying these workloads in response to image
-		// changes, we make sure image pull policy isn't set to "Always".
-		// Frequent applies don't work well with this setting, and makes things
-		// slower. See discussion:
-		// https://github.com/tilt-dev/tilt/issues/3209
-		if len(iTargetMap) > 0 {
-			e, err = k8s.InjectImagePullPolicy(e, v1.PullIfNotPresent)
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		if len(iTargetMap) > 0 {
 			// StatefulSet pods should be managed in parallel when we're doing iterative
 			// development. See discussion:
@@ -369,7 +357,7 @@ func (ibd *ImageBuildAndDeployer) createEntitiesToDeploy(ctx context.Context,
 
 		// When working with a local k8s cluster, we set the pull policy to Never,
 		// to ensure that k8s fails hard if the image is missing from docker.
-		policy := v1.PullIfNotPresent
+		policy := v1.PullAlways
 		if ibd.db.WillBuildToKubeContext(ibd.kubeContext) {
 			policy = v1.PullNever
 		}
