@@ -21,6 +21,7 @@ tilt_option.json
 # Text editor stuff
 .idea/*
 .*.swp
+.vscode
 
 
 # Generated yaml (from synclet deploy)
@@ -60,3 +61,6 @@ yarn-error.log*
 
 # http caches from running kubectl in integration tests
 integration/.kube
+
+# direnv
+.envrc

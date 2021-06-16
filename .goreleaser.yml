@@ -1,6 +1,7 @@
-project_name: tilt
+project_name: zd-tilt
 builds:
 - main: ./cmd/tilt/main.go
+  binary: zd-tilt
   id: tilt-darwin
   flags:
   - -tags=osusergo
@@ -14,20 +15,6 @@ builds:
   # Compiles against the MacOS FSEvents system libraries.
   - CGO_ENABLED=1
   - CC=/osxcross/target/bin/x86_64h-apple-darwin20.2-clang
-- main: ./cmd/tilt/main.go
-  id: tilt
-  flags:
-  - -tags=osusergo
-  - -mod=vendor
-  goos:
-  - linux
-  - windows
-  goarch:
-  - amd64
-  - arm
-  - arm64
-  env:
-  - CGO_ENABLED=0
 archives:
 - name_template: "{{ .ProjectName }}.{{ .Version }}.{{ .Os }}.{{ .Arch }}"
   replacements:
@@ -54,36 +41,24 @@ changelog:
     - '^cleanup:'
     - '^circleci:'
     - '^ci:'
+release:
+  github:
+    owner: zendesk
+    name: tilt
 brews:
 - tap:
-    owner: tilt-dev
-    name: homebrew-tap
+    owner: zendesk
+    name: homebrew-devops
   commit_author:
     name: Tilt Dev
     email: hi@tilt.dev
-  url_template: "https://github.com/tilt-dev/tilt/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+  folder: Formula
+  url_template: "https://github.com/zendesk/tilt/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
   homepage: "https://tilt.dev/"
   description: "Tilt powers multi-service developments for teams that deploy to Kubernetes."
   test: |
-    system "#{bin}/tilt version"
-    system "#{bin}/tilt verify-install"
-dockers:
-- image_templates:
-    - "tiltdev/tilt"
-    - "tiltdev/tilt:{{ .Tag }}"
-  dockerfile: scripts/tilt.Dockerfile
-scoop:
-  url_template: "https://github.com/tilt-dev/tilt/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-  bucket:
-    owner: tilt-dev
-    name: scoop-bucket
-  commit_author:
-    name: Tilt Dev
-    email: hi@tilt.dev
-  commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
-  homepage: "https://tilt.dev/"
-  description: "Tilt powers multi-service developments for teams that deploy to Kubernetes."
-  license: Apache-2.0
+    system "#{bin}/zd-tilt version"
+    system "#{bin}/zd-tilt verify-install"
 
 # Uncomment these lines if you want to experiment with other
 # parts of the release process without releasing new binaries.
